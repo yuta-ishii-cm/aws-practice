@@ -1,6 +1,10 @@
 # 課題25: TechCorp - IAM Identity Center (AWS SSO) 構築
 
-## 1. 概要
+**難易度: 🟡 中級**
+
+---
+
+## 1. 分類情報
 
 ITコンサルティング会社「TechCorp株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
 

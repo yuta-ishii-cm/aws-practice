@@ -1,6 +1,10 @@
 # 課題21: グローバルWebサービスのDDoS対策
 
-## 1. 課題の分類
+**難易度: 🟡 中級**
+
+---
+
+## 1. 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -18,7 +22,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | SocialConnect株式会社 |
+| **企業名** | 〇〇株式会社 |
 | **業種** | グローバルSNS |
 | **従業員数** | 200名（エンジニア60名） |
 | **月間UU** | 500万人（グローバル） |
@@ -28,7 +32,7 @@
 ### 現状の課題
 
 ```
-SocialConnect株式会社はグローバル展開するSNSサービスを運営しています。
+〇〇株式会社はグローバル展開するSNSサービスを運営しています。
 サービス可用性において以下の課題を抱えています：
 
 1. DDoS攻撃の増加
@@ -171,191 +175,438 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ---
 
-## 6. アーキテクチャ図
+## 6. トラブルシューティングチャレンジ
 
-### 全体構成
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Global Users                                    │
-│                                                                              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │  Japan   │  │   USA    │  │  Europe  │  │   Asia   │  │ Others   │     │
-│  │  Users   │  │  Users   │  │  Users   │  │  Users   │  │  Users   │     │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘     │
-│       │             │             │             │             │            │
-└───────┼─────────────┼─────────────┼─────────────┼─────────────┼────────────┘
-        │             │             │             │             │
-        └─────────────┴──────┬──────┴─────────────┴─────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Amazon Route 53                                      │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  socialconnect.example.com                                           │   │
-│  │                                                                      │   │
-│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐        │   │
-│  │  │ Health Check   │  │ Health Check   │  │ Health Check   │        │   │
-│  │  │ Primary (CF)   │  │ Secondary (ALB)│  │ S3 Static      │        │   │
-│  │  └───────┬────────┘  └───────┬────────┘  └───────┬────────┘        │   │
-│  │          │                   │                   │                  │   │
-│  │  ┌───────▼────────────────────────────────────────────────────┐    │   │
-│  │  │              Failover Routing Policy                        │    │   │
-│  │  │  Primary: CloudFront → Secondary: ALB → Tertiary: S3       │    │   │
-│  │  └────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           AWS Shield                                         │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     Shield Advanced                                  │   │
-│  │                                                                      │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │  │  DDoS Protection:                                            │   │   │
-│  │  │  • Layer 3/4: Network/Transport                              │   │   │
-│  │  │  • Layer 7: Application (via WAF)                            │   │   │
-│  │  │                                                              │   │   │
-│  │  │  Features:                                                   │   │   │
-│  │  │  • 24/7 DDoS Response Team (DRT)                            │   │   │
-│  │  │  • Cost Protection                                          │   │   │
-│  │  │  • Real-time Attack Visibility                              │   │   │
-│  │  └─────────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Amazon CloudFront                                    │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Distribution: d1234567890.cloudfront.net                           │   │
-│  │                                                                      │   │
-│  │  ┌──────────────────────────────────────────────────────────────┐  │   │
-│  │  │                    AWS WAF Integration                        │  │   │
-│  │  │                                                               │  │   │
-│  │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐         │  │   │
-│  │  │  │ Rate Limit   │ │ Bot Control  │ │ Geo Block    │         │  │   │
-│  │  │  │ 10000 req/5m │ │ (Managed)    │ │ (Sanctions)  │         │  │   │
-│  │  │  └──────────────┘ └──────────────┘ └──────────────┘         │  │   │
-│  │  │                                                               │  │   │
-│  │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐         │  │   │
-│  │  │  │ SQL Injection│ │ XSS          │ │ IP Reputation│         │  │   │
-│  │  │  │ (AWS Rules)  │ │ (AWS Rules)  │ │ (AWS Rules)  │         │  │   │
-│  │  │  └──────────────┘ └──────────────┘ └──────────────┘         │  │   │
-│  │  └──────────────────────────────────────────────────────────────┘  │   │
-│  │                                                                      │   │
-│  │  ┌──────────────────────────────────────────────────────────────┐  │   │
-│  │  │                    Edge Locations                             │  │   │
-│  │  │                                                               │  │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐│  │   │
-│  │  │  │ Tokyo   │ │New York │ │ London  │ │ Sydney  │ │ Others ││  │   │
-│  │  │  │ (2 PoPs)│ │(4 PoPs) │ │(3 PoPs) │ │(2 PoPs) │ │(450+)  ││  │   │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘│  │   │
-│  │  └──────────────────────────────────────────────────────────────┘  │   │
-│  │                                                                      │   │
-│  │  Cache Behaviors:                                                    │   │
-│  │  ├── /api/*     → ALB Origin (No Cache)                             │   │
-│  │  ├── /static/*  → S3 Origin (Cache 1 year)                          │   │
-│  │  └── Default    → ALB Origin (Cache 5 min)                          │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │
-            ┌───────────────────┼───────────────────┐
-            │                   │                   │
-            ▼                   ▼                   ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│    Origin 1      │ │    Origin 2      │ │    Origin 3      │
-│  (ALB - API)     │ │  (S3 - Static)   │ │ (Failover Page)  │
-│                  │ │                  │ │                  │
-│  ap-northeast-1  │ │  ap-northeast-1  │ │  s3-website      │
-│                  │ │                  │ │                  │
-│  ┌────────────┐  │ │  ┌────────────┐  │ │  "Service        │
-│  │ ECS Fargate│  │ │  │   Images   │  │ │   temporarily    │
-│  │ (Auto Scale│  │ │  │   CSS/JS   │  │ │   unavailable"   │
-│  └────────────┘  │ │  └────────────┘  │ │                  │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
-
-### DDoS緩和フロー
+### Challenge 1: CloudFrontキャッシュがヒットしない
 
 ```
-                              Attack Traffic (100 Gbps)
-                                       │
-                                       ▼
-                    ┌──────────────────────────────────┐
-                    │       AWS Global Network         │
-                    │                                  │
-                    │   ┌───────────────────────────┐ │
-                    │   │   Shield Standard         │ │
-                    │   │   (Always-on DDoS         │ │
-                    │   │    Mitigation)            │ │
-                    │   │                           │ │
-                    │   │   Blocked:                │ │
-                    │   │   • UDP floods            │ │
-                    │   │   • SYN floods            │ │
-                    │   │   • Reflection attacks    │ │
-                    │   └─────────────┬─────────────┘ │
-                    │                 │ 5 Gbps        │
-                    │   ┌─────────────▼─────────────┐ │
-                    │   │   Shield Advanced         │ │
-                    │   │                           │ │
-                    │   │   Additional:             │ │
-                    │   │   • Advanced L3/L4        │ │
-                    │   │   • Application layer     │ │
-                    │   │   • DRT support           │ │
-                    │   └─────────────┬─────────────┘ │
-                    │                 │ 1 Gbps        │
-                    └─────────────────┼───────────────┘
-                                      │
-                                      ▼
-                    ┌──────────────────────────────────┐
-                    │        CloudFront Edge           │
-                    │                                  │
-                    │   ┌───────────────────────────┐ │
-                    │   │        AWS WAF            │ │
-                    │   │                           │ │
-                    │   │   Blocked:                │ │
-                    │   │   • Bad bots              │ │
-                    │   │   • Rate exceeded IPs     │ │
-                    │   │   • Geo-restricted        │ │
-                    │   │   • Known bad IPs         │ │
-                    │   └─────────────┬─────────────┘ │
-                    │                 │ 100 Mbps      │
-                    │   ┌─────────────▼─────────────┐ │
-                    │   │       Edge Cache          │ │
-                    │   │                           │ │
-                    │   │   Cache Hit: 80%          │ │
-                    │   │   → No Origin Request     │ │
-                    │   └─────────────┬─────────────┘ │
-                    │                 │ 20 Mbps       │
-                    └─────────────────┼───────────────┘
-                                      │
-                                      ▼
-                    ┌──────────────────────────────────┐
-                    │           Origin                 │
-                    │   (Normal traffic only)          │
-                    │                                  │
-                    │   Received: ~20 Mbps             │
-                    │   (99.98% attack mitigated)      │
-                    └──────────────────────────────────┘
+問題:
+キャッシュヒット率が10%以下で、ほとんどのリクエストがオリジンに到達している。
+
+メトリクス:
+- CacheHitRate: 8%
+- OriginRequests: 90%
+
+調査項目:
+1. キャッシュポリシー設定
+2. Varyヘッダー
+3. クエリストリング
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. キャッシュポリシー確認
+aws cloudfront get-cache-policy --id POLICY_ID
+
+# 2. オリジンのレスポンスヘッダー確認
+curl -I https://example.com/api/posts | grep -i cache
+
+# Cache-Control: no-store が原因の可能性
+
+# 3. クエリストリングの影響確認
+# ?timestamp=xxx のような動的パラメータがキャッシュを無効化
+
+# 解決策:
+# a) Cache-Control ヘッダーの適切な設定
+# オリジンで: Cache-Control: public, max-age=300
+
+# b) クエリストリングのホワイトリスト設定
+# 必要なクエリパラメータのみをキャッシュキーに含める
+
+# c) キャッシュポリシーの最適化
+aws cloudfront create-cache-policy --cache-policy-config '{
+    "Name": "OptimizedCachePolicy",
+    "MinTTL": 1,
+    "MaxTTL": 86400,
+    "DefaultTTL": 300,
+    "ParametersInCacheKeyAndForwardedToOrigin": {
+        "EnableAcceptEncodingGzip": true,
+        "EnableAcceptEncodingBrotli": true,
+        "HeadersConfig": {
+            "HeaderBehavior": "none"
+        },
+        "CookiesConfig": {
+            "CookieBehavior": "none"
+        },
+        "QueryStringsConfig": {
+            "QueryStringBehavior": "whitelist",
+            "QueryStrings": {
+                "Items": ["page", "limit"]
+            }
+        }
+    }
+}'
+```
+</details>
+
+### Challenge 2: WAFがレジティメートなボットをブロック
+
+```
+問題:
+Google botやBing botがWAFにブロックされ、
+SEOに悪影響が出ている。
+
+WAFログ:
+terminatingRuleId: AWSManagedRulesBotControlRuleSet
+action: BLOCK
+labels: ["awswaf:managed:aws:bot-control:bot:verified"]
+
+調査項目:
+1. ボット制御ルールの設定
+2. ラベルマッチング
+3. 例外設定
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. 検証済みボットを許可する例外ルールを追加
+
+# WAF Web ACLに新しいルールを追加（優先度を上げる）
+{
+    "Name": "AllowVerifiedBots",
+    "Priority": 0,
+    "Action": {"Allow": {}},
+    "Statement": {
+        "LabelMatchStatement": {
+            "Scope": "LABEL",
+            "Key": "awswaf:managed:aws:bot-control:bot:verified"
+        }
+    },
+    "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AllowVerifiedBotsMetric"
+    }
+}
+
+# 2. 特定のUser-Agentを許可
+{
+    "Name": "AllowGoogleBot",
+    "Priority": 1,
+    "Action": {"Allow": {}},
+    "Statement": {
+        "ByteMatchStatement": {
+            "SearchString": "Googlebot",
+            "FieldToMatch": {
+                "SingleHeader": {"Name": "user-agent"}
+            },
+            "TextTransformations": [
+                {"Priority": 0, "Type": "LOWERCASE"}
+            ],
+            "PositionalConstraint": "CONTAINS"
+        }
+    },
+    "VisibilityConfig": {...}
+}
+
+# 3. ボット制御ルールのモード変更
+# COMMON → TARGETED に変更して、悪意のあるボットのみブロック
+```
+</details>
+
+### Challenge 3: Shield Advanced でコスト保護が機能しない
+
+```
+問題:
+大規模DDoS攻撃を受け、CloudFrontとALBのデータ転送料金が
+大幅に増加したが、Shield Advancedのコスト保護が適用されない。
+
+請求:
+- CloudFront データ転送: $50,000
+- ALB データ転送: $10,000
+- Shield Advanced: $3,000
+
+調査項目:
+1. コスト保護の条件
+2. 保護対象リソースの設定
+3. DRT への連絡
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# Shield Advancedのコスト保護を受けるための条件:
+
+# 1. リソースが保護対象として登録されていること
+aws shield list-protections
+
+# 2. 攻撃がShieldによって検知されていること
+aws shield list-attacks --start-time "2024-01-01T00:00:00Z" --end-time "2024-01-31T23:59:59Z"
+
+# 3. WAFがAssociateされていること（L7攻撃の場合）
+aws wafv2 get-web-acl-for-resource \
+    --resource-arn arn:aws:cloudfront::xxx:distribution/yyy
+
+# コスト保護申請手順:
+# a) AWS サポートケースを開く
+# b) 以下の情報を提供:
+#    - Shield 攻撃ID
+#    - 影響を受けたリソースのARN
+#    - 異常なコストが発生した期間
+#    - コスト増加の証拠（請求書）
+
+# c) DRTに連絡（プロアクティブエンゲージメント有効時）
+aws shield describe-subscription
+# ProactiveEngagementStatus: ENABLED であることを確認
+
+# 注意: コスト保護は攻撃が正当にDDoS攻撃として認定された場合のみ適用
+# スケーリングによる正常なトラフィック増加は対象外
+```
+</details>
+
+---
+
+## 7. 設計考慮ポイント
+
+### Shield Standard vs Advanced
+
+```yaml
+Shield Standard (無料):
+  保護対象:
+    - CloudFront
+    - Route 53
+    - Global Accelerator
+  保護内容:
+    - Layer 3/4 DDoS攻撃の自動緩和
+    - SYN floods, UDP floods, Reflection attacks
+  制限:
+    - 可視性なし
+    - コスト保護なし
+    - DRTサポートなし
+
+Shield Advanced ($3,000/月 + WAF費用):
+  追加保護:
+    - ALB, NLB, EIP, EC2
+  追加機能:
+    - リアルタイム攻撃可視性
+    - DDoS Response Team (24/7)
+    - コスト保護
+    - WAF無料（Shield関連）
+    - Health-based detection
+  適用ケース:
+    - ミッションクリティカル
+    - 高頻度の攻撃
+    - SLA要件あり
+
+選択基準:
+  月間UU > 100万 または
+  ダウンタイムコスト > $10,000/時間
+  → Shield Advanced を推奨
+```
+
+### グローバル配信戦略
+
+```
+エッジロケーション最適化:
+
+┌─────────────────────────────────────────────────────────────┐
+│                    Price Class 選択                         │
+├─────────────────────────────────────────────────────────────┤
+│ PriceClass_All        : 全リージョン (最高パフォーマンス)    │
+│ PriceClass_200        : 北米、欧州、アジア、中東、アフリカ   │
+│ PriceClass_100        : 北米、欧州のみ (最低コスト)          │
+└─────────────────────────────────────────────────────────────┘
+
+推奨:
+- グローバルサービス → PriceClass_All
+- 日本中心 + 一部海外 → PriceClass_200
+- 開発環境 → PriceClass_100
 ```
 
 ---
 
-## 7. ハンズオン手順
+## 8. 発展課題（オプション）
 
-### Step 1: CloudFront Distribution作成
+### 上級チャレンジ1: Global Acceleratorによる最適化
 
 ```bash
-# S3バケット作成（静的コンテンツ用）
-aws s3 mb s3://socialconnect-static-${AWS_ACCOUNT_ID}
+# AWS Global Accelerator設定
+# 固定IPアドレスとAnycastルーティング
+
+aws globalaccelerator create-accelerator \
+    --name example-accelerator \
+    --ip-address-type IPV4 \
+    --enabled
+
+# リスナー作成
+aws globalaccelerator create-listener \
+    --accelerator-arn arn:aws:globalaccelerator::xxx:accelerator/yyy \
+    --port-ranges '[{"FromPort":443,"ToPort":443}]' \
+    --protocol TCP
+
+# エンドポイントグループ作成（複数リージョン）
+aws globalaccelerator create-endpoint-group \
+    --listener-arn arn:aws:globalaccelerator::xxx:accelerator/yyy/listener/zzz \
+    --endpoint-group-region ap-northeast-1 \
+    --endpoint-configurations '[{"EndpointId":"arn:aws:elasticloadbalancing:...","Weight":100}]' \
+    --traffic-dial-percentage 100 \
+    --health-check-path "/health" \
+    --health-check-interval-seconds 10
+```
+
+### 上級チャレンジ2: 多層キャッシング戦略
+
+```yaml
+# CloudFront + Origin Shield + ALB + ElastiCache
+
+Layer 1: CloudFront Edge
+  - 静的コンテンツ: 24時間キャッシュ
+  - 動的コンテンツ: 5分キャッシュ
+  - キャッシュヒット率目標: 80%
+
+Layer 2: Origin Shield
+  - リージョナルエッジキャッシュの一元化
+  - オリジンへのリクエスト削減: 50%
+
+Layer 3: Application Cache (ElastiCache)
+  - API レスポンスキャッシュ
+  - セッションストア
+  - TTL: 1-5分
+
+結果:
+  - オリジンへの到達率: 10%以下
+  - レイテンシ改善: 80%
+```
+
+### 上級チャレンジ3: カオスエンジニアリング
+
+```python
+# DDoS攻撃シミュレーション（AWS FISを使用）
+# 注意: 本番環境では事前にAWSサポートに連絡が必要
+
+# FIS実験テンプレート
+{
+    "description": "Simulate high traffic load",
+    "targets": {
+        "alb": {
+            "resourceType": "aws:elasticloadbalancing:loadbalancer",
+            "resourceArns": ["arn:aws:elasticloadbalancing:..."],
+            "selectionMode": "ALL"
+        }
+    },
+    "actions": {
+        "inject-fault": {
+            "actionId": "aws:fis:inject-api-throttle-error",
+            "parameters": {
+                "duration": "PT5M",
+                "percentage": "50"
+            },
+            "targets": {
+                "LoadBalancers": "alb"
+            }
+        }
+    },
+    "stopConditions": [
+        {
+            "source": "aws:cloudwatch:alarm",
+            "value": "arn:aws:cloudwatch:...:alarm:emergency-stop"
+        }
+    ],
+    "roleArn": "arn:aws:iam::xxx:role/FISRole"
+}
+```
+
+---
+
+## 9. コスト見積もり
+
+### 月額コスト概算
+
+| サービス | スペック | 月額コスト |
+|----------|----------|------------|
+| CloudFront | 10TB転送 + 1億リクエスト | $1,200 |
+| Shield Advanced | 基本料金 | $3,000 |
+| WAF | Web ACL + ルール + ボット制御 | $50 |
+| Route 53 | ホステッドゾーン + クエリ | $10 |
+| ヘルスチェック | 3つ | $2 |
+| CloudWatch | ログ・メトリクス | $30 |
+| **合計** | | **約 $4,292/月** |
+
+### Shield Advancedなしの場合
+
+```
+Shield Standard (無料) の場合:
+- CloudFront: $1,200
+- WAF: $50
+- Route 53: $12
+- CloudWatch: $30
+合計: 約 $1,292/月
+
+差額: $3,000/月
+
+判断基準:
+- DDoS攻撃によるダウンタイムコスト
+- ブランド毀損のリスク
+- SLA要件
+
+500万UU × 広告収入 $0.01/UU = $50,000/月
+1時間ダウンタイム = $2,000+ の損失
+→ Shield Advanced の投資対効果は高い
+```
+
+---
+
+## 10. 学習のポイント
+
+### 今回学んだこと
+
+```
+1. CloudFrontによるグローバル配信
+   - エッジロケーションの活用
+   - キャッシュ戦略
+   - オリジン保護
+
+2. AWS ShieldによるDDoS保護
+   - Standard vs Advanced
+   - 自動緩和
+   - DRTサポート
+
+3. AWS WAFによるL7保護
+   - マネージドルール
+   - ボット制御
+   - レート制限
+
+4. Route 53による高可用性DNS
+   - ヘルスチェック
+   - フェイルオーバー
+   - GeoDNS
+```
+
+### GCPとの比較まとめ
+
+| 観点 | AWS | GCP |
+|------|-----|-----|
+| CDN | CloudFront (450+ PoPs) | Cloud CDN |
+| DDoS | Shield (Standard無料) | Cloud Armor |
+| 専門サポート | DRT (Shield Advanced) | なし（標準サポート内） |
+| 価格モデル | 月額固定 + 従量 | 従量課金のみ |
+
+### 次のステップ
+
+```
+1. 発展学習:
+   - AWS Global Accelerator
+   - CloudFront Functions/Lambda@Edge
+   - Origin Shield
+
+2. 実務応用:
+   - 攻撃シミュレーション訓練
+   - インシデントレスポンス計画
+   - SLA設計
+
+3. 認定資格:
+   - AWS Certified Security - Specialty
+   - AWS Certified Advanced Networking - Specialty
+```
+
+---
+
+### DUMMY_MARKER_FOR_DELETION
 
 # バケットポリシー（CloudFrontからのみアクセス許可）
 cat > bucket-policy.json << 'EOF'

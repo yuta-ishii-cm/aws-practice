@@ -1,6 +1,10 @@
-# 課題1: 株式会社QuickEatsのカスタマーサポート自動化システム構築
+# 課題1: 〇〇株式会社のカスタマーサポート自動化システム構築
 
-## 分類情報
+**難易度: 🟡 中級**
+
+---
+
+## 1. 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -12,21 +16,93 @@
 
 ---
 
-## シナリオ
+## 2. 学習するAWSサービス
+
+この演習では以下のAWSサービスを実践的に学習します。
+
+### メインサービス
+
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon Bedrock** | 生成AIによる回答生成 | Claude 3モデルの呼び出し、プロンプトエンジニアリング |
+| **Bedrock Knowledge Base** | FAQの検索・RAG | ベクトル検索、Retrieval-Augmented Generation |
+| **Amazon OpenSearch Serverless** | ベクトルストア | Knowledge Baseのバックエンド、埋め込みベクトル管理 |
+| **Amazon S3** | FAQドキュメント保存 | Knowledge Baseのデータソース |
+| **Amazon DynamoDB** | 会話履歴・セッション管理 | NoSQLデータモデリング、TTL設定 |
+| **AWS Lambda** | APIロジック処理 | サーバーレス関数、Python実装 |
+| **Amazon API Gateway** | REST API提供 | REST API設計、Lambda統合 |
+
+### 補助サービス
+
+| サービス | 役割 |
+|----------|------|
+| **Amazon CloudWatch** | ログ・メトリクス・アラート監視 |
+| **AWS IAM** | サービス間の権限管理 |
+| **Amazon SNS** | エスカレーション通知 |
+
+---
+
+## 3. 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group api_layer(server)[API Layer] in aws
+    group bedrock_layer(server)[Amazon Bedrock] in aws
+    group data_layer(database)[Data Layer] in aws
+
+    service user(internet)[User]
+
+    service apigw(server)[API Gateway] in api_layer
+    service lambda(server)[Lambda] in api_layer
+
+    service kb(disk)[Knowledge Base] in bedrock_layer
+    service opensearch(database)[OpenSearch Serverless] in bedrock_layer
+    service claude(server)[Claude 3 Sonnet] in bedrock_layer
+
+    service dynamodb(database)[DynamoDB] in data_layer
+    service s3(disk)[S3] in data_layer
+    service sns(server)[SNS] in data_layer
+    service cloudwatch(server)[CloudWatch] in data_layer
+
+    service staff(internet)[Support Staff]
+
+    user:R --> L:apigw
+    apigw:B --> T:lambda
+    lambda:R --> L:kb
+    lambda:R --> L:dynamodb
+    kb:B --> T:opensearch
+    kb:B --> T:claude
+    s3:L --> R:kb
+    lambda:R --> L:sns
+    sns:B --> T:staff
+    lambda:R --> L:cloudwatch
+```
+
+### システム構成の説明
+
+| レイヤー | コンポーネント | 説明 |
+|----------|----------------|------|
+| **API Layer** | API Gateway → Lambda | ユーザーからのリクエストを受け付け、処理を行う |
+| **Amazon Bedrock** | Knowledge Base, OpenSearch Serverless, Titan Embeddings, Claude 3 | RAGによるFAQ検索と回答生成 |
+| **Data Layer** | DynamoDB, S3, SNS | 会話履歴の保存、FAQデータ管理、エスカレーション通知 |
+| **Monitoring** | CloudWatch | ログ収集、メトリクス監視、アラート |
+
+---
+
+## 4. シナリオ
 
 ### 企業プロフィール
 
-**株式会社QuickEats**は、都市部を中心に急成長中のフードデリバリースタートアップです。
+**〇〇株式会社**は、都市部を中心に急成長中のフードデリバリースタートアップです。
 
 | 項目 | 内容 |
 |------|------|
 | 業種 | フードデリバリー |
-| 設立 | 2021年 |
 | 従業員数 | 50名（うちサポートスタッフ5名） |
 | 月間アクティブユーザー | 10万人 |
-| 月商 | 5,000万円 |
-| 提携レストラン | 800店舗 |
-| 対応エリア | 東京23区、横浜、大阪、名古屋 |
+| インフラ予算 | 月10万円以内 |
 
 ### 現状の課題
 
@@ -68,17 +144,17 @@
 
 ### 成功指標（KPI）
 
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| AI自動応答率 | 0% | 80%以上 | 3ヶ月後 |
-| 平均初回応答時間 | 2時間 | 15分以内 | 1ヶ月後 |
-| 顧客満足度 | 3.2 | 4.0以上 | 6ヶ月後 |
-| サポートコスト | 150万円/月 | 105万円/月（30%削減） | 3ヶ月後 |
-| スタッフ残業時間 | 50時間/月 | 20時間/月以下 | 3ヶ月後 |
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| AI自動応答率 | 0% | 80%以上 |
+| 平均初回応答時間 | 2時間 | 15分以内 |
+| 顧客満足度 | 3.2 | 4.0以上 |
+| サポートコスト | 150万円/月 | 105万円/月（30%削減） |
+| スタッフ残業時間 | 50時間/月 | 20時間/月以下 |
 
 ---
 
-## 達成目標
+## 5. 達成目標
 
 この演習で習得できるスキル：
 
@@ -118,7 +194,7 @@
 
 ---
 
-## 使用するAWSサービス
+## 6. 使用するAWSサービス
 
 ### メインサービス
 
@@ -143,7 +219,7 @@
 
 ---
 
-## 前提条件
+## 7. 前提条件
 
 ### 必要な事前知識
 
@@ -181,641 +257,14 @@
 
 ---
 
-## アーキテクチャ概要
-
-### システム全体構成
-
-```
-[ユーザー]
-    ↓ HTTPS
-[API Gateway (REST API)]
-    ↓
-[Lambda: chat-handler]
-    ├── [DynamoDB: 会話履歴取得・保存]
-    ├── [Bedrock Knowledge Base: FAQ検索]
-    └── [Bedrock Claude 3: 回答生成]
-          ↓
-    [回答をユーザーに返却]
-
-※複雑な問い合わせの場合
-    └── [SNS → サポートスタッフにエスカレーション通知]
-```
-
-### データフロー
-
-1. ユーザーがチャットUIから質問を送信
-2. API Gateway経由でLambdaが受信
-3. DynamoDBから過去の会話履歴を取得
-4. Knowledge BaseでFAQから関連情報を検索（RAG）
-5. Bedrock Claude 3に会話履歴+検索結果+質問を送信
-6. 生成された回答をユーザーに返却
-7. 会話履歴をDynamoDBに保存
-8. 必要に応じてエスカレーション
-
----
-
-## ハンズオン手順
-
-### フェーズ1: 基盤構築（1.5時間）
-
-#### Step 1-1: S3バケット作成とFAQデータ準備
-
-```bash
-# S3バケット作成
-aws s3 mb s3://quickeats-support-kb-${AWS_ACCOUNT_ID} --region ap-northeast-1
-```
-
-FAQドキュメント（`faq-data.json`）を作成：
-
-```json
-{
-  "faqs": [
-    {
-      "category": "注文状況",
-      "question": "注文の状況を確認したい",
-      "answer": "アプリの「注文履歴」から現在の配達状況をリアルタイムで確認できます。ステータスは「調理中」「配達員割当中」「配達中」「配達完了」の4段階で表示されます。"
-    },
-    {
-      "category": "配達時間",
-      "question": "配達時間はどのくらいかかりますか",
-      "answer": "平均配達時間は30-45分です。注文確定時に表示される「お届け予定時間」が目安となります。交通状況や天候により前後する場合があります。"
-    },
-    {
-      "category": "キャンセル",
-      "question": "注文をキャンセルしたい",
-      "answer": "注文から5分以内であれば、アプリの注文詳細画面から「キャンセル」ボタンでキャンセル可能です。調理開始後のキャンセルはサポートまでお問い合わせください。"
-    },
-    {
-      "category": "クーポン",
-      "question": "クーポンの使い方を教えてください",
-      "answer": "注文画面の「クーポンを使う」をタップし、クーポンコードを入力してください。有効なクーポンは自動的に割引が適用されます。クーポンには最低注文金額や有効期限がある場合があります。"
-    },
-    {
-      "category": "ポイント",
-      "question": "ポイントの確認・使用方法",
-      "answer": "マイページの「ポイント」から現在の保有ポイントを確認できます。100ポイント=100円として、注文時に1ポイント単位で使用できます。ポイントの有効期限は最終利用日から1年間です。"
-    },
-    {
-      "category": "アプリ",
-      "question": "アプリにログインできない",
-      "answer": "「パスワードを忘れた場合」からパスワードリセットをお試しください。メールアドレスに再設定用リンクが送信されます。それでも解決しない場合は、アプリを再インストールしてください。"
-    },
-    {
-      "category": "支払い",
-      "question": "支払い方法を変更したい",
-      "answer": "マイページの「お支払い方法」から、クレジットカード、デビットカード、PayPay、Apple Pay、Google Payの登録・変更ができます。注文確定後の支払い方法変更はできません。"
-    },
-    {
-      "category": "配達",
-      "question": "配達員が見つからない場合",
-      "answer": "配達員のマッチングには通常5-10分かかります。15分以上経過しても割り当てられない場合は、自動的にキャンセルとなり全額返金されます。"
-    }
-  ]
-}
-```
-
-```bash
-# FAQをS3にアップロード
-aws s3 cp faq-data.json s3://quickeats-support-kb-${AWS_ACCOUNT_ID}/faq/
-```
-
-#### Step 1-2: DynamoDBテーブル作成
-
-```bash
-# 会話履歴テーブル
-aws dynamodb create-table \
-  --table-name quickeats-chat-history \
-  --attribute-definitions \
-    AttributeName=session_id,AttributeType=S \
-    AttributeName=timestamp,AttributeType=N \
-  --key-schema \
-    AttributeName=session_id,KeyType=HASH \
-    AttributeName=timestamp,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST \
-  --region ap-northeast-1
-
-# TTL設定（30日で自動削除）
-aws dynamodb update-time-to-live \
-  --table-name quickeats-chat-history \
-  --time-to-live-specification "Enabled=true,AttributeName=ttl" \
-  --region ap-northeast-1
-```
-
-### フェーズ2: Knowledge Base構築（2時間）
-
-#### Step 2-1: OpenSearch Serverlessコレクション作成
-
-```bash
-# コレクション作成（コンソールから実施推奨）
-# Bedrock → Knowledge bases → Create knowledge base
-# 1. Name: quickeats-support-kb
-# 2. IAM role: Create and use a new service role
-# 3. Data source: S3
-# 4. S3 URI: s3://quickeats-support-kb-${AWS_ACCOUNT_ID}/faq/
-# 5. Vector database: Quick create a new vector store (OpenSearch Serverless)
-# 6. Embeddings model: Titan Embeddings G1 - Text
-```
-
-#### Step 2-2: Knowledge Base同期
-
-```bash
-# データソースの同期（Knowledge Base作成後）
-aws bedrock-agent start-ingestion-job \
-  --knowledge-base-id <YOUR_KB_ID> \
-  --data-source-id <YOUR_DS_ID> \
-  --region ap-northeast-1
-```
-
-### フェーズ3: Lambda関数実装（2時間）
-
-#### Step 3-1: Lambda用IAMロール作成
-
-```yaml
-# iam-role.yaml (CloudFormation)
-AWSTemplateFormatVersion: '2010-09-09'
-Description: IAM Role for QuickEats Support Bot Lambda
-
-Resources:
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: quickeats-support-lambda-role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: BedrockAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - bedrock:InvokeModel
-                  - bedrock:Retrieve
-                Resource: '*'
-        - PolicyName: DynamoDBAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:GetItem
-                  - dynamodb:Query
-                Resource: !Sub 'arn:aws:dynamodb:ap-northeast-1:${AWS::AccountId}:table/quickeats-chat-history'
-        - PolicyName: SNSAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sns:Publish
-                Resource: !Sub 'arn:aws:sns:ap-northeast-1:${AWS::AccountId}:quickeats-escalation'
-
-Outputs:
-  LambdaRoleArn:
-    Value: !GetAtt LambdaExecutionRole.Arn
-    Export:
-      Name: QuickEatsLambdaRoleArn
-```
-
-#### Step 3-2: Lambda関数コード
-
-```python
-# lambda_function.py
-import json
-import boto3
-import time
-import os
-from decimal import Decimal
-from datetime import datetime, timedelta
-
-# クライアント初期化
-bedrock_runtime = boto3.client('bedrock-runtime', region_name='ap-northeast-1')
-bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name='ap-northeast-1')
-dynamodb = boto3.resource('dynamodb', region_name='ap-northeast-1')
-sns = boto3.client('sns', region_name='ap-northeast-1')
-
-# 環境変数
-KNOWLEDGE_BASE_ID = os.environ['KNOWLEDGE_BASE_ID']
-TABLE_NAME = os.environ['DYNAMODB_TABLE']
-ESCALATION_TOPIC_ARN = os.environ.get('ESCALATION_TOPIC_ARN', '')
-
-# DynamoDBテーブル
-table = dynamodb.Table(TABLE_NAME)
-
-def get_chat_history(session_id: str, limit: int = 5) -> list:
-    """過去の会話履歴を取得"""
-    try:
-        response = table.query(
-            KeyConditionExpression='session_id = :sid',
-            ExpressionAttributeValues={':sid': session_id},
-            ScanIndexForward=False,  # 新しい順
-            Limit=limit
-        )
-        history = response.get('Items', [])
-        history.reverse()  # 古い順に戻す
-        return history
-    except Exception as e:
-        print(f"Error getting chat history: {e}")
-        return []
-
-def save_chat_message(session_id: str, role: str, content: str):
-    """会話履歴を保存"""
-    try:
-        ttl = int((datetime.now() + timedelta(days=30)).timestamp())
-        table.put_item(Item={
-            'session_id': session_id,
-            'timestamp': Decimal(str(time.time())),
-            'role': role,
-            'content': content,
-            'ttl': ttl
-        })
-    except Exception as e:
-        print(f"Error saving chat message: {e}")
-
-def retrieve_from_knowledge_base(query: str) -> str:
-    """Knowledge Baseから関連情報を検索"""
-    try:
-        response = bedrock_agent_runtime.retrieve(
-            knowledgeBaseId=KNOWLEDGE_BASE_ID,
-            retrievalQuery={'text': query},
-            retrievalConfiguration={
-                'vectorSearchConfiguration': {
-                    'numberOfResults': 3
-                }
-            }
-        )
-
-        contexts = []
-        for result in response.get('retrievalResults', []):
-            content = result.get('content', {}).get('text', '')
-            if content:
-                contexts.append(content)
-
-        return '\n\n'.join(contexts)
-    except Exception as e:
-        print(f"Error retrieving from KB: {e}")
-        return ""
-
-def should_escalate(query: str, response_text: str) -> bool:
-    """エスカレーションが必要か判定"""
-    escalation_keywords = ['クレーム', '返金', '苦情', '怒り', 'ひどい', '最悪', '訴える']
-
-    for keyword in escalation_keywords:
-        if keyword in query.lower():
-            return True
-
-    if '申し訳ございません' in response_text and 'お問い合わせ' in response_text:
-        return True
-
-    return False
-
-def send_escalation(session_id: str, query: str):
-    """サポートスタッフにエスカレーション通知"""
-    if ESCALATION_TOPIC_ARN:
-        try:
-            sns.publish(
-                TopicArn=ESCALATION_TOPIC_ARN,
-                Subject='【要対応】カスタマーサポートエスカレーション',
-                Message=f"""
-エスカレーション通知
-
-セッションID: {session_id}
-お客様の問い合わせ内容:
-{query}
-
-対応をお願いします。
-                """
-            )
-        except Exception as e:
-            print(f"Error sending escalation: {e}")
-
-def invoke_bedrock(messages: list, system_prompt: str) -> str:
-    """Bedrock Claude 3を呼び出し"""
-    try:
-        body = json.dumps({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1024,
-            "system": system_prompt,
-            "messages": messages
-        })
-
-        response = bedrock_runtime.invoke_model(
-            modelId='anthropic.claude-3-sonnet-20240229-v1:0',
-            body=body
-        )
-
-        response_body = json.loads(response['body'].read())
-        return response_body['content'][0]['text']
-    except Exception as e:
-        print(f"Error invoking Bedrock: {e}")
-        raise
-
-def lambda_handler(event, context):
-    """メインハンドラー"""
-    try:
-        # リクエストパース
-        body = json.loads(event.get('body', '{}'))
-        session_id = body.get('session_id', 'default')
-        user_message = body.get('message', '')
-
-        if not user_message:
-            return {
-                'statusCode': 400,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({'error': 'Message is required'})
-            }
-
-        # 会話履歴取得
-        history = get_chat_history(session_id)
-
-        # Knowledge Baseから関連情報検索
-        kb_context = retrieve_from_knowledge_base(user_message)
-
-        # システムプロンプト構築
-        system_prompt = f"""あなたはQuickEatsのカスタマーサポートAIアシスタントです。
-以下のルールに従って、お客様の問い合わせに丁寧に回答してください。
-
-## ルール
-1. 常に丁寧で親切な対応を心がけてください
-2. 以下の参考情報を活用して、正確な回答を提供してください
-3. 分からないことは「確認いたします」と伝え、サポートスタッフへの引き継ぎを案内してください
-4. クレームや複雑な問題は、人間のサポートスタッフへの引き継ぎを提案してください
-5. 回答は簡潔に、3-4文程度でまとめてください
-
-## 参考情報（FAQ）
-{kb_context}
-
-## 会社情報
-- サービス名: QuickEats
-- サポート営業時間: 24時間対応（AIチャット）
-- 有人対応: 9:00-21:00
-"""
-
-        # 会話履歴をメッセージ形式に変換
-        messages = []
-        for item in history:
-            messages.append({
-                "role": item['role'],
-                "content": item['content']
-            })
-        messages.append({"role": "user", "content": user_message})
-
-        # Bedrock呼び出し
-        assistant_response = invoke_bedrock(messages, system_prompt)
-
-        # 会話履歴保存
-        save_chat_message(session_id, 'user', user_message)
-        save_chat_message(session_id, 'assistant', assistant_response)
-
-        # エスカレーション判定
-        escalated = False
-        if should_escalate(user_message, assistant_response):
-            send_escalation(session_id, user_message)
-            escalated = True
-            assistant_response += "\n\n※この問い合わせは担当スタッフに引き継ぎました。追ってご連絡いたします。"
-
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'response': assistant_response,
-                'session_id': session_id,
-                'escalated': escalated
-            }, ensure_ascii=False)
-        }
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'error': 'Internal server error'})
-        }
-```
-
-#### Step 3-3: Lambda関数デプロイ
-
-```bash
-# パッケージ作成
-zip lambda_function.zip lambda_function.py
-
-# Lambda関数作成
-aws lambda create-function \
-  --function-name quickeats-chat-handler \
-  --runtime python3.11 \
-  --role arn:aws:iam::${AWS_ACCOUNT_ID}:role/quickeats-support-lambda-role \
-  --handler lambda_function.lambda_handler \
-  --zip-file fileb://lambda_function.zip \
-  --timeout 30 \
-  --memory-size 256 \
-  --environment Variables="{KNOWLEDGE_BASE_ID=<YOUR_KB_ID>,DYNAMODB_TABLE=quickeats-chat-history}" \
-  --region ap-northeast-1
-```
-
-### フェーズ4: API Gateway設定（1時間）
-
-#### Step 4-1: REST API作成
-
-```bash
-# API作成
-aws apigateway create-rest-api \
-  --name quickeats-support-api \
-  --description "QuickEats Customer Support API" \
-  --region ap-northeast-1
-
-# リソース作成 (/chat)
-aws apigateway create-resource \
-  --rest-api-id <API_ID> \
-  --parent-id <ROOT_RESOURCE_ID> \
-  --path-part chat \
-  --region ap-northeast-1
-
-# POSTメソッド作成
-aws apigateway put-method \
-  --rest-api-id <API_ID> \
-  --resource-id <CHAT_RESOURCE_ID> \
-  --http-method POST \
-  --authorization-type NONE \
-  --region ap-northeast-1
-
-# Lambda統合設定
-aws apigateway put-integration \
-  --rest-api-id <API_ID> \
-  --resource-id <CHAT_RESOURCE_ID> \
-  --http-method POST \
-  --type AWS_PROXY \
-  --integration-http-method POST \
-  --uri arn:aws:apigateway:ap-northeast-1:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-northeast-1:${AWS_ACCOUNT_ID}:function:quickeats-chat-handler/invocations \
-  --region ap-northeast-1
-
-# Lambda実行権限追加
-aws lambda add-permission \
-  --function-name quickeats-chat-handler \
-  --statement-id apigateway-invoke \
-  --action lambda:InvokeFunction \
-  --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:ap-northeast-1:${AWS_ACCOUNT_ID}:<API_ID>/*/POST/chat" \
-  --region ap-northeast-1
-
-# デプロイ
-aws apigateway create-deployment \
-  --rest-api-id <API_ID> \
-  --stage-name prod \
-  --region ap-northeast-1
-```
-
-### フェーズ5: 監視設定（30分）
-
-#### Step 5-1: CloudWatchアラーム設定
-
-```yaml
-# monitoring.yaml
-AWSTemplateFormatVersion: '2010-09-09'
-Description: Monitoring for QuickEats Support Bot
-
-Resources:
-  # Lambda エラーアラーム
-  LambdaErrorAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: quickeats-chat-lambda-errors
-      AlarmDescription: Lambda function error rate exceeded
-      MetricName: Errors
-      Namespace: AWS/Lambda
-      Dimensions:
-        - Name: FunctionName
-          Value: quickeats-chat-handler
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 5
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
-
-  # Lambda レイテンシーアラーム
-  LambdaLatencyAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: quickeats-chat-lambda-latency
-      AlarmDescription: Lambda function latency exceeded
-      MetricName: Duration
-      Namespace: AWS/Lambda
-      Dimensions:
-        - Name: FunctionName
-          Value: quickeats-chat-handler
-      Statistic: Average
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 10000  # 10秒
-      ComparisonOperator: GreaterThanThreshold
-
-  # カスタムメトリクス用ダッシュボード
-  SupportDashboard:
-    Type: AWS::CloudWatch::Dashboard
-    Properties:
-      DashboardName: QuickEats-Support-Dashboard
-      DashboardBody: !Sub |
-        {
-          "widgets": [
-            {
-              "type": "metric",
-              "properties": {
-                "title": "Lambda Invocations",
-                "metrics": [
-                  ["AWS/Lambda", "Invocations", "FunctionName", "quickeats-chat-handler"]
-                ],
-                "period": 300,
-                "region": "ap-northeast-1"
-              }
-            },
-            {
-              "type": "metric",
-              "properties": {
-                "title": "Lambda Duration",
-                "metrics": [
-                  ["AWS/Lambda", "Duration", "FunctionName", "quickeats-chat-handler"]
-                ],
-                "period": 300,
-                "region": "ap-northeast-1"
-              }
-            },
-            {
-              "type": "metric",
-              "properties": {
-                "title": "Lambda Errors",
-                "metrics": [
-                  ["AWS/Lambda", "Errors", "FunctionName", "quickeats-chat-handler"]
-                ],
-                "period": 300,
-                "region": "ap-northeast-1"
-              }
-            },
-            {
-              "type": "metric",
-              "properties": {
-                "title": "API Gateway Requests",
-                "metrics": [
-                  ["AWS/ApiGateway", "Count", "ApiName", "quickeats-support-api"]
-                ],
-                "period": 300,
-                "region": "ap-northeast-1"
-              }
-            }
-          ]
-        }
-```
-
-### フェーズ6: テスト（30分）
-
-#### Step 6-1: API動作確認
-
-```bash
-# テストリクエスト送信
-curl -X POST https://<API_ID>.execute-api.ap-northeast-1.amazonaws.com/prod/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "test-001",
-    "message": "注文の状況を確認したいのですが"
-  }'
-
-# 会話継続テスト
-curl -X POST https://<API_ID>.execute-api.ap-northeast-1.amazonaws.com/prod/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "test-001",
-    "message": "キャンセルはできますか？"
-  }'
-
-# エスカレーションテスト
-curl -X POST https://<API_ID>.execute-api.ap-northeast-1.amazonaws.com/prod/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "test-002",
-    "message": "商品が届かなくて非常に困っています。返金してほしいです。"
-  }'
-```
-
----
-
-## トラブルシューティング課題
+## 8. トラブルシューティング課題
 
 ### 問題1: Knowledge Baseからの検索結果が空
 
 **症状:**
 ```
 Knowledge Baseに問い合わせても、関連するFAQが返ってこない。
-回答が一般的すぎて、QuickEats固有の情報が含まれない。
+回答が一般的すぎて、〇〇固有の情報が含まれない。
 ```
 
 **ヒント:**
@@ -887,7 +336,7 @@ aws lambda update-function-configuration \
 
 ---
 
-## 設計の考察ポイント
+## 9. 設計の考察ポイント
 
 ### 1. なぜAPI Gateway + Lambdaのサーバーレス構成を選択したのか？
 
@@ -944,7 +393,7 @@ aws lambda update-function-configuration \
 
 ---
 
-## 発展課題（オプション）
+## 10. 発展課題（オプション）
 
 ### 1. WebSocket APIへの移行
 - リアルタイム双方向通信の実現
@@ -973,7 +422,7 @@ aws lambda update-function-configuration \
 
 ---
 
-## 想定コストと削減方法
+## 11. 想定コストと削減方法
 
 ### 月額概算コスト（月間3,000リクエスト想定）
 
@@ -1035,12 +484,12 @@ aws iam delete-role --role-name quickeats-support-lambda-role
 
 # 8. CloudWatchリソース削除
 aws cloudwatch delete-alarms --alarm-names quickeats-chat-lambda-errors quickeats-chat-lambda-latency
-aws cloudwatch delete-dashboards --dashboard-names QuickEats-Support-Dashboard
+aws cloudwatch delete-dashboards --dashboard-names 〇〇-Support-Dashboard
 ```
 
 ---
 
-## 学習のポイント
+## 12. 学習のポイント
 
 ### 1. RAGパターンの理解
 生成AIを業務システムに組み込む際の最重要パターン。外部知識（FAQ）を検索して、コンテキストとしてLLMに渡すことで、ハルシネーションを防ぎつつ正確な回答を実現する。
