@@ -2171,63 +2171,40 @@ MedSecure社は事業拡大に伴い、以下の構成でAWSを運用するこ�
 ### マルチリージョン・マルチアカウント セキュリティアーキテクチャ
 
 ```mermaid
-flowchart TB
-    subgraph org[AWS Organizations]
-        subgraph secAccount[Security Account - us-east-1 Aggregation Hub]
-            subgraph services[セキュリティサービス]
-                secHub[Security Hub<br/>Aggregation Region]
-                guardDuty[GuardDuty<br/>Delegated Admin]
-                cloudTrail[CloudTrail<br/>Organization Trail]
-            end
+architecture-beta
+    group org(cloud)[AWS Organizations]
 
-            eventBridge[EventBridge<br/>Central Bus]
-            services --> eventBridge
+    group sec_account(server)[Security Account us-east-1 Aggregation Hub] in org
+    service sec_hub(server)[Security Hub Aggregation Region] in sec_account
+    service guard_duty(server)[GuardDuty Delegated Admin] in sec_account
+    service cloud_trail(server)[CloudTrail Organization Trail] in sec_account
+    service event_bridge(server)[EventBridge Central Bus] in sec_account
+    service lambda(server)[Lambda Process] in sec_account
+    service step_fn(server)[Step Functions] in sec_account
+    service sns(internet)[SNS Topics] in sec_account
+    service s3_logs(disk)[S3 Central Security Logs CloudTrail GuardDuty Config VPC Flow] in sec_account
 
-            eventBridge --> lambda[Lambda<br/>Process]
-            eventBridge --> stepFn[Step Functions]
-            eventBridge --> sns[SNS Topics]
+    group tokyo(server)[ap-northeast-1 Tokyo] in org
+    service prod_tokyo(server)[Production Account GuardDuty Security Hub Config CloudTrail] in tokyo
+    service dev_tokyo(server)[Development Account GuardDuty Security Hub] in tokyo
+    service stag_tokyo(server)[Staging Account GuardDuty Security Hub] in tokyo
 
-            subgraph s3Logs[S3 - Central Security Logs]
-                ctLogs[CloudTrail Logs]
-                gdFindings[GuardDuty Findings]
-                configSnap[Config Snapshots]
-                vpcFlow[VPC Flow Logs]
-            end
-        end
+    group virginia(server)[us-east-1 Virginia] in org
+    service prod_dr(server)[Production DR Account GuardDuty Security Hub Config CloudTrail] in virginia
 
-        subgraph tokyo[ap-northeast-1 - Tokyo]
-            subgraph prodTokyo[Production Account]
-                gdProdTokyo[GuardDuty - Member]
-                shProdTokyo[Security Hub]
-                configProdTokyo[Config]
-                ctProdTokyo[CloudTrail]
-            end
-            subgraph devTokyo[Development Account]
-                gdDevTokyo[GuardDuty - Member]
-                shDevTokyo[Security Hub]
-            end
-            subgraph stagTokyo[Staging Account]
-                gdStagTokyo[GuardDuty - Member]
-                shStagTokyo[Security Hub]
-            end
-        end
+    service aggregation(server)[Security Hub Aggregation Region us-east-1] in org
 
-        subgraph virginia[us-east-1 - Virginia]
-            subgraph prodDR[Production DR Account]
-                gdProdDR[GuardDuty - Member]
-                shProdDR[Security Hub]
-                configProdDR[Config]
-                ctProdDR[CloudTrail]
-            end
-        end
-
-        aggregation[Security Hub<br/>Aggregation Region<br/>us-east-1]
-    end
-
-    shProdTokyo --> aggregation
-    shDevTokyo --> aggregation
-    shStagTokyo --> aggregation
-    shProdDR --> aggregation
+    sec_hub:B --> T:event_bridge
+    guard_duty:B --> T:event_bridge
+    cloud_trail:B --> T:event_bridge
+    event_bridge:B --> T:lambda
+    event_bridge:B --> T:step_fn
+    event_bridge:B --> T:sns
+    cloud_trail:R --> L:s3_logs
+    prod_tokyo:B --> T:aggregation
+    dev_tokyo:B --> T:aggregation
+    stag_tokyo:B --> T:aggregation
+    prod_dr:B --> T:aggregation
 ```
 
 ### サービス設定のベストプラクティス

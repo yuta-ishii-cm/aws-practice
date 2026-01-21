@@ -1693,50 +1693,43 @@ RideShare社は事業拡大に伴い、マイクロサービスが15個から50�
 ### 大規模オブザーバビリティアーキテクチャ
 
 ```mermaid
-flowchart TB
-    subgraph LargeScale["RideShare 大規模オブザーバビリティ基盤"]
-        subgraph Collection["データ収集層"]
-            subgraph Teams["チーム別サービス (50サービス)"]
-                RiderTeam["Rider Team<br/>Services<br/>(5 svcs)"]
-                DriverTeam["Driver Team<br/>Services<br/>(4 svcs)"]
-                PaymentTeam["Payment Team<br/>Services<br/>(3 svcs)"]
-                OtherTeams["...x15<br/>Teams"]
-            end
-            subgraph OTelCollector["OpenTelemetry Collector<br/>(Gateway Pattern)"]
-                SamplingProc["Sampling<br/>Processor"]
-                FilteringProc["Filtering<br/>Processor"]
-            end
-        end
+architecture-beta
+    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
 
-        subgraph DataStorage["データ保存層"]
-            subgraph XRayStorage["X-Ray Traces"]
-                XRayConfig["Sampling:<br/>- Head: 5%<br/>- Tail: 100% (errors)"]
-            end
-            subgraph AMPStorage["AMP Metrics"]
-                AMPConfig["Retention: 13 months<br/>Cardinality: <100K series"]
-            end
-            subgraph CWLogsStorage["CloudWatch Logs"]
-                CWConfig["Hot: 7d<br/>Warm: 30d<br/>Cold: 365d (S3 export)"]
-            end
-        end
+    group collection(server)[データ収集層] in aws
+    service rider_team(server)[Rider Team Services 5 svcs] in collection
+    service driver_team(server)[Driver Team Services 4 svcs] in collection
+    service payment_team(server)[Payment Team Services 3 svcs] in collection
+    service other_teams(server)[Other Teams x15] in collection
+    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
+    service sampling(server)[Sampling Processor] in collection
+    service filtering(server)[Filtering Processor] in collection
 
-        subgraph Visualization["可視化・アラート層"]
-            subgraph AMG["Amazon Managed Grafana"]
-                PlatformOverview["Platform<br/>Overview<br/>(SRE)"]
-                TeamDashboards["Team<br/>Dashboards<br/>(15 folders)"]
-                BusinessMetrics["Business<br/>Metrics<br/>(Product)"]
-                AlertRouting["Alert Routing:<br/>Critical → PagerDuty (On-call SRE)<br/>High → PagerDuty + Slack<br/>Warning → Slack (#team-alerts)<br/>Info → Slack (#observability-digest)"]
-            end
-        end
-    end
+    group storage(database)[データ保存層] in aws
+    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
+    service amp(server)[AMP Metrics Retention 13 months] in storage
+    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
 
-    Teams --> OTelCollector
-    OTelCollector --> XRayStorage
-    OTelCollector --> AMPStorage
-    OTelCollector --> CWLogsStorage
-    XRayStorage --> AMG
-    AMPStorage --> AMG
-    CWLogsStorage --> AMG
+    group visualization(server)[可視化・アラート層] in aws
+    service grafana(server)[Amazon Managed Grafana] in visualization
+    service platform_dash(server)[Platform Overview SRE] in visualization
+    service team_dash(server)[Team Dashboards 15 folders] in visualization
+    service business_dash(server)[Business Metrics Product] in visualization
+    service pagerduty(internet)[PagerDuty Critical/High] in visualization
+    service slack(internet)[Slack Alerts Warning/Info] in visualization
+
+    rider_team:B --> T:otel_collector
+    driver_team:B --> T:otel_collector
+    payment_team:B --> T:otel_collector
+    other_teams:B --> T:otel_collector
+    otel_collector:B --> T:xray
+    otel_collector:B --> T:amp
+    otel_collector:B --> T:cwlogs
+    xray:B --> T:grafana
+    amp:B --> T:grafana
+    cwlogs:B --> T:grafana
+    grafana:R --> L:pagerduty
+    grafana:R --> L:slack
 ```
 
 ### 1. メトリクス収集・保存戦略

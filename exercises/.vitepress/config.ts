@@ -5,6 +5,7 @@ export default withMermaid(defineConfig({
   title: 'AWS Practice',
   description: 'AWS学習ロードマップ - 40問の実践演習',
   lang: 'ja-JP',
+  ignoreDeadLinks: true,
 
   vite: {
     optimizeDeps: {
