@@ -280,94 +280,55 @@ cd ~/creditai-mlops
 
 ### MLOpsパイプライン全体像
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              CreditAI MLOps パイプライン                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    Source & Build                           ││
-│  │  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐   ││
-│  │  │   GitHub    │────►│ CodeBuild   │────►│  S3 Artifact│   ││
-│  │  │  (Code)     │     │ (Lint/Test) │     │  (Package)  │   ││
-│  │  └─────────────┘     └─────────────┘     └──────┬──────┘   ││
-│  └─────────────────────────────────────────────────┼───────────┘│
-│                                                    │             │
-│  ┌─────────────────────────────────────────────────┼───────────┐│
-│  │                SageMaker Pipelines              │           ││
-│  │                                                 ▼           ││
-│  │  ┌─────────────────────────────────────────────────────────┐││
-│  │  │                                                         │││
-│  │  │  ┌───────┐   ┌───────┐   ┌───────┐   ┌───────┐        │││
-│  │  │  │ Data  │──►│ Train │──►│ Eval  │──►│Clarify│        │││
-│  │  │  │ Prep  │   │       │   │       │   │(Bias) │        │││
-│  │  │  └───────┘   └───────┘   └───────┘   └───┬───┘        │││
-│  │  │                                          │             │││
-│  │  │                    ┌─────────────────────┘             │││
-│  │  │                    │                                   │││
-│  │  │                    ▼                                   │││
-│  │  │  ┌─────────────────────────────────────────────────┐   │││
-│  │  │  │  Condition: AUC > 0.85 AND Bias Check Pass     │   │││
-│  │  │  └──────────────────┬──────────────────────────────┘   │││
-│  │  │                     │                                  │││
-│  │  │          ┌──────────┴──────────┐                       │││
-│  │  │          │                     │                       │││
-│  │  │          ▼                     ▼                       │││
-│  │  │  ┌─────────────┐       ┌─────────────┐                │││
-│  │  │  │  Register   │       │   Fail      │                │││
-│  │  │  │  Model      │       │   Pipeline  │                │││
-│  │  │  └──────┬──────┘       └─────────────┘                │││
-│  │  │         │                                              │││
-│  │  └─────────┼──────────────────────────────────────────────┘││
-│  └────────────┼────────────────────────────────────────────────┘│
-│               │                                                  │
-│  ┌────────────┼────────────────────────────────────────────────┐│
-│  │            ▼              Deployment                        ││
-│  │  ┌─────────────────┐                                        ││
-│  │  │  Model Registry │                                        ││
-│  │  │  (Pending       │                                        ││
-│  │  │   Approval)     │                                        ││
-│  │  └────────┬────────┘                                        ││
-│  │           │                                                  ││
-│  │           ▼                                                  ││
-│  │  ┌─────────────────┐     ┌─────────────────┐                ││
-│  │  │  Manual/Auto    │────►│  Deploy to      │                ││
-│  │  │  Approval       │     │  Staging        │                ││
-│  │  └─────────────────┘     └────────┬────────┘                ││
-│  │                                   │                          ││
-│  │                                   ▼                          ││
-│  │                          ┌─────────────────┐                ││
-│  │                          │  Integration    │                ││
-│  │                          │  Test           │                ││
-│  │                          └────────┬────────┘                ││
-│  │                                   │                          ││
-│  │                                   ▼                          ││
-│  │                          ┌─────────────────┐                ││
-│  │                          │  Deploy to      │                ││
-│  │                          │  Production     │                ││
-│  │                          │  (Blue/Green)   │                ││
-│  │                          └────────┬────────┘                ││
-│  └───────────────────────────────────┼──────────────────────────┘│
-│                                      │                           │
-│  ┌───────────────────────────────────┼──────────────────────────┐│
-│  │                      Monitoring   │                          ││
-│  │                                   ▼                          ││
-│  │  ┌─────────────────────────────────────────────────────────┐││
-│  │  │              SageMaker Model Monitor                    │││
-│  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐              │││
-│  │  │  │ Data     │  │ Model    │  │  Bias    │              │││
-│  │  │  │ Quality  │  │ Quality  │  │  Drift   │              │││
-│  │  │  └────┬─────┘  └────┬─────┘  └────┬─────┘              │││
-│  │  │       └──────────────┼──────────────┘                   │││
-│  │  │                      ▼                                  │││
-│  │  │              ┌─────────────┐                            │││
-│  │  │              │  CloudWatch │                            │││
-│  │  │              │  Alarm      │──►  SNS/PagerDuty         │││
-│  │  │              └─────────────┘                            │││
-│  │  └─────────────────────────────────────────────────────────┘││
-│  └──────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group source_build(server)[Source and Build] in aws
+    service github(internet)[GitHub Code] in source_build
+    service codebuild(server)[CodeBuild Lint/Test] in source_build
+    service s3artifact(disk)[S3 Artifact Package] in source_build
+
+    group sagemaker_pipelines(server)[SageMaker Pipelines] in aws
+    service dataprep(server)[Data Prep] in sagemaker_pipelines
+    service train(server)[Train] in sagemaker_pipelines
+    service eval(server)[Eval] in sagemaker_pipelines
+    service clarify(server)[Clarify Bias] in sagemaker_pipelines
+    service condition(server)[Condition AUC and Bias Check] in sagemaker_pipelines
+    service register(database)[Register Model] in sagemaker_pipelines
+
+    group deployment(server)[Deployment] in aws
+    service registry(database)[Model Registry Pending Approval] in deployment
+    service approval(server)[Manual/Auto Approval] in deployment
+    service staging(server)[Deploy to Staging] in deployment
+    service integration_test(server)[Integration Test] in deployment
+    service production(server)[Deploy to Production Blue/Green] in deployment
+
+    group monitoring(server)[Monitoring] in aws
+    service data_quality(server)[Data Quality] in monitoring
+    service model_quality(server)[Model Quality] in monitoring
+    service bias_drift(server)[Bias Drift] in monitoring
+    service cloudwatch(server)[CloudWatch Alarm] in monitoring
+    service sns(internet)[SNS/PagerDuty] in monitoring
+
+    github:R --> L:codebuild
+    codebuild:R --> L:s3artifact
+    s3artifact:B --> T:dataprep
+    dataprep:R --> L:train
+    train:R --> L:eval
+    eval:R --> L:clarify
+    clarify:B --> T:condition
+    condition:B --> T:register
+    register:B --> T:registry
+    registry:B --> T:approval
+    approval:R --> L:staging
+    staging:B --> T:integration_test
+    integration_test:B --> T:production
+    production:B --> T:data_quality
+    data_quality:R --> L:model_quality
+    model_quality:R --> L:bias_drift
+    bias_drift:B --> T:cloudwatch
+    cloudwatch:R --> L:sns
 ```
 
 ---

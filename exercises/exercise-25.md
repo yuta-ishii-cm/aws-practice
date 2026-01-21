@@ -44,131 +44,62 @@ ITコンサルティング会社「TechCorp株式会社」の従業員向けシ�
 
 ## 2. アーキテクチャ図
 
+```mermaid
+architecture-beta
+    group techcorp(cloud)[TechCorp IAM Identity Center]
+
+    group idp(server)[External Identity Provider] in techcorp
+    group idc(server)[AWS IAM Identity Center] in techcorp
+    group org(cloud)[AWS Organizations] in techcorp
+
+    service external_idp(server)[Azure AD / Okta / Google SAML 2.0 / SCIM] in idp
+
+    service identity_store(database)[Identity Store Users & Groups] in idc
+    service permission_sets(server)[Permission Sets] in idc
+
+    service mgmt_acct(server)[Management Account] in org
+    service security_ou(server)[Security OU] in org
+    service workloads_ou(server)[Workloads OU] in org
+    service sandbox_ou(server)[Sandbox OU] in org
+
+    service security_acct(server)[Security Account] in org
+    service log_archive(server)[Log Archive Account] in org
+    service prod_acct(server)[Production Account] in org
+    service stg_acct(server)[Staging Account] in org
+    service dev_acct(server)[Development Account] in org
+    service sandbox_dev(server)[Sandbox-Dev Account] in org
+
+    service access_portal(internet)[Access Portal] in techcorp
+
+    external_idp:B --> T:identity_store
+    identity_store:B --> T:permission_sets
+    permission_sets:B --> T:mgmt_acct
+    mgmt_acct:B --> T:security_ou
+    mgmt_acct:B --> T:workloads_ou
+    mgmt_acct:B --> T:sandbox_ou
+    permission_sets:R --> L:access_portal
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                    TechCorp IAM Identity Center アーキテクチャ                       │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  External Identity Provider (Optional)                                              │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
-│  │  Azure AD / Okta / Google Workspace                                          │  │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │  SAML 2.0 / SCIM                                                        │ │  │
-│  │  │  - ユーザー同期                                                          │ │  │
-│  │  │  - グループ同期                                                          │ │  │
-│  │  │  - 属性マッピング                                                        │ │  │
-│  │  └─────────────────────────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────────────────┘  │
-│                                    │                                               │
-│                                    ▼                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        AWS IAM Identity Center                               │  │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │  Identity Store (Users & Groups)                                        │ │  │
-│  │  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐               │ │  │
-│  │  │  │ 開発部門       │  │ インフラ部門  │  │ セキュリティ部門│               │ │  │
-│  │  │  │ (80 users)    │  │ (40 users)    │  │ (20 users)    │               │ │  │
-│  │  │  └───────────────┘  └───────────────┘  └───────────────┘               │ │  │
-│  │  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐               │ │  │
-│  │  │  │ 営業部門       │  │ 管理部門      │  │ 経営層        │               │ │  │
-│  │  │  │ (200 users)   │  │ (100 users)   │  │ (60 users)    │               │ │  │
-│  │  │  └───────────────┘  └───────────────┘  └───────────────┘               │ │  │
-│  │  └─────────────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                              │  │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │  Permission Sets                                                        │ │  │
-│  │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │ │  │
-│  │  │  │ AdministratorPS │  │ DeveloperPS     │  │ ReadOnlyPS              │ │ │  │
-│  │  │  │ (Full Admin)    │  │ (Dev Resources) │  │ (View Only)             │ │ │  │
-│  │  │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘ │ │  │
-│  │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │ │  │
-│  │  │  │ SecurityAuditPS │  │ NetworkAdminPS  │  │ BillingViewerPS         │ │ │  │
-│  │  │  │ (Security Audit)│  │ (VPC/Network)   │  │ (Cost Explorer)         │ │ │  │
-│  │  │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘ │ │  │
-│  │  └─────────────────────────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────────────────┘  │
-│                                    │                                               │
-│                                    ▼                                               │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        AWS Organizations                                     │  │
-│  │                                                                              │  │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                         Management Account                              │ │  │
-│  │  │                    (techcorp-management)                                │ │  │
-│  │  └─────────────────────────────────────────────────────────────────────────┘ │  │
-│  │                                    │                                         │  │
-│  │           ┌────────────────────────┼────────────────────────┐               │  │
-│  │           │                        │                        │               │  │
-│  │           ▼                        ▼                        ▼               │  │
-│  │  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐       │  │
-│  │  │   Security OU   │     │  Workloads OU   │     │  Sandbox OU     │       │  │
-│  │  │                 │     │                 │     │                 │       │  │
-│  │  │ ┌─────────────┐ │     │ ┌─────────────┐ │     │ ┌─────────────┐ │       │  │
-│  │  │ │ Security    │ │     │ │ Production  │ │     │ │ Sandbox-Dev │ │       │  │
-│  │  │ │ Account     │ │     │ │ Account     │ │     │ │ Account     │ │       │  │
-│  │  │ └─────────────┘ │     │ └─────────────┘ │     │ └─────────────┘ │       │  │
-│  │  │ ┌─────────────┐ │     │ ┌─────────────┐ │     │ ┌─────────────┐ │       │  │
-│  │  │ │ Log Archive │ │     │ │ Staging     │ │     │ │ Sandbox-QA  │ │       │  │
-│  │  │ │ Account     │ │     │ │ Account     │ │     │ │ Account     │ │       │  │
-│  │  │ └─────────────┘ │     │ └─────────────┘ │     │ └─────────────┘ │       │  │
-│  │  └─────────────────┘     │ ┌─────────────┐ │     └─────────────────┘       │  │
-│  │                          │ │ Development │ │                               │  │
-│  │                          │ │ Account     │ │                               │  │
-│  │                          │ └─────────────┘ │                               │  │
-│  │                          └─────────────────┘                               │  │
-│  └──────────────────────────────────────────────────────────────────────────────┘  │
-│                                                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        Access Portal                                         │  │
-│  │  https://techcorp.awsapps.com/start                                         │  │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │  Available Accounts & Roles                                             │ │  │
-│  │  │  ┌─────────────────────────────────────────────────────────────────┐   │ │  │
-│  │  │  │ Production Account                                              │   │ │  │
-│  │  │  │  - DeveloperAccess (8h session)                                │   │ │  │
-│  │  │  │  - ReadOnly (8h session)                                       │   │ │  │
-│  │  │  ├─────────────────────────────────────────────────────────────────┤   │ │  │
-│  │  │  │ Development Account                                             │   │ │  │
-│  │  │  │  - AdministratorAccess (8h session)                            │   │ │  │
-│  │  │  │  - DeveloperAccess (8h session)                                │   │ │  │
-│  │  │  ├─────────────────────────────────────────────────────────────────┤   │ │  │
-│  │  │  │ Sandbox Account                                                 │   │ │  │
-│  │  │  │  - AdministratorAccess (4h session)                            │   │ │  │
-│  │  │  └─────────────────────────────────────────────────────────────────┘   │ │  │
-│  │  └─────────────────────────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────────────────────────┘  │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
+
+**Identity Store Groups:**
+- 開発部門 (80 users) / インフラ部門 (40 users) / セキュリティ部門 (20 users)
+- 営業部門 (200 users) / 管理部門 (100 users) / 経営層 (60 users)
+
+**Permission Sets:**
+- AdministratorPS (Full Admin) / DeveloperPS (Dev Resources) / ReadOnlyPS (View Only)
+- SecurityAuditPS / NetworkAdminPS / BillingViewerPS
+
+**Access Portal:** https://techcorp.awsapps.com/start
 
 ### アクセス管理マトリクス
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                          Access Management Matrix                                   │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  部門 / アカウント      │ Production │ Staging │ Development │ Sandbox │ Security  │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  開発部門              │ Developer  │ Admin   │ Admin       │ Admin   │ -         │
-│                       │ ReadOnly   │         │             │         │           │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  インフラ部門          │ Admin      │ Admin   │ Admin       │ Admin   │ ReadOnly  │
-│                       │ Network    │ Network │ Network     │         │           │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  セキュリティ部門      │ SecAudit   │ SecAudit│ SecAudit    │ SecAudit│ Admin     │
-│                       │ ReadOnly   │ ReadOnly│ ReadOnly    │ ReadOnly│           │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  営業部門              │ -          │ -       │ -           │ -       │ -         │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  管理部門              │ Billing    │ Billing │ -           │ -       │ -         │
-│                       │ ReadOnly   │         │             │         │           │
-│  ─────────────────────┼────────────┼─────────┼─────────────┼─────────┼──────────  │
-│  経営層                │ ReadOnly   │ ReadOnly│ ReadOnly    │ -       │ ReadOnly  │
-│                       │ Billing    │         │             │         │           │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
+| 部門 | Production | Staging | Development | Sandbox | Security |
+|------|------------|---------|-------------|---------|----------|
+| 開発部門 | Developer, ReadOnly | Admin | Admin | Admin | - |
+| インフラ部門 | Admin, Network | Admin, Network | Admin, Network | Admin | ReadOnly |
+| セキュリティ部門 | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | Admin |
+| 営業部門 | - | - | - | - | - |
+| 管理部門 | Billing, ReadOnly | Billing | - | - | - |
+| 経営層 | ReadOnly, Billing | ReadOnly | ReadOnly | - | ReadOnly |
 
 ---
 
@@ -188,52 +119,40 @@ GCPでのアイデンティティ管理経験がある方向けの比較：
 
 ### 3.2 IAM Identity Center の主要概念
 
+```mermaid
+flowchart TB
+    subgraph concepts[IAM Identity Center Core Concepts]
+        subgraph identity[1. Identity Source]
+            builtin[Identity Center Directory<br/>Built-in]
+            ad[Active Directory<br/>Connector]
+            external[External IdP<br/>Okta, Azure AD]
+        end
+
+        subgraph permission[2. Permission Set]
+            ps_desc[AWSアカウントで使用する権限の集合]
+            ps_example[例: DeveloperPermissionSet]
+            ps_example --> managed[AWS管理ポリシー: PowerUserAccess]
+            ps_example --> custom[カスタムポリシー: DenyIAMChanges]
+            ps_example --> session[セッション時間: 8時間]
+        end
+
+        subgraph assignment[3. Account Assignment]
+            formula[User/Group + Permission Set + AWS Account]
+            example[例: Developers Group + DeveloperPS + Development Account<br/>→ 開発グループが開発アカウントにDeveloper権限でアクセス]
+        end
+
+        subgraph portal[4. Access Portal]
+            portal_desc[ユーザーがSSOでログインするWebポータル<br/>割り当てられたアカウント・ロールの一覧表示<br/>マネジメントコンソール or CLI認証情報の取得]
+            portal_url[URL例: https://d-1234567890.awsapps.com/start]
+        end
+    end
+
+    identity --> permission
+    permission --> assignment
+    assignment --> portal
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    IAM Identity Center Core Concepts                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. Identity Source（アイデンティティソース）                                │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐   │ │
-│  │  │ Identity Center │  │ Active Directory│  │ External IdP        │   │ │
-│  │  │ Directory       │  │ Connector       │  │ (Okta, Azure AD)    │   │ │
-│  │  │ (Built-in)      │  │                 │  │                     │   │ │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────────┘   │ │
-│  │  本課題では Built-in Directory を使用                                  │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  2. Permission Set（権限セット）                                            │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │  - AWSアカウントで使用する権限の集合                                    │ │
-│  │  - AWS管理ポリシー or カスタムポリシーを含む                            │ │
-│  │  - セッション時間を設定可能（1時間〜12時間）                            │ │
-│  │  - 割り当て時にIAMロールとして自動作成される                            │ │
-│  │                                                                        │ │
-│  │  例: DeveloperPermissionSet                                            │ │
-│  │      ├── AWS管理ポリシー: PowerUserAccess                              │ │
-│  │      ├── カスタムポリシー: DenyIAMChanges                              │ │
-│  │      └── セッション時間: 8時間                                          │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  3. Account Assignment（アカウント割り当て）                                │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │  User/Group + Permission Set + AWS Account の組み合わせ                │ │
-│  │                                                                        │ │
-│  │  例: Developers Group + DeveloperPS + Development Account             │ │
-│  │       → 開発グループのメンバーが開発アカウントにDeveloper権限でアクセス │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-│  4. Access Portal（アクセスポータル）                                       │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │  - ユーザーがSSOでログインするWebポータル                               │ │
-│  │  - 割り当てられたアカウント・ロールの一覧表示                           │ │
-│  │  - マネジメントコンソール or CLI認証情報の取得                          │ │
-│  │  - URL例: https://d-1234567890.awsapps.com/start                       │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+**📝 補足**: 本課題では Built-in Directory を使用します。
 
 ---
 

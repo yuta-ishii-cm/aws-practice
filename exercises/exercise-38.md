@@ -110,86 +110,58 @@ docker --version
 ## 6. アーキテクチャ概要
 
 ### システム構成図（ブルーグリーン構成）
-```
-                         ┌─────────────────────────────────────────┐
-                         │              CodePipeline               │
-                         │  Source → Build → Deploy (CodeDeploy)   │
-                         └────────────────────┬────────────────────┘
-                                              │
-                                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Application Load Balancer                         │
-│                                                                              │
-│   Production Listener (:443)           Test Listener (:8443)                │
-│   ┌──────────────────────────┐         ┌──────────────────────────┐        │
-│   │ Forward to Active TG     │         │ Forward to Replacement   │        │
-│   │ (Blue or Green)          │         │ TG for testing           │        │
-│   └────────────┬─────────────┘         └────────────┬─────────────┘        │
-└────────────────┼───────────────────────────────────┼────────────────────────┘
-                 │                                    │
-    ┌────────────┴────────────┐          ┌──────────┴───────────┐
-    ▼                         ▼          ▼                      ▼
-┌─────────────┐       ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│ Blue Target │       │Green Target │  │ Blue Target │  │Green Target │
-│   Group     │       │   Group     │  │   Group     │  │   Group     │
-│  (Active)   │       │ (Standby)   │  │ (Standby)   │  │  (Active)   │
-└──────┬──────┘       └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                     │                │                │
-       ▼                     ▼                ▼                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              ECS Cluster                                     │
-│                                                                              │
-│  ┌─────────────────────────────┐    ┌─────────────────────────────┐        │
-│  │      Blue Environment       │    │     Green Environment       │        │
-│  │  ┌───────┐ ┌───────┐       │    │  ┌───────┐ ┌───────┐       │        │
-│  │  │Task 1 │ │Task 2 │ ...   │    │  │Task 1 │ │Task 2 │ ...   │        │
-│  │  │ v1.0  │ │ v1.0  │       │    │  │ v1.1  │ │ v1.1  │       │        │
-│  │  └───────┘ └───────┘       │    │  └───────┘ └───────┘       │        │
-│  └─────────────────────────────┘    └─────────────────────────────┘        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                              │
-                                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Aurora PostgreSQL                                 │
-│                      (Blue/Green両環境から接続)                              │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                         Primary Instance                               │  │
-│  │                    (Read/Write - 後方互換スキーマ)                     │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group cicd(server)[CI/CD] in aws
+    service codepipeline(server)[CodePipeline Source Build Deploy] in cicd
+
+    group alb_layer(server)[Application Load Balancer] in aws
+    service prod_listener(internet)[Production Listener 443] in alb_layer
+    service test_listener(internet)[Test Listener 8443] in alb_layer
+    service blue_tg(server)[Blue Target Group Active] in alb_layer
+    service green_tg(server)[Green Target Group Standby] in alb_layer
+
+    group ecs_cluster(server)[ECS Cluster] in aws
+    service blue_env(server)[Blue Environment v1.0 Tasks] in ecs_cluster
+    service green_env(server)[Green Environment v1.1 Tasks] in ecs_cluster
+
+    group database(database)[Database Layer] in aws
+    service aurora(database)[Aurora PostgreSQL Primary Read/Write] in database
+
+    codepipeline:B --> T:prod_listener
+    prod_listener:B --> T:blue_tg
+    test_listener:B --> T:green_tg
+    blue_tg:B --> T:blue_env
+    green_tg:B --> T:green_env
+    blue_env:B --> T:aurora
+    green_env:B --> T:aurora
 ```
 
 ### デプロイフロー
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        Blue/Green Deployment Flow                             │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│  1. BeforeInstall Hook                                                       │
-│     └─ Lambda: Pre-deployment checks (DB connection, config validation)      │
-│                                                                               │
-│  2. Install                                                                   │
-│     └─ New tasks launched in replacement (Green) target group                │
-│                                                                               │
-│  3. AfterInstall Hook                                                        │
-│     └─ Lambda: Run smoke tests against test listener (:8443)                 │
-│                                                                               │
-│  4. AllowTestTraffic                                                         │
-│     └─ Test listener routes to replacement target group                      │
-│                                                                               │
-│  5. AfterAllowTestTraffic Hook                                               │
-│     └─ Lambda: Integration tests, synthetic monitoring                       │
-│                                                                               │
-│  6. BeforeAllowTraffic Hook                                                  │
-│     └─ Lambda: Final validation, DB migration verification                   │
-│                                                                               │
-│  7. AllowTraffic                                                              │
-│     └─ Production listener switches to replacement target group              │
-│                                                                               │
-│  8. AfterAllowTraffic Hook                                                   │
-│     └─ Lambda: Post-deployment validation, metric checks                     │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group deploy_flow(server)[Blue/Green Deployment Flow]
+
+    service step1(server)[1. BeforeInstall Hook Lambda Pre-deployment checks] in deploy_flow
+    service step2(server)[2. Install New tasks in Green TG] in deploy_flow
+    service step3(server)[3. AfterInstall Hook Lambda Smoke tests] in deploy_flow
+    service step4(server)[4. AllowTestTraffic Test listener routes to Green] in deploy_flow
+    service step5(server)[5. AfterAllowTestTraffic Hook Lambda Integration tests] in deploy_flow
+    service step6(server)[6. BeforeAllowTraffic Hook Lambda Final validation] in deploy_flow
+    service step7(server)[7. AllowTraffic Production listener switches] in deploy_flow
+    service step8(server)[8. AfterAllowTraffic Hook Lambda Post-deployment validation] in deploy_flow
+
+    step1:B --> T:step2
+    step2:B --> T:step3
+    step3:B --> T:step4
+    step4:B --> T:step5
+    step5:B --> T:step6
+    step6:B --> T:step7
+    step7:B --> T:step8
 ```
 
 ---

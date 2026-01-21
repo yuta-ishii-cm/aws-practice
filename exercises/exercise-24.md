@@ -254,71 +254,43 @@ cd ~/medconnect-cognito
 
 ### 認証基盤全体像
 
+```mermaid
+architecture-beta
+    group medconnect(cloud)[MedConnect 認証基盤]
+
+    group clients(server)[Client Applications] in medconnect
+    group cognito(server)[Amazon Cognito] in medconnect
+    group api(server)[API Gateway] in medconnect
+
+    service patient_app(internet)[患者App Mobile] in clients
+    service doctor_portal(internet)[医師Portal Web] in clients
+    service admin_console(internet)[管理画面 Web] in clients
+
+    service userpool(server)[User Pool] in cognito
+    service users(database)[Users 患者・医師・管理者] in cognito
+    service groups(database)[Groups patients・doctors・admins] in cognito
+    service mfa(server)[MFA TOTP・SMS] in cognito
+    service app_clients(server)[App Clients] in cognito
+    service triggers(server)[Lambda Triggers PreSignUp・PostAuth] in cognito
+
+    service authorizer(server)[Cognito Authorizer Token検証] in api
+    service endpoints(server)[API Endpoints /patients /doctors /admin] in api
+
+    patient_app:B --> T:userpool
+    doctor_portal:B --> T:userpool
+    admin_console:B --> T:userpool
+    userpool:B --> T:authorizer
+    authorizer:B --> T:endpoints
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              MedConnect 認証基盤アーキテクチャ                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    Client Applications                      ││
-│  │  ┌─────────┐    ┌─────────┐    ┌─────────┐                 ││
-│  │  │ 患者App │    │医師Portal│    │管理画面 │                 ││
-│  │  │ (Mobile)│    │  (Web)  │    │  (Web)  │                 ││
-│  │  └────┬────┘    └────┬────┘    └────┬────┘                 ││
-│  │       │              │              │                       ││
-│  │       └──────────────┼──────────────┘                       ││
-│  │                      │                                       ││
-│  └──────────────────────┼───────────────────────────────────────┘│
-│                         │                                        │
-│  ┌──────────────────────┼───────────────────────────────────────┐│
-│  │                      ▼          Cognito                      ││
-│  │  ┌─────────────────────────────────────────────────────────┐││
-│  │  │                   User Pool                             │││
-│  │  │  ┌─────────────────────────────────────────────────┐    │││
-│  │  │  │  Users        │  Groups     │  MFA             │    │││
-│  │  │  │  ・患者       │  ・patients │  ・TOTP          │    │││
-│  │  │  │  ・医師       │  ・doctors  │  ・SMS           │    │││
-│  │  │  │  ・管理者     │  ・admins   │                  │    │││
-│  │  │  └─────────────────────────────────────────────────┘    │││
-│  │  │                                                         │││
-│  │  │  ┌─────────────────────────────────────────────────┐    │││
-│  │  │  │  App Clients                                    │    │││
-│  │  │  │  ・patient-app (Mobile)                         │    │││
-│  │  │  │  ・doctor-portal (Web)                          │    │││
-│  │  │  │  ・admin-console (Web)                          │    │││
-│  │  │  └─────────────────────────────────────────────────┘    │││
-│  │  │                                                         │││
-│  │  │  ┌─────────────────────────────────────────────────┐    │││
-│  │  │  │  Lambda Triggers                                │    │││
-│  │  │  │  ・PreSignUp (医師免許確認)                     │    │││
-│  │  │  │  ・PostAuthentication (ログイン監査)            │    │││
-│  │  │  │  ・CustomMessage (メールカスタマイズ)           │    │││
-│  │  │  └─────────────────────────────────────────────────┘    │││
-│  │  └─────────────────────────────────────────────────────────┘││
-│  └──────────────────────────────────────────────────────────────┘│
-│                         │                                        │
-│                         │ JWT Token                              │
-│                         │                                        │
-│  ┌──────────────────────┼───────────────────────────────────────┐│
-│  │                      ▼          API Gateway                  ││
-│  │  ┌─────────────────────────────────────────────────────────┐││
-│  │  │  Cognito Authorizer                                     │││
-│  │  │  ├── Token検証                                          │││
-│  │  │  ├── スコープ確認                                       │││
-│  │  │  └── グループベースアクセス制御                         │││
-│  │  └─────────────────────────────────────────────────────────┘││
-│  │                      │                                       ││
-│  │                      ▼                                       ││
-│  │  ┌─────────────────────────────────────────────────────────┐││
-│  │  │  API Endpoints                                          │││
-│  │  │  ├── /patients/* (患者用API)                            │││
-│  │  │  ├── /doctors/*  (医師用API)                            │││
-│  │  │  └── /admin/*    (管理者用API)                          │││
-│  │  └─────────────────────────────────────────────────────────┘││
-│  └──────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+**User Pool 構成:**
+- Users: 患者、医師、管理者
+- Groups: patients, doctors, admins
+- MFA: TOTP, SMS
+
+**App Clients:** patient-app (Mobile), doctor-portal (Web), admin-console (Web)
+
+**Lambda Triggers:** PreSignUp (医師免許確認), PostAuthentication (ログイン監査), CustomMessage (メールカスタマイズ)
 
 ---
 

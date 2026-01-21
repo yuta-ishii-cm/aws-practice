@@ -176,36 +176,45 @@
 
 ### システム全体構成
 
-```
-[IoTセンサー]
-    ↓ (IoT Core経由でS3に蓄積)
-[S3: Raw Data]
-    ↓ EventBridge（毎日 AM 1:00）
-[Step Functions: DailyETLWorkflow]
-    │
-    ├─[1] Glue Job: データ変換
-    │     └── Raw → Processed (Parquet変換)
-    │
-    ├─[2] Athena: 異常検知クエリ
-    │     └── 閾値超過データ抽出
-    │
-    ├─[3] Lambda: 異常アラート送信
-    │     └── SNS経由で農家に通知
-    │
-    ├─[4] Athena: 日次集計クエリ
-    │     └── センサーごとの統計
-    │
-    ├─[5] Lambda: レポート生成
-    │     └── S3にレポート出力
-    │
-    └─[6] Lambda: レポート配信
-          └── SES経由でメール送信
+```mermaid
+flowchart TB
+    subgraph DataIngestion["データ収集"]
+        IoTSensor["IoTセンサー"]
+        IoTCore["IoT Core"]
+        S3Raw["S3: Raw Data"]
+    end
 
-[データレイク構成]
-├── Raw: s3://bucket/raw/year=YYYY/month=MM/day=DD/
-├── Processed: s3://bucket/processed/year=YYYY/month=MM/day=DD/
-├── Curated: s3://bucket/curated/daily_stats/
-└── Reports: s3://bucket/reports/YYYY-MM-DD/
+    EventBridge["EventBridge<br/>（毎日 AM 1:00）"]
+
+    subgraph StepFunctions["Step Functions: DailyETLWorkflow"]
+        Step1["[1] Glue Job: データ変換<br/>Raw → Processed (Parquet変換)"]
+        Step2["[2] Athena: 異常検知クエリ<br/>閾値超過データ抽出"]
+        Step3["[3] Lambda: 異常アラート送信<br/>SNS経由で農家に通知"]
+        Step4["[4] Athena: 日次集計クエリ<br/>センサーごとの統計"]
+        Step5["[5] Lambda: レポート生成<br/>S3にレポート出力"]
+        Step6["[6] Lambda: レポート配信<br/>SES経由でメール送信"]
+    end
+
+    subgraph DataLakeStructure["データレイク構成"]
+        Raw["Raw:<br/>s3://bucket/raw/year=YYYY/month=MM/day=DD/"]
+        Processed["Processed:<br/>s3://bucket/processed/year=YYYY/month=MM/day=DD/"]
+        Curated["Curated:<br/>s3://bucket/curated/daily_stats/"]
+        Reports["Reports:<br/>s3://bucket/reports/YYYY-MM-DD/"]
+    end
+
+    IoTSensor --> IoTCore
+    IoTCore --> S3Raw
+    S3Raw --> EventBridge
+    EventBridge --> StepFunctions
+    Step1 --> Step2
+    Step2 --> Step3
+    Step3 --> Step4
+    Step4 --> Step5
+    Step5 --> Step6
+
+    Step1 -.-> Processed
+    Step4 -.-> Curated
+    Step5 -.-> Reports
 ```
 
 ### 処理フロー

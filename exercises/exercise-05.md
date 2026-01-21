@@ -195,87 +195,92 @@ smartassist-chatbot/
 
 ### 全体構成
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CI/CD Pipeline                                  │
-│                                                                              │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │  GitHub  │───▶│  CodeBuild   │───▶│     ECR      │───▶│  CodeDeploy  │  │
-│  │  (Source)│    │  (Build&Test)│    │   (Image)    │    │ (Blue/Green) │  │
-│  └──────────┘    └──────────────┘    └──────────────┘    └──────┬───────┘  │
-│                                                                  │          │
-│                         AWS CodePipeline                         │          │
-└──────────────────────────────────────────────────────────────────┼──────────┘
-                                                                   │
-                                                                   ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                   VPC                                        │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Public Subnets (Multi-AZ)                         │   │
-│  │   ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │   │              Application Load Balancer                       │   │   │
-│  │   │         (HTTP:80 → HTTPS:443 redirect)                      │   │   │
-│  │   │                                                              │   │   │
-│  │   │    ┌─────────────┐              ┌─────────────┐             │   │   │
-│  │   │    │ Listener    │              │ Listener    │             │   │   │
-│  │   │    │ Port: 443   │              │ Port: 8443  │             │   │   │
-│  │   │    │ (Production)│              │ (Test)      │             │   │   │
-│  │   │    └──────┬──────┘              └──────┬──────┘             │   │   │
-│  │   └───────────┼─────────────────────────────┼────────────────────┘   │   │
-│  └───────────────┼─────────────────────────────┼────────────────────────┘   │
-│                  │                             │                             │
-│  ┌───────────────┼─────────────────────────────┼────────────────────────┐   │
-│  │               │   Private Subnets           │                        │   │
-│  │               ▼                             ▼                        │   │
-│  │   ┌───────────────────────┐   ┌───────────────────────┐            │   │
-│  │   │    Target Group       │   │    Target Group       │            │   │
-│  │   │    (Blue - Active)    │   │    (Green - Standby)  │            │   │
-│  │   └───────────┬───────────┘   └───────────┬───────────┘            │   │
-│  │               │                           │                         │   │
-│  │   ┌───────────▼───────────┐   ┌───────────▼───────────┐            │   │
-│  │   │   ECS Fargate Tasks   │   │   ECS Fargate Tasks   │            │   │
-│  │   │   ┌─────┐  ┌─────┐    │   │   ┌─────┐  ┌─────┐    │            │   │
-│  │   │   │Task │  │Task │    │   │   │Task │  │Task │    │            │   │
-│  │   │   │ v1  │  │ v1  │    │   │   │ v2  │  │ v2  │    │            │   │
-│  │   │   └─────┘  └─────┘    │   │   └─────┘  └─────┘    │            │   │
-│  │   └───────────────────────┘   └───────────────────────┘            │   │
-│  │                                                                     │   │
-│  │   Auto Scaling: Min 2, Max 10, Target CPU 70%                      │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-           ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-           │  CloudWatch  │  │   Secrets    │  │  Parameter   │
-           │    Logs      │  │   Manager    │  │    Store     │
-           └──────────────┘  └──────────────┘  └──────────────┘
+```mermaid
+flowchart TB
+    subgraph Pipeline["CI/CD Pipeline - AWS CodePipeline"]
+        GitHub["GitHub<br/>(Source)"]
+        CodeBuild["CodeBuild<br/>(Build&Test)"]
+        ECR["ECR<br/>(Image)"]
+        CodeDeploy["CodeDeploy<br/>(Blue/Green)"]
+    end
+
+    subgraph VPC["VPC"]
+        subgraph PublicSubnets["Public Subnets (Multi-AZ)"]
+            subgraph ALB["Application Load Balancer<br/>(HTTP:80 → HTTPS:443 redirect)"]
+                Listener443["Listener Port: 443<br/>(Production)"]
+                Listener8443["Listener Port: 8443<br/>(Test)"]
+            end
+        end
+
+        subgraph PrivateSubnets["Private Subnets"]
+            subgraph BlueGroup["Target Group (Blue - Active)"]
+                BlueECS["ECS Fargate Tasks"]
+                BlueTask1["Task v1"]
+                BlueTask2["Task v1"]
+            end
+
+            subgraph GreenGroup["Target Group (Green - Standby)"]
+                GreenECS["ECS Fargate Tasks"]
+                GreenTask1["Task v2"]
+                GreenTask2["Task v2"]
+            end
+
+            AutoScaling["Auto Scaling: Min 2, Max 10, Target CPU 70%"]
+        end
+    end
+
+    subgraph Support["Supporting Services"]
+        CloudWatch["CloudWatch Logs"]
+        Secrets["Secrets Manager"]
+        ParamStore["Parameter Store"]
+    end
+
+    GitHub --> CodeBuild
+    CodeBuild --> ECR
+    ECR --> CodeDeploy
+    CodeDeploy --> VPC
+
+    Listener443 --> BlueGroup
+    Listener8443 --> GreenGroup
+
+    VPC --> CloudWatch
+    VPC --> Secrets
+    VPC --> ParamStore
 ```
 
 ### デプロイフロー
 
-```
-1. 開発者がGitHubにプッシュ
-   └─▶ Webhookでパイプライン起動
+```mermaid
+flowchart TB
+    subgraph Step1["1. 開発者がGitHubにプッシュ"]
+        Push["Git Push"] --> Webhook["Webhookでパイプライン起動"]
+    end
 
-2. CodeBuild実行
-   ├─▶ ソースコード取得
-   ├─▶ ユニットテスト実行
-   ├─▶ Dockerイメージビルド
-   ├─▶ ECRにプッシュ
-   └─▶ アーティファクト生成（imageDetail.json）
+    subgraph Step2["2. CodeBuild実行"]
+        GetSource["ソースコード取得"]
+        UnitTest["ユニットテスト実行"]
+        DockerBuild["Dockerイメージビルド"]
+        ECRPush["ECRにプッシュ"]
+        Artifact["アーティファクト生成<br/>(imageDetail.json)"]
+        GetSource --> UnitTest --> DockerBuild --> ECRPush --> Artifact
+    end
 
-3. CodeDeploy Blue/Green
-   ├─▶ 新タスクセット作成（Green）
-   ├─▶ テストリスナーでトラフィック切り替え
-   ├─▶ ヘルスチェック確認
-   ├─▶ 本番リスナーでトラフィック切り替え
-   └─▶ 旧タスクセット（Blue）を終了
+    subgraph Step3["3. CodeDeploy Blue/Green"]
+        CreateGreen["新タスクセット作成（Green）"]
+        TestTraffic["テストリスナーでトラフィック切り替え"]
+        HealthCheck["ヘルスチェック確認"]
+        ProdTraffic["本番リスナーでトラフィック切り替え"]
+        TerminateBlue["旧タスクセット（Blue）を終了"]
+        CreateGreen --> TestTraffic --> HealthCheck --> ProdTraffic --> TerminateBlue
+    end
 
-4. 問題発生時
-   └─▶ ロールバック（Blueに戻す）
+    subgraph Step4["4. 問題発生時"]
+        Rollback["ロールバック（Blueに戻す）"]
+    end
+
+    Step1 --> Step2
+    Step2 --> Step3
+    Step3 -.->|問題発生| Step4
 ```
 
 ---

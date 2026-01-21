@@ -1,0 +1,20 @@
+{
+  "name": "aws-practice",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev exercises",
+    "docs:build": "vitepress build exercises",
+    "docs:preview": "vitepress preview exercises"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.21.0",
+  "devDependencies": {
+    "mermaid": "^11.12.2",
+    "vitepress": "^1.6.4",
+    "vitepress-plugin-mermaid": "^2.0.17"
+  }
+}

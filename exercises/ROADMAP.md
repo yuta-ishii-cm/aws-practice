@@ -136,49 +136,80 @@ IaC、CI/CD、セキュリティ、MLOpsなど高度なトピックを学びま�
 
 ## 学習パス早見表
 
-```
-フェーズ1: 基礎固め（初級）
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  1.CloudShop → 2.CostWatch → 3.EventHub → 4.TalkBot                        │
-│      │                                        │                             │
-│      ▼                                        ▼                             │
-│  5.DocuMind → 6.VisualSearch → 7.CodeAssist → 8.DevBoost                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-フェーズ2: 実践力養成（初級〜中級）
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  サーバーレス応用        非同期・バッチ           データ分析                   │
-│  9.SecureBank          11.MediaFlow            14.DataLake                  │
-│  10.GlobalCDN          12.BatchMaster          15.LogWatch                  │
-│                        13.PayEasy              16.MegaMart                  │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  生成AI応用                                    コンテナ・認証基礎             │
-│  17.VoiceAssist → 18.RAGChat → 19.ContractAI  23.ContainerApp              │
-│  20.AIWorkflow → 21.RealtimeAI → 22.Personalize 24.MedConnect              │
-│                                                25.TechCorp                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-フェーズ3: 高度な実装（中級）
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  IaC・DevOps             セキュリティ           認証・認可応用                 │
-│  26.CI/CD Pipeline       29.ComplianceHub      31.ServerlessSaaS            │
-│  27.DisasterGuard        30.Chaos Eng          32.TeamHub                   │
-│  28.TaskFlow                                                                │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  IoT                     ML/MLOps                                           │
-│  33.SmartHome            35.MLServe                                         │
-│  34.EdgeFactory          36.SmartRetail                                     │
-│                          37.CreditAI                                        │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-フェーズ4: 実践統合（中級〜上級）
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  38.MicroServices → 39.HybridConnect → 40.MultiAgentAI                     │
-│  (EKS+メッシュ)      (ハイブリッドNW)    (AIエージェント)                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph phase1[フェーズ1: 基礎固め 初級]
+        p1_1[1.CloudShop] --> p1_2[2.CostWatch]
+        p1_2 --> p1_3[3.EventHub]
+        p1_3 --> p1_4[4.TalkBot]
+        p1_1 --> p1_5[5.DocuMind]
+        p1_5 --> p1_6[6.VisualSearch]
+        p1_6 --> p1_7[7.CodeAssist]
+        p1_4 --> p1_7
+        p1_7 --> p1_8[8.DevBoost]
+    end
+
+    subgraph phase2[フェーズ2: 実践力養成 初級〜中級]
+        subgraph p2_serverless[サーバーレス応用]
+            p2_9[9.SecureBank]
+            p2_10[10.GlobalCDN]
+        end
+        subgraph p2_batch[非同期・バッチ]
+            p2_11[11.MediaFlow]
+            p2_12[12.BatchMaster]
+            p2_13[13.PayEasy]
+        end
+        subgraph p2_data[データ分析]
+            p2_14[14.DataLake]
+            p2_15[15.LogWatch]
+            p2_16[16.MegaMart]
+        end
+        subgraph p2_ai[生成AI応用]
+            p2_17[17.VoiceAssist] --> p2_18[18.RAGChat]
+            p2_18 --> p2_19[19.ContractAI]
+            p2_20[20.AIWorkflow] --> p2_21[21.RealtimeAI]
+            p2_21 --> p2_22[22.Personalize]
+        end
+        subgraph p2_container[コンテナ・認証基礎]
+            p2_23[23.ContainerApp]
+            p2_24[24.MedConnect]
+            p2_25[25.TechCorp]
+        end
+    end
+
+    subgraph phase3[フェーズ3: 高度な実装 中級]
+        subgraph p3_devops[IaC・DevOps]
+            p3_26[26.CI/CD Pipeline]
+            p3_27[27.DisasterGuard]
+            p3_28[28.TaskFlow]
+        end
+        subgraph p3_security[セキュリティ]
+            p3_29[29.ComplianceHub]
+            p3_30[30.Chaos Eng]
+        end
+        subgraph p3_auth[認証・認可応用]
+            p3_31[31.ServerlessSaaS]
+            p3_32[32.TeamHub]
+        end
+        subgraph p3_iot[IoT]
+            p3_33[33.SmartHome]
+            p3_34[34.EdgeFactory]
+        end
+        subgraph p3_ml[ML/MLOps]
+            p3_35[35.MLServe]
+            p3_36[36.SmartRetail]
+            p3_37[37.CreditAI]
+        end
+    end
+
+    subgraph phase4[フェーズ4: 実践統合 中級〜上級]
+        p4_38[38.MicroServices EKS+メッシュ] --> p4_39[39.HybridConnect ハイブリッドNW]
+        p4_39 --> p4_40[40.MultiAgentAI AIエージェント]
+    end
+
+    phase1 --> phase2
+    phase2 --> phase3
+    phase3 --> phase4
 ```
 
 ---

@@ -101,103 +101,80 @@
 ## 6. アーキテクチャ概要
 
 ### システム構成図
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Event Sources                                      │
-│                                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │   WMS       │  │   TMS       │  │  Driver     │  │  External   │        │
-│  │ (Warehouse) │  │ (Transport) │  │   App       │  │   API       │        │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘        │
-└─────────┼────────────────┼────────────────┼────────────────┼────────────────┘
-          │                │                │                │
-          ▼                ▼                ▼                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           API Gateway                                        │
-│                    POST /events/delivery-status                              │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Lambda: EventIngestion                               │
-│                   (Validation, Enrichment, Publish)                          │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Amazon EventBridge                                   │
-│                        (Custom Event Bus)                                    │
-│                                                                              │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                    Event: DeliveryStatusChanged                      │   │
-│   │   {                                                                  │   │
-│   │     "source": "quickdeliver.delivery",                              │   │
-│   │     "detail-type": "DeliveryStatusChanged",                         │   │
-│   │     "detail": {                                                      │   │
-│   │       "deliveryId": "DEL-001",                                      │   │
-│   │       "status": "OUT_FOR_DELIVERY",                                 │   │
-│   │       "timestamp": "2024-01-15T10:30:00Z"                           │   │
-│   │     }                                                                │   │
-│   │   }                                                                  │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-│   Rules:                                                                     │
-│   ├── Rule: NotifyCustomer (status = OUT_FOR_DELIVERY, DELIVERED)           │
-│   ├── Rule: NotifyShipper (status = *)                                      │
-│   ├── Rule: UpdateDashboard (status = *)                                    │
-│   └── Rule: Archive (status = *)                                            │
-└────────┬──────────────────┬──────────────────┬──────────────────┬───────────┘
-         │                  │                  │                  │
-         ▼                  ▼                  ▼                  ▼
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    SNS      │    │    SQS      │    │  Lambda:    │    │   S3        │
-│ (Customer)  │    │ (Shipper)   │    │ Dashboard   │    │ (Archive)   │
-└──────┬──────┘    └──────┬──────┘    └─────────────┘    └─────────────┘
-       │                  │
-       ▼                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Notification Handlers                                 │
-│                                                                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │  Lambda:    │  │  Lambda:    │  │  Lambda:    │  │  Lambda:    │        │
-│  │ EmailNotify │  │ SMSNotify   │  │ PushNotify  │  │ WebhookCall │        │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘        │
-│         │                │                │                │                │
-│         ▼                ▼                ▼                ▼                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
-│  │    SES      │  │    SNS      │  │   Pinpoint  │  │  External   │        │
-│  │   (Email)   │  │   (SMS)     │  │   (Push)    │  │   System    │        │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group sources(cloud)[Event Sources]
+    group aws(cloud)[AWS Cloud]
+    group ingestion(server)[Ingestion Layer] in aws
+    group eventbus(server)[EventBridge] in aws
+    group targets(server)[Event Targets] in aws
+    group notifications(server)[Notification Handlers] in aws
+
+    service wms(server)[WMS Warehouse] in sources
+    service tms(server)[TMS Transport] in sources
+    service driver_app(internet)[Driver App] in sources
+    service external_api(server)[External API] in sources
+
+    service apigw(server)[API Gateway POST /events] in ingestion
+    service lambda_ingest(server)[Lambda EventIngestion] in ingestion
+
+    service eventbridge(server)[EventBridge Custom Event Bus] in eventbus
+
+    service sns_customer(server)[SNS Customer] in targets
+    service sqs_shipper(server)[SQS Shipper] in targets
+    service lambda_dashboard(server)[Lambda Dashboard] in targets
+    service s3_archive(disk)[S3 Archive] in targets
+
+    service lambda_email(server)[Lambda EmailNotify] in notifications
+    service lambda_sms(server)[Lambda SMSNotify] in notifications
+    service lambda_push(server)[Lambda PushNotify] in notifications
+    service lambda_webhook(server)[Lambda WebhookCall] in notifications
+
+    service ses(server)[SES Email] in notifications
+    service sns_sms(server)[SNS SMS] in notifications
+    service pinpoint(server)[Pinpoint Push] in notifications
+
+    wms:B --> T:apigw
+    tms:B --> T:apigw
+    driver_app:B --> T:apigw
+    external_api:B --> T:apigw
+    apigw:B --> T:lambda_ingest
+    lambda_ingest:B --> T:eventbridge
+    eventbridge:B --> T:sns_customer
+    eventbridge:B --> T:sqs_shipper
+    eventbridge:B --> T:lambda_dashboard
+    eventbridge:B --> T:s3_archive
+    sns_customer:B --> T:lambda_email
+    sns_customer:B --> T:lambda_sms
+    sns_customer:B --> T:lambda_push
+    sqs_shipper:B --> T:lambda_webhook
 ```
 
+**EventBridge Rules:**
+- NotifyCustomer: status = OUT_FOR_DELIVERY, DELIVERED
+- NotifyShipper: status = *
+- UpdateDashboard: status = *
+- Archive: status = *
+
 ### イベントフロー
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        Delivery Status Flow                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ORDER_RECEIVED                                                              │
-│       │                                                                      │
-│       ▼                                                                      │
-│  PROCESSING ──────────────────────────────────────────┐                     │
-│       │                                               │                     │
-│       ▼                                               ▼                     │
-│  PICKED_UP ─────────────────┐                    CANCELLED                  │
-│       │                     │                                               │
-│       ▼                     ▼                                               │
-│  IN_TRANSIT          RETURNED_TO_SENDER                                     │
-│       │                                                                      │
-│       ▼                                                                      │
-│  OUT_FOR_DELIVERY ──────────┐                                               │
-│       │                     │                                               │
-│       ▼                     ▼                                               │
-│  DELIVERED           DELIVERY_FAILED ───▶ RESCHEDULED                       │
-│                                                 │                           │
-│                                                 ▼                           │
-│                                          OUT_FOR_DELIVERY                   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+stateDiagram-v2
+    [*] --> ORDER_RECEIVED
+    ORDER_RECEIVED --> PROCESSING
+    PROCESSING --> PICKED_UP
+    PROCESSING --> CANCELLED
+    PICKED_UP --> IN_TRANSIT
+    PICKED_UP --> RETURNED_TO_SENDER
+    IN_TRANSIT --> OUT_FOR_DELIVERY
+    OUT_FOR_DELIVERY --> DELIVERED
+    OUT_FOR_DELIVERY --> DELIVERY_FAILED
+    DELIVERY_FAILED --> RESCHEDULED
+    RESCHEDULED --> OUT_FOR_DELIVERY
+    DELIVERED --> [*]
+    CANCELLED --> [*]
+    RETURNED_TO_SENDER --> [*]
 ```
 
 ---

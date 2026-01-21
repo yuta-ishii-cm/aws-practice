@@ -85,61 +85,63 @@
 ## 5. 最終構成図
 
 ### 現状（モノリス）
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       EC2 (Monolith)                             │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                    PHP Application                         │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐         │  │
-│  │  │ User    │ │Activity │ │ Meal    │ │ Sleep   │ ...     │  │
-│  │  │ Module  │ │ Module  │ │ Module  │ │ Module  │         │  │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘         │  │
-│  │       └──────────┬┴──────────┬┴──────────┘               │  │
-│  │                  ▼           ▼                            │  │
-│  │         ┌────────────────────────────────┐                │  │
-│  │         │      Shared Database           │                │  │
-│  │         │         (MySQL)                │                │  │
-│  │         └────────────────────────────────┘                │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph EC2["EC2 (Monolith)"]
+        subgraph PHP["PHP Application"]
+            User["User Module"]
+            Activity["Activity Module"]
+            Meal["Meal Module"]
+            Sleep["Sleep Module"]
+        end
+        DB[("Shared Database<br/>(MySQL)")]
+    end
+
+    User --> DB
+    Activity --> DB
+    Meal --> DB
+    Sleep --> DB
 ```
 
 ### 目標（マイクロサービス）
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Application Load Balancer                         │
-│                                                                          │
-│   /users/*        /activities/*      /meals/*        /sleep/*           │
-│       │                 │                │               │               │
-└───────┼─────────────────┼────────────────┼───────────────┼───────────────┘
-        │                 │                │               │
-        ▼                 ▼                ▼               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           ECS Cluster                                    │
-│                                                                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │User Service │  │Activity Svc │  │ Meal Service│  │Sleep Service│    │
-│  │ (Node.js)   │  │  (Go)       │  │  (Python)   │  │  (Node.js)  │    │
-│  │ 2 tasks     │  │ 4 tasks     │  │ 2 tasks     │  │ 2 tasks     │    │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘    │
-│         │                │                │                │            │
-└─────────┼────────────────┼────────────────┼────────────────┼────────────┘
-          │                │                │                │
-          │                │                │                │
-          ▼                ▼                ▼                ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Data Layer                                        │
-│                                                                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
-│  │  Aurora     │  │  Aurora     │  │  Aurora     │  │  Aurora     │    │
-│  │  (Users)    │  │ (Activities)│  │  (Meals)    │  │  (Sleep)    │    │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │
-│                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                     ElastiCache (Redis)                          │    │
-│  │                  (Session & Cache - Shared)                      │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph ALB["Application Load Balancer"]
+        route1["/users/*"]
+        route2["/activities/*"]
+        route3["/meals/*"]
+        route4["/sleep/*"]
+    end
+
+    subgraph ECS["ECS Cluster"]
+        UserSvc["User Service<br/>(Node.js)<br/>2 tasks"]
+        ActivitySvc["Activity Svc<br/>(Go)<br/>4 tasks"]
+        MealSvc["Meal Service<br/>(Python)<br/>2 tasks"]
+        SleepSvc["Sleep Service<br/>(Node.js)<br/>2 tasks"]
+    end
+
+    subgraph Data["Data Layer"]
+        AuroraUsers[("Aurora<br/>(Users)")]
+        AuroraActivities[("Aurora<br/>(Activities)")]
+        AuroraMeals[("Aurora<br/>(Meals)")]
+        AuroraSleep[("Aurora<br/>(Sleep)")]
+        Redis["ElastiCache (Redis)<br/>(Session & Cache - Shared)"]
+    end
+
+    route1 --> UserSvc
+    route2 --> ActivitySvc
+    route3 --> MealSvc
+    route4 --> SleepSvc
+
+    UserSvc --> AuroraUsers
+    ActivitySvc --> AuroraActivities
+    MealSvc --> AuroraMeals
+    SleepSvc --> AuroraSleep
+
+    UserSvc -.-> Redis
+    ActivitySvc -.-> Redis
+    MealSvc -.-> Redis
+    SleepSvc -.-> Redis
 ```
 
 ### 移行計画（5フェーズ）

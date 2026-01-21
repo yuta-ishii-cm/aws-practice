@@ -395,49 +395,37 @@ cd ~/megamart-dynamodb
 
 ### 全体アーキテクチャ
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   MegaMart DynamoDB アーキテクチャ               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│                        ┌─────────────┐                          │
-│                        │   Client    │                          │
-│                        │   (Web/App) │                          │
-│                        └──────┬──────┘                          │
-│                               │                                  │
-│                        ┌──────▼──────┐                          │
-│                        │ API Gateway │                          │
-│                        └──────┬──────┘                          │
-│                               │                                  │
-│                        ┌──────▼──────┐                          │
-│                        │   Lambda    │                          │
-│                        │  Functions  │                          │
-│                        └──────┬──────┘                          │
-│                               │                                  │
-│              ┌────────────────┼────────────────┐                │
-│              │                │                │                │
-│       ┌──────▼──────┐  ┌──────▼──────┐  ┌─────▼─────┐          │
-│       │    DAX      │  │  DynamoDB   │  │  Stream   │          │
-│       │   Cluster   │  │   Table     │  │ Processor │          │
-│       │ (Cache 読取)│  │  (Write)    │  │ (Lambda)  │          │
-│       └──────┬──────┘  └──────┬──────┘  └─────┬─────┘          │
-│              │                │                │                │
-│              └────────────────┼────────────────┘                │
-│                               │                                  │
-│                        ┌──────▼──────┐                          │
-│                        │  DynamoDB   │                          │
-│                        │   Streams   │                          │
-│                        └──────┬──────┘                          │
-│                               │                                  │
-│              ┌────────────────┼────────────────┐                │
-│              │                │                │                │
-│       ┌──────▼──────┐  ┌──────▼──────┐  ┌─────▼─────┐          │
-│       │ Aggregation │  │   Search    │  │  Backup   │          │
-│       │   Lambda    │  │   Index     │  │   to S3   │          │
-│       │(売上集計等) │  │(OpenSearch) │  │  (PITR)   │          │
-│       └─────────────┘  └─────────────┘  └───────────┘          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group api_layer(server)[API Layer] in aws
+    group data_layer(database)[Data Layer] in aws
+    group stream_layer(server)[Stream Processing] in aws
+
+    service client(internet)[Client Web/App]
+
+    service apigw(server)[API Gateway] in api_layer
+    service lambda(server)[Lambda Functions] in api_layer
+
+    service dax(database)[DAX Cluster Cache] in data_layer
+    service dynamodb(database)[DynamoDB Table] in data_layer
+    service streams(database)[DynamoDB Streams] in data_layer
+
+    service stream_proc(server)[Stream Processor Lambda] in stream_layer
+    service agg_lambda(server)[Aggregation Lambda] in stream_layer
+    service opensearch(database)[OpenSearch] in stream_layer
+    service s3backup(disk)[S3 Backup PITR] in stream_layer
+
+    client:R --> L:apigw
+    apigw:B --> T:lambda
+    lambda:B --> T:dax
+    lambda:B --> T:dynamodb
+    dynamodb:B --> T:streams
+    streams:B --> T:stream_proc
+    stream_proc:R --> L:agg_lambda
+    stream_proc:R --> L:opensearch
+    stream_proc:R --> L:s3backup
 ```
 
 ---

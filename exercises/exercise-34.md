@@ -191,86 +191,60 @@ aws ecr create-repository --repository-name taskflow/task-service
 
 ### 全体構成
 
+```mermaid
+architecture-beta
+    group internet(cloud)[Internet]
+    group edge(server)[Edge Layer]
+    group eks(cloud)[EKS Cluster]
+    group mesh(server)[Istio Service Mesh mTLS] in eks
+    group tenant_a(server)[Namespace: tenant-enterprise-a] in mesh
+    group tenant_b(server)[Namespace: tenant-standard-b] in mesh
+    group shared(server)[Namespace: shared-services] in mesh
+    group monitoring(server)[Namespace: monitoring] in eks
+    group data(database)[Data Layer]
+
+    service user(internet)[User] in internet
+    service waf(server)[AWS WAF Rate Limiting] in edge
+    service alb(server)[Application Load Balancer] in edge
+
+    service istio_ingress(server)[Istio Ingress Gateway] in eks
+
+    service project_a(server)[Project Service Envoy] in tenant_a
+    service task_a(server)[Task Service Envoy] in tenant_a
+    service user_a(server)[User Service Envoy] in tenant_a
+
+    service project_b(server)[Project Service] in tenant_b
+    service task_b(server)[Task Service] in tenant_b
+    service user_b(server)[User Service] in tenant_b
+
+    service auth_svc(server)[Auth Service] in shared
+    service billing_svc(server)[Billing Service] in shared
+    service notif_svc(server)[Notification Service] in shared
+
+    service prometheus(server)[Prometheus] in monitoring
+    service grafana(server)[Grafana] in monitoring
+    service kiali(server)[Kiali] in monitoring
+    service jaeger(server)[Jaeger] in monitoring
+
+    service rds_proxy(database)[RDS Proxy Connection Pool] in data
+    service rds(database)[RDS PostgreSQL Multi-AZ] in data
+
+    user:B --> T:waf
+    waf:B --> T:alb
+    alb:B --> T:istio_ingress
+    istio_ingress:B --> T:project_a
+    istio_ingress:B --> T:project_b
+    project_a:B --> T:rds_proxy
+    project_b:B --> T:rds_proxy
+    rds_proxy:B --> T:rds
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                 Internet                                     │
-└─────────────────────────────────────┬───────────────────────────────────────┘
-                                      │
-                            ┌─────────▼─────────┐
-                            │     AWS WAF        │
-                            │  (Rate Limiting)   │
-                            └─────────┬─────────┘
-                                      │
-                            ┌─────────▼─────────┐
-                            │   Application      │
-                            │   Load Balancer    │
-                            └─────────┬─────────┘
-                                      │
-┌─────────────────────────────────────┼───────────────────────────────────────┐
-│ EKS Cluster                         │                                       │
-│  ┌──────────────────────────────────▼──────────────────────────────────┐   │
-│  │                    Istio Ingress Gateway                             │   │
-│  │                    (Virtual Services / Gateway)                      │   │
-│  └──────────────────────────────────┬──────────────────────────────────┘   │
-│                                     │                                       │
-│  ┌──────────────────────────────────┼──────────────────────────────────┐   │
-│  │                    Istio Service Mesh (mTLS)                         │   │
-│  │  ┌───────────────────────────────┼───────────────────────────────┐  │   │
-│  │  │                               ▼                                │  │   │
-│  │  │  ┌────────────────────────────────────────────────────────┐   │  │   │
-│  │  │  │              Namespace: tenant-enterprise-a             │   │  │   │
-│  │  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │   │  │   │
-│  │  │  │  │ Project  │  │  Task    │  │  User    │             │   │  │   │
-│  │  │  │  │ Service  │  │ Service  │  │ Service  │             │   │  │   │
-│  │  │  │  │ (Envoy)  │  │ (Envoy)  │  │ (Envoy)  │             │   │  │   │
-│  │  │  │  └────┬─────┘  └────┬─────┘  └────┬─────┘             │   │  │   │
-│  │  │  │       └──────────────┼──────────────┘                  │   │  │   │
-│  │  │  │  NetworkPolicy: deny-all + allow-same-tenant          │   │  │   │
-│  │  │  │  ResourceQuota: CPU 4, Memory 8Gi                     │   │  │   │
-│  │  │  └────────────────────────────────────────────────────────┘   │  │   │
-│  │  │                                                                │  │   │
-│  │  │  ┌────────────────────────────────────────────────────────┐   │  │   │
-│  │  │  │              Namespace: tenant-standard-b               │   │  │   │
-│  │  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │   │  │   │
-│  │  │  │  │ Project  │  │  Task    │  │  User    │             │   │  │   │
-│  │  │  │  │ Service  │  │ Service  │  │ Service  │             │   │  │   │
-│  │  │  │  └──────────┘  └──────────┘  └──────────┘             │   │  │   │
-│  │  │  │  ResourceQuota: CPU 2, Memory 4Gi                     │   │  │   │
-│  │  │  └────────────────────────────────────────────────────────┘   │  │   │
-│  │  │                                                                │  │   │
-│  │  │  ┌────────────────────────────────────────────────────────┐   │  │   │
-│  │  │  │              Namespace: shared-services                 │   │  │   │
-│  │  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │   │  │   │
-│  │  │  │  │ Auth     │  │ Billing  │  │Notification│            │   │  │   │
-│  │  │  │  │ Service  │  │ Service  │  │ Service  │             │   │  │   │
-│  │  │  │  └──────────┘  └──────────┘  └──────────┘             │   │  │   │
-│  │  │  └────────────────────────────────────────────────────────┘   │  │   │
-│  │  └────────────────────────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │                      Namespace: monitoring                             │ │
-│  │   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │ │
-│  │   │Prometheus│  │ Grafana  │  │  Kiali   │  │  Jaeger  │            │ │
-│  │   └──────────┘  └──────────┘  └──────────┘  └──────────┘            │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────┬──────────────────────────────────┘
-                                           │
-                              ┌────────────▼────────────┐
-                              │      RDS Proxy          │
-                              │  (Connection Pooling)   │
-                              └────────────┬────────────┘
-                                           │
-                              ┌────────────▼────────────┐
-                              │  Amazon RDS PostgreSQL  │
-                              │   (Multi-AZ Primary)    │
-                              │  ┌───────────────────┐  │
-                              │  │ Schema: tenant_a  │  │
-                              │  │ Schema: tenant_b  │  │
-                              │  │ Schema: shared    │  │
-                              │  └───────────────────┘  │
-                              └─────────────────────────┘
-```
+
+**Tenant Isolation:**
+- Namespace: 論理的分離
+- NetworkPolicy: deny-all + allow-same-tenant
+- ResourceQuota: Enterprise (CPU 4, Memory 8Gi), Standard (CPU 2, Memory 4Gi)
+- mTLS: 通信暗号化
+- PostgreSQL Schema: tenant_a, tenant_b, shared (Row Level Security)
 
 ### データフロー
 

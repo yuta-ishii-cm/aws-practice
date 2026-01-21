@@ -150,58 +150,52 @@ GCP → AWS マッピング:
 | **AWS Lambda** | エッジ処理（Lambda@Edge） |
 
 ### アーキテクチャ図
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                           TaskFlow グローバルアーキテクチャ                              │
-│                                                                                          │
-│                              ┌─────────────────┐                                        │
-│                              │    Route 53     │                                        │
-│                              │  (DNS Routing)  │                                        │
-│                              │                 │                                        │
-│                              │ Geolocation +   │                                        │
-│                              │ Latency Based   │                                        │
-│                              └────────┬────────┘                                        │
-│                                       │                                                 │
-│                    ┌──────────────────┼──────────────────┐                             │
-│                    │                  │                  │                             │
-│                    ▼                  ▼                  ▼                             │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐           │
-│  │    ap-northeast-1   │  │      us-east-1      │  │      eu-west-1      │           │
-│  │       (Tokyo)       │  │     (Virginia)      │  │      (Ireland)      │           │
-│  │                     │  │                     │  │                     │           │
-│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │           │
-│  │  │  CloudFront   │  │  │  │  CloudFront   │  │  │  │  CloudFront   │  │           │
-│  │  │  Distribution │  │  │  │  Distribution │  │  │  │  Distribution │  │           │
-│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │           │
-│  │          │          │  │          │          │  │          │          │           │
-│  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │           │
-│  │  │      ALB      │  │  │  │      ALB      │  │  │  │      ALB      │  │           │
-│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │           │
-│  │          │          │  │          │          │  │          │          │           │
-│  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │           │
-│  │  │  ECS Fargate  │  │  │  │  ECS Fargate  │  │  │  │  ECS Fargate  │  │           │
-│  │  │  (API/Web)    │  │  │  │  (API/Web)    │  │  │  │  (API/Web)    │  │           │
-│  │  └───────┬───────┘  │  │  └───────┬───────┘  │  │  └───────┬───────┘  │           │
-│  │          │          │  │          │          │  │          │          │           │
-│  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │           │
-│  │  │   Aurora      │  │  │  │   Aurora      │  │  │  │   Aurora      │  │           │
-│  │  │  (Primary)    │──┼──┼──│  (Replica)    │──┼──┼──│  (Replica)    │  │           │
-│  │  └───────────────┘  │  │  └───────────────┘  │  │  └───────────────┘  │           │
-│  │          │          │  │          │          │  │          │          │           │
-│  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │  │  ┌───────┴───────┐  │           │
-│  │  │  ElastiCache  │  │  │  │  ElastiCache  │  │  │  │  ElastiCache  │  │           │
-│  │  │ Global Store  │◄─┼──┼─►│ Global Store  │◄─┼──┼─►│ Global Store  │  │           │
-│  │  └───────────────┘  │  │  └───────────────┘  │  │  └───────────────┘  │           │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘           │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                        DynamoDB Global Tables                                    │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │   │
-│  │  │  ap-northeast-1 │◄─┤    us-east-1    │◄─┤    eu-west-1    │                  │   │
-│  │  │     (Replica)   │─►│    (Replica)    │─►│    (Replica)    │                  │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                  │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group global(cloud)[TaskFlow グローバルアーキテクチャ]
+
+    group tokyo(cloud)[ap-northeast-1 Tokyo] in global
+    group virginia(cloud)[us-east-1 Virginia] in global
+    group ireland(cloud)[eu-west-1 Ireland] in global
+    group global_data(database)[Global Data Layer] in global
+
+    service route53(server)[Route 53 Geolocation + Latency Based] in global
+
+    service cf_tokyo(server)[CloudFront] in tokyo
+    service alb_tokyo(server)[ALB] in tokyo
+    service ecs_tokyo(server)[ECS Fargate API/Web] in tokyo
+    service aurora_tokyo(database)[Aurora Primary] in tokyo
+    service cache_tokyo(database)[ElastiCache Global Store] in tokyo
+
+    service cf_virginia(server)[CloudFront] in virginia
+    service alb_virginia(server)[ALB] in virginia
+    service ecs_virginia(server)[ECS Fargate API/Web] in virginia
+    service aurora_virginia(database)[Aurora Replica] in virginia
+    service cache_virginia(database)[ElastiCache Global Store] in virginia
+
+    service cf_ireland(server)[CloudFront] in ireland
+    service alb_ireland(server)[ALB] in ireland
+    service ecs_ireland(server)[ECS Fargate API/Web] in ireland
+    service aurora_ireland(database)[Aurora Replica] in ireland
+    service cache_ireland(database)[ElastiCache Global Store] in ireland
+
+    service dynamodb_global(database)[DynamoDB Global Tables] in global_data
+
+    route53:B --> T:cf_tokyo
+    route53:B --> T:cf_virginia
+    route53:B --> T:cf_ireland
+    cf_tokyo:B --> T:alb_tokyo
+    cf_virginia:B --> T:alb_virginia
+    cf_ireland:B --> T:alb_ireland
+    alb_tokyo:B --> T:ecs_tokyo
+    alb_virginia:B --> T:ecs_virginia
+    alb_ireland:B --> T:ecs_ireland
+    ecs_tokyo:B --> T:aurora_tokyo
+    ecs_virginia:B --> T:aurora_virginia
+    ecs_ireland:B --> T:aurora_ireland
+    aurora_tokyo:R --> L:aurora_virginia
+    aurora_virginia:R --> L:aurora_ireland
 ```
 
 ---

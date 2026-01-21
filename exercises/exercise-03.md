@@ -87,45 +87,40 @@
 ## 5. 最終構成図
 
 ### システム構成図
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        GitHub                                    │
-│  ┌─────────────┐    ┌─────────────────────────────────────┐    │
-│  │  Terraform  │    │         GitHub Actions               │    │
-│  │    Repo     │───▶│  ┌─────┐  ┌──────┐  ┌───────────┐  │    │
-│  │             │    │  │Plan │─▶│Review│─▶│Apply/     │  │    │
-│  └─────────────┘    │  └─────┘  └──────┘  │Destroy    │  │    │
-│                     └─────────────────────┴─────┬─────┴───┘    │
-└─────────────────────────────────────────────────┼───────────────┘
-                                                  │ OIDC
-                                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                          AWS                                     │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Management Account                      │  │
-│  │  ┌─────────────────┐  ┌─────────────────────────────┐   │  │
-│  │  │ IAM Identity    │  │  S3 (Terraform State)       │   │  │
-│  │  │ Center          │  │  DynamoDB (State Lock)      │   │  │
-│  │  └────────┬────────┘  └─────────────────────────────┘   │  │
-│  └───────────┼──────────────────────────────────────────────┘  │
-│              │ Assume Role                                      │
-│              ▼                                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              Development Account                           │  │
-│  │  ┌─────────────────────────────────────────────────────┐ │  │
-│  │  │                    VPC                                │ │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │ │  │
-│  │  │  │ Public      │  │ Private     │  │ Private    │  │ │  │
-│  │  │  │ Subnet      │  │ Subnet(App) │  │ Subnet(DB) │  │ │  │
-│  │  │  │ ┌─────────┐ │  │             │  │ ┌────────┐ │  │ │  │
-│  │  │  │ │Bastion  │ │  │             │  │ │  RDS   │ │  │ │  │
-│  │  │  │ │ (EC2)   │ │  │             │  │ │        │ │  │ │  │
-│  │  │  │ └─────────┘ │  │             │  │ └────────┘ │  │ │  │
-│  │  │  └─────────────┘  └─────────────┘  └────────────┘  │ │  │
-│  │  └─────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph GitHub["GitHub"]
+        TFRepo["Terraform Repo"]
+        subgraph GHA["GitHub Actions"]
+            Plan["Plan"]
+            Review["Review"]
+            Apply["Apply/Destroy"]
+        end
+    end
+
+    subgraph AWS["AWS"]
+        subgraph Management["Management Account"]
+            IAM["IAM Identity Center"]
+            S3State["S3 (Terraform State)<br/>DynamoDB (State Lock)"]
+        end
+        subgraph DevAccount["Development Account"]
+            subgraph VPC["VPC"]
+                subgraph PublicSubnet["Public Subnet"]
+                    Bastion["Bastion (EC2)"]
+                end
+                PrivateApp["Private Subnet (App)"]
+                subgraph PrivateDB["Private Subnet (DB)"]
+                    RDS[("RDS")]
+                end
+            end
+        end
+    end
+
+    TFRepo --> Plan
+    Plan --> Review
+    Review --> Apply
+    Apply -->|OIDC| Management
+    IAM -->|Assume Role| DevAccount
 ```
 
 ### データフロー
@@ -158,45 +153,40 @@
 ## 6. アーキテクチャ概要
 
 ### システム構成図
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        GitHub                                    │
-│  ┌─────────────┐    ┌─────────────────────────────────────┐    │
-│  │  Terraform  │    │         GitHub Actions               │    │
-│  │    Repo     │───▶│  ┌─────┐  ┌──────┐  ┌───────────┐  │    │
-│  │             │    │  │Plan │─▶│Review│─▶│Apply/     │  │    │
-│  └─────────────┘    │  └─────┘  └──────┘  │Destroy    │  │    │
-│                     └─────────────────────┴─────┬─────┴───┘    │
-└─────────────────────────────────────────────────┼───────────────┘
-                                                  │ OIDC
-                                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                          AWS                                     │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Management Account                      │  │
-│  │  ┌─────────────────┐  ┌─────────────────────────────┐   │  │
-│  │  │ IAM Identity    │  │  S3 (Terraform State)       │   │  │
-│  │  │ Center          │  │  DynamoDB (State Lock)      │   │  │
-│  │  └────────┬────────┘  └─────────────────────────────┘   │  │
-│  └───────────┼──────────────────────────────────────────────┘  │
-│              │ Assume Role                                      │
-│              ▼                                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              Development Account                           │  │
-│  │  ┌─────────────────────────────────────────────────────┐ │  │
-│  │  │                    VPC                                │ │  │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌────────────┐  │ │  │
-│  │  │  │ Public      │  │ Private     │  │ Private    │  │ │  │
-│  │  │  │ Subnet      │  │ Subnet(App) │  │ Subnet(DB) │  │ │  │
-│  │  │  │ ┌─────────┐ │  │             │  │ ┌────────┐ │  │ │  │
-│  │  │  │ │Bastion  │ │  │             │  │ │  RDS   │ │  │ │  │
-│  │  │  │ │ (EC2)   │ │  │             │  │ │        │ │  │ │  │
-│  │  │  │ └─────────┘ │  │             │  │ └────────┘ │  │ │  │
-│  │  │  └─────────────┘  └─────────────┘  └────────────┘  │ │  │
-│  │  └─────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph GitHub["GitHub"]
+        TFRepo["Terraform Repo"]
+        subgraph GHA["GitHub Actions"]
+            Plan["Plan"]
+            Review["Review"]
+            Apply["Apply/Destroy"]
+        end
+    end
+
+    subgraph AWS["AWS"]
+        subgraph Management["Management Account"]
+            IAM["IAM Identity Center"]
+            S3State["S3 (Terraform State)<br/>DynamoDB (State Lock)"]
+        end
+        subgraph DevAccount["Development Account"]
+            subgraph VPC["VPC"]
+                subgraph PublicSubnet["Public Subnet"]
+                    Bastion["Bastion (EC2)"]
+                end
+                PrivateApp["Private Subnet (App)"]
+                subgraph PrivateDB["Private Subnet (DB)"]
+                    RDS[("RDS")]
+                end
+            end
+        end
+    end
+
+    TFRepo --> Plan
+    Plan --> Review
+    Review --> Apply
+    Apply -->|OIDC| Management
+    IAM -->|Assume Role| DevAccount
 ```
 
 ### データフロー

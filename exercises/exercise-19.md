@@ -135,51 +135,50 @@ GCP → AWS マッピング:
 | **Amazon CloudWatch** | メトリクス・ログ監視 |
 
 ### アーキテクチャ図
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          AWS Organizations                                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Security Account (集約)                           │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │  Security   │  │  GuardDuty  │  │    AWS      │                 │   │
-│  │  │    Hub      │◄─┤  (Delegated │  │   Config    │                 │   │
-│  │  │  (Admin)    │  │   Admin)    │  │ Aggregator  │                 │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                 │   │
-│  │         │                │                │                         │   │
-│  │         └────────────────┼────────────────┘                         │   │
-│  │                          ▼                                          │   │
-│  │                  ┌───────────────┐                                  │   │
-│  │                  │ EventBridge   │                                  │   │
-│  │                  │  (Central)    │                                  │   │
-│  │                  └───────┬───────┘                                  │   │
-│  │                          │                                          │   │
-│  │         ┌────────────────┼────────────────┐                         │   │
-│  │         ▼                ▼                ▼                         │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │   Lambda    │  │    Step     │  │    SNS      │                 │   │
-│  │  │ (Remediate) │  │  Functions  │  │  (Notify)   │                 │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                 │   │
-│  │         │                │                │                         │   │
-│  │         ▼                ▼                ▼                         │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │ Target Acct │  │     S3      │  │   Slack/    │                 │   │
-│  │  │ (修復実行)  │  │ (証跡保存)  │  │   PagerDuty │                 │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐               │
-│  │ Production Acct │  │ Development    │  │ Staging Acct   │               │
-│  │ ┌────────────┐ │  │ Account        │  │ ┌────────────┐ │               │
-│  │ │ GuardDuty  │ │  │ ┌────────────┐ │  │ │ GuardDuty  │ │               │
-│  │ │ (Member)   │ │  │ │ GuardDuty  │ │  │ │ (Member)   │ │               │
-│  │ └────────────┘ │  │ │ (Member)   │ │  │ └────────────┘ │               │
-│  │ ┌────────────┐ │  │ └────────────┘ │  │ ┌────────────┐ │               │
-│  │ │ Config     │ │  │ ┌────────────┐ │  │ │ Config     │ │               │
-│  │ │ (Member)   │ │  │ │ Config     │ │  │ │ (Member)   │ │               │
-│  │ └────────────┘ │  │ │ (Member)   │ │  │ └────────────┘ │               │
-│  └────────────────┘  │ └────────────┘ │  └────────────────┘               │
-│                      └────────────────┘                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group org(cloud)[AWS Organizations]
+
+    group security_acct(server)[Security Account 集約] in org
+    group prod_acct(server)[Production Account] in org
+    group dev_acct(server)[Development Account] in org
+    group stg_acct(server)[Staging Account] in org
+
+    service sechub(server)[Security Hub Admin] in security_acct
+    service guardduty_admin(server)[GuardDuty Delegated Admin] in security_acct
+    service config_agg(server)[AWS Config Aggregator] in security_acct
+    service eventbridge(server)[EventBridge Central] in security_acct
+    service lambda_remediate(server)[Lambda Remediate] in security_acct
+    service stepfunctions(server)[Step Functions] in security_acct
+    service sns(server)[SNS Notify] in security_acct
+    service s3_trail(disk)[S3 証跡保存] in security_acct
+    service slack(internet)[Slack PagerDuty] in security_acct
+
+    service prod_guardduty(server)[GuardDuty Member] in prod_acct
+    service prod_config(server)[Config Member] in prod_acct
+
+    service dev_guardduty(server)[GuardDuty Member] in dev_acct
+    service dev_config(server)[Config Member] in dev_acct
+
+    service stg_guardduty(server)[GuardDuty Member] in stg_acct
+    service stg_config(server)[Config Member] in stg_acct
+
+    guardduty_admin:L --> R:sechub
+    config_agg:L --> R:sechub
+    sechub:B --> T:eventbridge
+    eventbridge:B --> T:lambda_remediate
+    eventbridge:B --> T:stepfunctions
+    eventbridge:B --> T:sns
+    stepfunctions:B --> T:s3_trail
+    sns:B --> T:slack
+
+    prod_guardduty:T --> B:guardduty_admin
+    prod_config:T --> B:config_agg
+    dev_guardduty:T --> B:guardduty_admin
+    dev_config:T --> B:config_agg
+    stg_guardduty:T --> B:guardduty_admin
+    stg_config:T --> B:config_agg
 ```
 
 ---
@@ -2171,70 +2170,64 @@ MedSecure社は事業拡大に伴い、以下の構成でAWSを運用するこ�
 
 ### マルチリージョン・マルチアカウント セキュリティアーキテクチャ
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                              AWS Organizations                                           │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                     Security Account (us-east-1 - Aggregation Hub)               │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │   │
-│  │  │  Security Hub   │  │   GuardDuty     │  │  CloudTrail     │                   │   │
-│  │  │  (Aggregation   │  │   (Delegated    │  │  Organization   │                   │   │
-│  │  │   Region)       │  │    Admin)       │  │  Trail          │                   │   │
-│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘                   │   │
-│  │           │                    │                    │                             │   │
-│  │           └────────────────────┼────────────────────┘                             │   │
-│  │                                ▼                                                  │   │
-│  │                    ┌─────────────────────┐                                        │   │
-│  │                    │    EventBridge      │                                        │   │
-│  │                    │   (Central Bus)     │                                        │   │
-│  │                    └──────────┬──────────┘                                        │   │
-│  │                               │                                                   │   │
-│  │              ┌────────────────┼────────────────┐                                  │   │
-│  │              ▼                ▼                ▼                                  │   │
-│  │     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                           │   │
-│  │     │    Lambda    │ │    Step      │ │     SNS      │                           │   │
-│  │     │  (Process)   │ │  Functions   │ │   Topics     │                           │   │
-│  │     └──────────────┘ └──────────────┘ └──────────────┘                           │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐     │   │
-│  │  │                        S3 (Central Security Logs)                        │     │   │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │     │   │
-│  │  │  │ CloudTrail  │  │  GuardDuty  │  │   Config    │  │   VPC Flow  │     │     │   │
-│  │  │  │    Logs     │  │  Findings   │  │  Snapshots  │  │    Logs     │     │     │   │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘     │     │   │
-│  │  └─────────────────────────────────────────────────────────────────────────┘     │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌────────────────────────────────┐  ┌────────────────────────────────┐                │
-│  │  ap-northeast-1 (Tokyo)        │  │  us-east-1 (Virginia)          │                │
-│  │  ┌──────────────────────────┐  │  │  ┌──────────────────────────┐  │                │
-│  │  │ Production Account        │  │  │  │ Production DR Account    │  │                │
-│  │  │ ┌────────┐ ┌────────┐    │  │  │  │ ┌────────┐ ┌────────┐    │  │                │
-│  │  │ │GuardDuty│ │Security│    │  │  │  │ │GuardDuty│ │Security│    │  │                │
-│  │  │ │(Member)│ │Hub     │────┼──┼──┼──┼▶│(Member)│ │Hub     │────┼──┼───┐            │
-│  │  │ └────────┘ └────────┘    │  │  │  │ └────────┘ └────────┘    │  │   │            │
-│  │  │ ┌────────┐ ┌────────┐    │  │  │  │ ┌────────┐ ┌────────┐    │  │   │            │
-│  │  │ │ Config │ │CloudTrl│    │  │  │  │ │ Config │ │CloudTrl│    │  │   │            │
-│  │  │ └────────┘ └────────┘    │  │  │  │ └────────┘ └────────┘    │  │   │            │
-│  │  └──────────────────────────┘  │  │  └──────────────────────────┘  │   │            │
-│  │  ┌──────────────────────────┐  │  └────────────────────────────────┘   │            │
-│  │  │ Development Account       │  │                                       │            │
-│  │  │ ┌────────┐ ┌────────┐    │  │                                       │            │
-│  │  │ │GuardDuty│ │Security│────┼──┼───────────────────────────────────────┘            │
-│  │  │ │(Member)│ │Hub     │    │  │                                                    │
-│  │  │ └────────┘ └────────┘    │  │          Cross-Region                              │
-│  │  └──────────────────────────┘  │          Aggregation                               │
-│  │  ┌──────────────────────────┐  │               │                                    │
-│  │  │ Staging Account           │  │               ▼                                    │
-│  │  │ ┌────────┐ ┌────────┐    │  │  ┌─────────────────────────────┐                   │
-│  │  │ │GuardDuty│ │Security│────┼──┼─▶│   Security Hub              │                   │
-│  │  │ │(Member)│ │Hub     │    │  │  │   (Aggregation Region)      │                   │
-│  │  │ └────────┘ └────────┘    │  │  │   us-east-1                 │                   │
-│  │  └──────────────────────────┘  │  └─────────────────────────────┘                   │
-│  └────────────────────────────────┘                                                    │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph org[AWS Organizations]
+        subgraph secAccount[Security Account - us-east-1 Aggregation Hub]
+            subgraph services[セキュリティサービス]
+                secHub[Security Hub<br/>Aggregation Region]
+                guardDuty[GuardDuty<br/>Delegated Admin]
+                cloudTrail[CloudTrail<br/>Organization Trail]
+            end
+
+            eventBridge[EventBridge<br/>Central Bus]
+            services --> eventBridge
+
+            eventBridge --> lambda[Lambda<br/>Process]
+            eventBridge --> stepFn[Step Functions]
+            eventBridge --> sns[SNS Topics]
+
+            subgraph s3Logs[S3 - Central Security Logs]
+                ctLogs[CloudTrail Logs]
+                gdFindings[GuardDuty Findings]
+                configSnap[Config Snapshots]
+                vpcFlow[VPC Flow Logs]
+            end
+        end
+
+        subgraph tokyo[ap-northeast-1 - Tokyo]
+            subgraph prodTokyo[Production Account]
+                gdProdTokyo[GuardDuty - Member]
+                shProdTokyo[Security Hub]
+                configProdTokyo[Config]
+                ctProdTokyo[CloudTrail]
+            end
+            subgraph devTokyo[Development Account]
+                gdDevTokyo[GuardDuty - Member]
+                shDevTokyo[Security Hub]
+            end
+            subgraph stagTokyo[Staging Account]
+                gdStagTokyo[GuardDuty - Member]
+                shStagTokyo[Security Hub]
+            end
+        end
+
+        subgraph virginia[us-east-1 - Virginia]
+            subgraph prodDR[Production DR Account]
+                gdProdDR[GuardDuty - Member]
+                shProdDR[Security Hub]
+                configProdDR[Config]
+                ctProdDR[CloudTrail]
+            end
+        end
+
+        aggregation[Security Hub<br/>Aggregation Region<br/>us-east-1]
+    end
+
+    shProdTokyo --> aggregation
+    shDevTokyo --> aggregation
+    shStagTokyo --> aggregation
+    shProdDR --> aggregation
 ```
 
 ### サービス設定のベストプラクティス

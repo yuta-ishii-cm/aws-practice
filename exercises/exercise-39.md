@@ -100,64 +100,46 @@
 ## 6. アーキテクチャ概要
 
 ### システム構成図
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Clients                                         │
-│                                                                              │
-│    ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐             │
-│    │  店舗   │     │   EC    │     │  アプリ  │     │  管理   │             │
-│    │  POS    │     │ サイト  │     │         │     │ 画面    │             │
-│    └────┬────┘     └────┬────┘     └────┬────┘     └────┬────┘             │
-└─────────┼───────────────┼───────────────┼───────────────┼───────────────────┘
-          │               │               │               │
-          └───────────────┴───────────────┴───────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     Application Load Balancer                                │
-│                        (Virtual Gateway)                                     │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────┼─────────────────────────────────────────┐
-│                              AWS App Mesh                                    │
-│                                   │                                          │
-│    ┌──────────────────────────────┼──────────────────────────────────┐      │
-│    │                              ▼                                   │      │
-│    │                    ┌─────────────────┐                          │      │
-│    │                    │   API Gateway   │                          │      │
-│    │                    │    Service      │                          │      │
-│    │                    │   (Envoy)       │                          │      │
-│    │                    └────────┬────────┘                          │      │
-│    │                             │                                   │      │
-│    │         ┌───────────────────┼───────────────────┐              │      │
-│    │         │                   │                   │              │      │
-│    │         ▼                   ▼                   ▼              │      │
-│    │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │      │
-│    │  │  Inventory  │    │    Store    │    │   Product   │        │      │
-│    │  │   Service   │───▶│   Service   │    │   Service   │        │      │
-│    │  │   (Envoy)   │    │   (Envoy)   │    │   (Envoy)   │        │      │
-│    │  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘        │      │
-│    │         │                  │                  │                │      │
-│    │         │   Circuit        │   Retry          │                │      │
-│    │         │   Breaker        │   Policy         │                │      │
-│    └─────────┼──────────────────┼──────────────────┼────────────────┘      │
-│              │                  │                  │                        │
-└──────────────┼──────────────────┼──────────────────┼────────────────────────┘
-               │                  │                  │
-               ▼                  ▼                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Data Layer                                        │
-│                                                                              │
-│   ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐            │
-│   │   RDS Proxy     │  │   RDS Proxy     │  │  ElastiCache    │            │
-│   └────────┬────────┘  └────────┬────────┘  │    (Redis)      │            │
-│            │                    │           └─────────────────┘            │
-│            ▼                    ▼                                           │
-│   ┌─────────────────────────────────────────────────┐                      │
-│   │              Aurora PostgreSQL                   │                      │
-│   │    (Writer + 2 Readers, Multi-AZ)               │                      │
-│   └─────────────────────────────────────────────────┘                      │
-└─────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group clients(internet)[Clients]
+    service pos(server)[店舗 POS] in clients
+    service ec(internet)[EC サイト] in clients
+    service app(server)[アプリ] in clients
+    service admin(server)[管理画面] in clients
+
+    group aws(cloud)[AWS Cloud]
+
+    group alb_layer(server)[Load Balancer] in aws
+    service alb(internet)[Application Load Balancer Virtual Gateway] in alb_layer
+
+    group app_mesh(server)[AWS App Mesh] in aws
+    service api_gw(server)[API Gateway Service Envoy] in app_mesh
+    service inventory(server)[Inventory Service Envoy Circuit Breaker] in app_mesh
+    service store(server)[Store Service Envoy Retry Policy] in app_mesh
+    service product(server)[Product Service Envoy] in app_mesh
+
+    group data_layer(database)[Data Layer] in aws
+    service rds_proxy1(server)[RDS Proxy] in data_layer
+    service rds_proxy2(server)[RDS Proxy] in data_layer
+    service elasticache(database)[ElastiCache Redis] in data_layer
+    service aurora(database)[Aurora PostgreSQL Writer plus 2 Readers Multi-AZ] in data_layer
+
+    pos:B --> T:alb
+    ec:B --> T:alb
+    app:B --> T:alb
+    admin:B --> T:alb
+    alb:B --> T:api_gw
+    api_gw:B --> T:inventory
+    api_gw:B --> T:store
+    api_gw:B --> T:product
+    inventory:R --> L:store
+    inventory:B --> T:rds_proxy1
+    store:B --> T:rds_proxy2
+    product:B --> T:elasticache
+    rds_proxy1:B --> T:aurora
+    rds_proxy2:B --> T:aurora
 ```
 
 ### サービス一覧

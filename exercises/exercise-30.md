@@ -298,55 +298,43 @@ cd ~/shopnow-chaos/terraform
 
 ### カオスエンジニアリング基盤
 
+```mermaid
+architecture-beta
+    group shopnow(cloud)[ShopNow カオスエンジニアリング基盤]
+
+    group control(server)[Control Plane] in shopnow
+    group data(server)[Data Plane] in shopnow
+    group vpc(cloud)[VPC 3 AZ] in data
+
+    service eventbridge(server)[EventBridge Scheduler] in control
+    service fis(server)[AWS FIS Conductor] in control
+    service cloudwatch(server)[CloudWatch Monitor] in control
+    service iam_role(server)[IAM Role FIS用] in control
+
+    service ecs(server)[ECS Fargate] in vpc
+    service aurora(database)[Aurora MySQL] in vpc
+    service cache(database)[Cache Redis] in vpc
+    service ec2(server)[EC2 Fleet] in vpc
+
+    service az_a(server)[AZ-a] in vpc
+    service az_c(server)[AZ-c] in vpc
+    service az_d(server)[AZ-d] in vpc
+
+    eventbridge:R --> L:fis
+    fis:R --> L:cloudwatch
+    fis:B --> T:iam_role
+    iam_role:B --> T:ecs
+    iam_role:B --> T:aurora
+    iam_role:B --> T:cache
+    iam_role:B --> T:ec2
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              ShopNow カオスエンジニアリング基盤                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    Control Plane                            ││
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         ││
-│  │  │ EventBridge │  │   AWS FIS   │  │ CloudWatch  │         ││
-│  │  │ (Scheduler) │─►│ (Conductor) │─►│  (Monitor)  │         ││
-│  │  └─────────────┘  └──────┬──────┘  └──────┬──────┘         ││
-│  │                          │                 │                 ││
-│  │                   ┌──────▼──────┐         │                 ││
-│  │                   │  IAM Role   │         │                 ││
-│  │                   │  (FIS用)    │         │                 ││
-│  │                   └──────┬──────┘         │                 ││
-│  └──────────────────────────┼────────────────┼─────────────────┘│
-│                             │                │                   │
-│  ┌──────────────────────────┼────────────────┼─────────────────┐│
-│  │                    Data Plane              │                 ││
-│  │                          │                │                 ││
-│  │    ┌─────────────────────┼────────────────┼───────────────┐ ││
-│  │    │                     ▼                ▼               │ ││
-│  │    │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐ │ ││
-│  │    │  │   ECS   │  │  Aurora │  │  Cache  │  │   EC2   │ │ ││
-│  │    │  │ Fargate │  │  MySQL  │  │  Redis  │  │  Fleet  │ │ ││
-│  │    │  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘ │ ││
-│  │    │       │            │            │            │       │ ││
-│  │    │  ┌────▼────────────▼────────────▼────────────▼────┐ │ ││
-│  │    │  │              VPC (3 AZ)                        │ │ ││
-│  │    │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐       │ │ ││
-│  │    │  │  │   AZ-a   │ │   AZ-c   │ │   AZ-d   │       │ │ ││
-│  │    │  │  └──────────┘ └──────────┘ └──────────┘       │ │ ││
-│  │    │  └────────────────────────────────────────────────┘ │ ││
-│  │    └─────────────────────────────────────────────────────┘ ││
-│  │                                                              ││
-│  └──────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【実験パターン】                                               │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  1. ECS Task停止     → Auto Recovery検証                  │  │
-│  │  2. Aurora Failover  → DB切り替え時間検証                 │  │
-│  │  3. Cache Node障害   → Fallback動作検証                   │  │
-│  │  4. Network遅延      → タイムアウト設定検証               │  │
-│  │  5. AZ障害           → マルチAZ回復力検証                 │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+**実験パターン:**
+1. ECS Task停止 → Auto Recovery検証
+2. Aurora Failover → DB切り替え時間検証
+3. Cache Node障害 → Fallback動作検証
+4. Network遅延 → タイムアウト設定検証
+5. AZ障害 → マルチAZ回復力検証
 
 ### FIS実験テンプレート構造
 

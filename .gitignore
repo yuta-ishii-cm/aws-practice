@@ -1,2 +1,12 @@
 # Blog drafts
 blogs/
+
+# Dependencies
+node_modules/
+
+# VitePress
+exercises/.vitepress/cache/
+exercises/.vitepress/dist/
+
+# pnpm
+pnpm-lock.yaml

@@ -196,165 +196,101 @@ investpro-secure-infra/
 
 ### 全体構成
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Internet                                        │
-└─────────────────────────────────────┬───────────────────────────────────────┘
-                                      │
-                            ┌─────────▼─────────┐
-                            │   AWS Shield      │
-                            │   (DDoS Protection)│
-                            └─────────┬─────────┘
-                                      │
-                            ┌─────────▼─────────┐
-                            │   Amazon          │
-                            │   CloudFront      │
-                            │   + AWS WAF       │
-                            │                   │
-                            │  ┌─────────────┐  │
-                            │  │ WAF Rules:  │  │
-                            │  │ • SQL Inj   │  │
-                            │  │ • XSS       │  │
-                            │  │ • Rate Limit│  │
-                            │  │ • IP Block  │  │
-                            │  │ • Geo Block │  │
-                            │  └─────────────┘  │
-                            └─────────┬─────────┘
-                                      │ HTTPS Only
-                                      │
-┌─────────────────────────────────────┼───────────────────────────────────────┐
-│                                 VPC │ (10.0.0.0/16)                         │
-│                                     │                                        │
-│  ┌──────────────────────────────────┼───────────────────────────────────┐   │
-│  │              Public Subnets      │                                    │   │
-│  │              (10.0.0.0/24, 10.0.1.0/24)                              │   │
-│  │                                  │                                    │   │
-│  │        ┌─────────────────────────▼─────────────────────────┐        │   │
-│  │        │            Application Load Balancer               │        │   │
-│  │        │            (Internal: No)                          │        │   │
-│  │        │                                                    │        │   │
-│  │        │  ┌─────────────────────────────────────────────┐  │        │   │
-│  │        │  │ Security Group: alb-sg                       │  │        │   │
-│  │        │  │ Inbound: 443 from CloudFront IPs only       │  │        │   │
-│  │        │  └─────────────────────────────────────────────┘  │        │   │
-│  │        └────────────────────────┬──────────────────────────┘        │   │
-│  │                                 │                                    │   │
-│  │        NAT Gateway              │              NAT Gateway           │   │
-│  │        (AZ-a)                   │              (AZ-c)               │   │
-│  └─────────────────────────────────┼────────────────────────────────────┘   │
-│                                    │                                        │
-│  ┌─────────────────────────────────┼────────────────────────────────────┐   │
-│  │              Private Subnets (Application)                           │   │
-│  │              (10.0.10.0/24, 10.0.11.0/24)                           │   │
-│  │                                 │                                    │   │
-│  │        ┌────────────────────────▼────────────────────────┐          │   │
-│  │        │              ECS Fargate Tasks                   │          │   │
-│  │        │  ┌─────────────────────────────────────────────┐│          │   │
-│  │        │  │ Security Group: app-sg                      ││          │   │
-│  │        │  │ Inbound: 8080 from alb-sg only             ││          │   │
-│  │        │  │ Outbound: 443 to VPC Endpoints only        ││          │   │
-│  │        │  └─────────────────────────────────────────────┘│          │   │
-│  │        │                                                  │          │   │
-│  │        │  ┌──────────┐  ┌──────────┐  ┌──────────┐      │          │   │
-│  │        │  │ API      │  │ Portfolio│  │ Report   │      │          │   │
-│  │        │  │ Service  │  │ Service  │  │ Service  │      │          │   │
-│  │        │  └──────────┘  └──────────┘  └──────────┘      │          │   │
-│  │        └──────────────────────┬───────────────────────────┘          │   │
-│  │                               │                                      │   │
-│  └───────────────────────────────┼──────────────────────────────────────┘   │
-│                                  │                                          │
-│  ┌───────────────────────────────┼──────────────────────────────────────┐   │
-│  │              Private Subnets (Data)                                  │   │
-│  │              (10.0.20.0/24, 10.0.21.0/24)                           │   │
-│  │                               │                                      │   │
-│  │        ┌──────────────────────▼──────────────────────┐              │   │
-│  │        │              Amazon RDS (PostgreSQL)         │              │   │
-│  │        │              Multi-AZ                        │              │   │
-│  │        │  ┌─────────────────────────────────────────┐│              │   │
-│  │        │  │ Security Group: db-sg                   ││              │   │
-│  │        │  │ Inbound: 5432 from app-sg only         ││              │   │
-│  │        │  │ Encrypted: KMS Customer Managed Key    ││              │   │
-│  │        │  └─────────────────────────────────────────┘│              │   │
-│  │        └─────────────────────────────────────────────┘              │   │
-│  │                                                                      │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                    VPC Endpoints (Interface)                          │   │
-│  │                                                                       │   │
-│  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  │   │
-│  │   │ ECR API     │  │ ECR DKR     │  │ Secrets     │  │ CloudWatch│  │   │
-│  │   │ Endpoint    │  │ Endpoint    │  │ Manager     │  │ Logs      │  │   │
-│  │   └─────────────┘  └─────────────┘  └─────────────┘  └───────────┘  │   │
-│  │                                                                       │   │
-│  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  │   │
-│  │   │ KMS         │  │ SSM         │  │ STS         │  │ S3        │  │   │
-│  │   │ Endpoint    │  │ Endpoint    │  │ Endpoint    │  │ Gateway   │  │   │
-│  │   └─────────────┘  └─────────────┘  └─────────────┘  └───────────┘  │   │
-│  │                                                                       │   │
-│  │   Security Group: vpce-sg                                            │   │
-│  │   Inbound: 443 from VPC CIDR (10.0.0.0/16)                          │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+architecture-beta
+    group internet(cloud)[Internet]
+    group edge(server)[Edge Protection]
+    group vpc(cloud)[VPC 10.0.0.0/16]
+    group public_subnet(server)[Public Subnets] in vpc
+    group app_subnet(server)[Private Subnets Application] in vpc
+    group data_subnet(database)[Private Subnets Data] in vpc
+    group endpoints(server)[VPC Endpoints] in vpc
+    group secrets(server)[Secrets Manager]
 
-                    ┌──────────────────────────────────────┐
-                    │         Secrets Manager              │
-                    │                                      │
-                    │  ┌────────────────────────────────┐ │
-                    │  │ investpro/db/credentials       │ │
-                    │  │ investpro/api/keys             │ │
-                    │  │ investpro/external/tokens      │ │
-                    │  │                                │ │
-                    │  │ Rotation: 90 days              │ │
-                    │  │ Encryption: KMS CMK            │ │
-                    │  └────────────────────────────────┘ │
-                    └──────────────────────────────────────┘
+    service user(internet)[User] in internet
+    service shield(server)[AWS Shield DDoS] in edge
+    service cloudfront(server)[CloudFront + WAF] in edge
+
+    service alb(server)[Application Load Balancer] in public_subnet
+    service nat(server)[NAT Gateway Multi-AZ] in public_subnet
+
+    service ecs(server)[ECS Fargate Tasks] in app_subnet
+    service api_svc(server)[API Service] in app_subnet
+    service portfolio_svc(server)[Portfolio Service] in app_subnet
+    service report_svc(server)[Report Service] in app_subnet
+
+    service rds(database)[RDS PostgreSQL Multi-AZ] in data_subnet
+
+    service ecr_ep(server)[ECR Endpoints] in endpoints
+    service secrets_ep(server)[Secrets Manager EP] in endpoints
+    service logs_ep(server)[CloudWatch Logs EP] in endpoints
+    service kms_ep(server)[KMS Endpoint] in endpoints
+    service s3_gw(server)[S3 Gateway] in endpoints
+
+    service secrets_mgr(disk)[Secrets Manager KMS] in secrets
+
+    user:B --> T:shield
+    shield:B --> T:cloudfront
+    cloudfront:B --> T:alb
+    alb:B --> T:ecs
+    ecs:B --> T:rds
+    ecs:R --> L:ecr_ep
+    ecs:R --> L:secrets_ep
+    rds:R --> L:secrets_mgr
 ```
+
+**WAF Rules:** SQL Injection, XSS, Rate Limit, IP Block, Geo Block
+
+**Security Groups:**
+- alb-sg: Inbound 443 from CloudFront IPs only
+- app-sg: Inbound 8080 from alb-sg only, Outbound 443 to VPC Endpoints only
+- db-sg: Inbound 5432 from app-sg only, Encrypted with KMS CMK
+
+**Secrets Manager:** investpro/db/credentials, investpro/api/keys, investpro/external/tokens (Rotation: 90 days)
 
 ### セキュリティレイヤー
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Defense in Depth                                     │
-│                                                                              │
-│  Layer 1: Edge Protection                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ • AWS Shield (Standard/Advanced) - DDoS Protection                     │ │
-│  │ • CloudFront - Geographic Restrictions                                 │ │
-│  │ • AWS WAF - Application Layer Protection                               │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                      │                                       │
-│  Layer 2: Network Security                                                  │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ • VPC - Network Isolation                                              │ │
-│  │ • Subnets - Tier Separation (Public/Private/Data)                      │ │
-│  │ • Network ACLs - Stateless Packet Filtering                            │ │
-│  │ • Security Groups - Stateful Instance-level Firewall                   │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                      │                                       │
-│  Layer 3: Access Control                                                    │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ • IAM Roles/Policies - Least Privilege                                 │ │
-│  │ • VPC Endpoints - Private AWS Service Access                           │ │
-│  │ • Secrets Manager - Credential Management                              │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                      │                                       │
-│  Layer 4: Data Protection                                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ • KMS - Encryption at Rest                                             │ │
-│  │ • TLS 1.2+ - Encryption in Transit                                     │ │
-│  │ • S3 Bucket Policies - Data Access Control                             │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                      │                                       │
-│  Layer 5: Monitoring & Response                                             │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │ • CloudTrail - API Logging                                             │ │
-│  │ • GuardDuty - Threat Detection                                         │ │
-│  │ • Security Hub - Centralized Security View                             │ │
-│  │ • Config - Compliance Monitoring                                        │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph defense[Defense in Depth]
+        direction TB
+        subgraph layer1[Layer 1: Edge Protection]
+            shield[AWS Shield - DDoS Protection]
+            cf[CloudFront - Geographic Restrictions]
+            waf[AWS WAF - Application Layer Protection]
+        end
+
+        subgraph layer2[Layer 2: Network Security]
+            vpc[VPC - Network Isolation]
+            subnets[Subnets - Tier Separation<br/>Public/Private/Data]
+            nacl[Network ACLs - Stateless Packet Filtering]
+            sg[Security Groups - Stateful Firewall]
+        end
+
+        subgraph layer3[Layer 3: Access Control]
+            iam[IAM Roles/Policies - Least Privilege]
+            vpce[VPC Endpoints - Private AWS Service Access]
+            secrets[Secrets Manager - Credential Management]
+        end
+
+        subgraph layer4[Layer 4: Data Protection]
+            kms[KMS - Encryption at Rest]
+            tls[TLS 1.2+ - Encryption in Transit]
+            s3policy[S3 Bucket Policies - Data Access Control]
+        end
+
+        subgraph layer5[Layer 5: Monitoring and Response]
+            trail[CloudTrail - API Logging]
+            guard[GuardDuty - Threat Detection]
+            hub[Security Hub - Centralized Security View]
+            config[Config - Compliance Monitoring]
+        end
+
+        layer1 --> layer2
+        layer2 --> layer3
+        layer3 --> layer4
+        layer4 --> layer5
+    end
 ```
 
 ---

@@ -200,112 +200,63 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ### 全体構成
 
+```mermaid
+architecture-beta
+    group clients(cloud)[Mobile Apps / Web]
+    group aws(cloud)[AWS Cloud]
+    group streaming(server)[Streaming Layer] in aws
+    group processing(server)[Processing Layer] in aws
+    group storage(database)[Storage Layer] in aws
+    group monitoring(server)[Monitoring] in aws
+
+    service ios(internet)[iOS App] in clients
+    service android(internet)[Android App] in clients
+    service web(internet)[Web App] in clients
+
+    service apigw(server)[API Gateway POST /events] in aws
+    service kinesis(server)[Kinesis Data Streams 4 shards] in streaming
+
+    service lambda_rt(server)[Lambda Real-time Processing] in processing
+    service kda(server)[Kinesis Data Analytics] in processing
+    service firehose_s3(server)[Firehose S3 Archive] in processing
+
+    service firehose_os(server)[Firehose OpenSearch] in storage
+    service dynamodb(database)[DynamoDB Real-time KPIs] in storage
+    service s3(disk)[S3 Data Lake] in storage
+    service opensearch(database)[OpenSearch Service] in storage
+
+    service cloudwatch(server)[CloudWatch Alarms] in monitoring
+    service sns(server)[SNS Notifications] in monitoring
+
+    ios:B --> T:apigw
+    android:B --> T:apigw
+    web:B --> T:apigw
+    apigw:B --> T:kinesis
+    kinesis:B --> T:lambda_rt
+    kinesis:B --> T:kda
+    kinesis:B --> T:firehose_s3
+    lambda_rt:B --> T:firehose_os
+    kda:B --> T:dynamodb
+    firehose_s3:B --> T:s3
+    firehose_os:B --> T:opensearch
+    opensearch:R --> L:cloudwatch
+    opensearch:R --> L:sns
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Mobile Apps / Web                                  │
-│                                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                      │
-│  │   iOS App    │  │ Android App  │  │   Web App    │                      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘                      │
-│         │                 │                 │                               │
-│         └─────────────────┼─────────────────┘                               │
-│                           │                                                  │
-│                           ▼                                                  │
-│  ┌────────────────────────────────────────────────────────────────────┐    │
-│  │                    API Gateway (REST API)                          │    │
-│  │                    POST /events                                    │    │
-│  └────────────────────────────────────────────────────────────────────┘    │
-│                           │                                                  │
-└───────────────────────────┼──────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Amazon Kinesis Data Streams                               │
-│                                                                              │
-│    ┌─────────────────────────────────────────────────────────────────┐     │
-│    │  connectnow-events-stream (4 shards)                            │     │
-│    │                                                                  │     │
-│    │   Shard-0    Shard-1    Shard-2    Shard-3                      │     │
-│    │   ┌─────┐   ┌─────┐   ┌─────┐   ┌─────┐                        │     │
-│    │   │█████│   │█████│   │█████│   │█████│                        │     │
-│    │   │█████│   │█████│   │█████│   │█████│                        │     │
-│    │   └─────┘   └─────┘   └─────┘   └─────┘                        │     │
-│    │                                                                  │     │
-│    │   Partition Key: user_id (均等分散)                             │     │
-│    │   Retention: 24 hours                                           │     │
-│    └─────────────────────────────────────────────────────────────────┘     │
-│                                                                              │
-└─────────────────────────────────────────┬────────────────────────────────────┘
-                                          │
-          ┌───────────────────────────────┼───────────────────────────────┐
-          │                               │                               │
-          ▼                               ▼                               ▼
-┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
-│  Lambda Function │          │  Kinesis Data    │          │  Kinesis Data    │
-│  (Real-time      │          │  Analytics       │          │  Firehose        │
-│   Processing)    │          │  (Stream SQL)    │          │  (S3 Archive)    │
-│                  │          │                  │          │                  │
-│  ┌────────────┐  │          │  ┌────────────┐  │          │  Buffer: 5MB     │
-│  │ Transform  │  │          │  │  Windowed  │  │          │  Interval: 300s  │
-│  │ Aggregate  │  │          │  │ Aggregation│  │          │                  │
-│  │ Alert      │  │          │  │            │  │          │  Format: Parquet │
-│  └────────────┘  │          │  └────────────┘  │          │  Compression:    │
-│                  │          │                  │          │  Snappy          │
-└────────┬─────────┘          └────────┬─────────┘          └────────┬─────────┘
-         │                             │                             │
-         │                             │                             │
-         ▼                             ▼                             ▼
-┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
-│  Kinesis Data    │          │  DynamoDB        │          │  Amazon S3       │
-│  Firehose        │          │  (Real-time KPIs)│          │  (Data Lake)     │
-│  (OpenSearch)    │          │                  │          │                  │
-│                  │          │  ┌────────────┐  │          │  └── raw/        │
-│  Buffer: 1MB     │          │  │ DAU        │  │          │     └── events/  │
-│  Interval: 60s   │          │  │ Sessions   │  │          │        └── 2024/ │
-└────────┬─────────┘          │  │ Events/min │  │          │           └── 01/│
-         │                    │  └────────────┘  │          │              └──▶│
-         │                    └──────────────────┘          └──────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       Amazon OpenSearch Service                              │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Domain: connectnow-analytics                                        │   │
-│  │  Nodes: 3 × r6g.large.search (Multi-AZ)                             │   │
-│  │                                                                      │   │
-│  │  Indices:                                                            │   │
-│  │  ├── events-2024.01.15 (日次インデックス)                           │   │
-│  │  ├── events-2024.01.14                                              │   │
-│  │  └── ...                                                             │   │
-│  │                                                                      │   │
-│  │  Index Lifecycle: 7日後にdelete                                     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  OpenSearch Dashboards                                               │   │
-│  │                                                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │   │
-│  │  │ Real-time   │  │   User      │  │   Error     │                  │   │
-│  │  │ Metrics     │  │   Journey   │  │   Tracking  │                  │   │
-│  │  │ Dashboard   │  │   Analysis  │  │   Dashboard │                  │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└──────────────────────────────────────────┬──────────────────────────────────┘
-                                           │
-                              ┌────────────┴────────────┐
-                              │                         │
-                              ▼                         ▼
-                    ┌──────────────────┐     ┌──────────────────┐
-                    │   CloudWatch     │     │      SNS         │
-                    │   Alarms         │     │   Notifications  │
-                    │                  │     │                  │
-                    │  • Error Rate    │     │  → Slack         │
-                    │  • Latency       │     │  → PagerDuty     │
-                    │  • DAU Drop      │     │  → Email         │
-                    └──────────────────┘     └──────────────────┘
-```
+
+**Kinesis Data Streams 設定:**
+- Stream: connectnow-events-stream (4 shards)
+- Partition Key: user_id (均等分散)
+- Retention: 24 hours
+
+**OpenSearch Service 設定:**
+- Domain: connectnow-analytics
+- Nodes: 3 × r6g.large.search (Multi-AZ)
+- Index Lifecycle: 7日後にdelete
+
+**OpenSearch Dashboards:**
+- Real-time Metrics Dashboard
+- User Journey Analysis
+- Error Tracking Dashboard
 
 ### データフロー
 

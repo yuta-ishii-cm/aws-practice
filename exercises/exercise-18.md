@@ -203,123 +203,55 @@ shopsmart-dwh/
 
 ### 全体構成
 
+```mermaid
+architecture-beta
+    group datasources(cloud)[Data Sources]
+    group aws(cloud)[AWS Cloud]
+    group datalake(disk)[Data Lake] in aws
+    group etl(server)[ETL Layer] in aws
+    group dwh(database)[Data Warehouse] in aws
+    group bi(server)[BI Layer] in aws
+
+    service pos(server)[店舗POS システム] in datasources
+    service inventory_sys(server)[在庫管理 システム] in datasources
+    service customer_sys(server)[顧客管理 システム] in datasources
+    service external(server)[外部データ 天気・競合] in datasources
+
+    service s3_raw(disk)[S3 Data Lake Raw Zone] in datalake
+    service glue_catalog(database)[Glue Data Catalog] in etl
+    service glue_etl(server)[Glue ETL] in etl
+
+    service redshift(database)[Redshift Serverless] in dwh
+    service staging(database)[Schema: staging] in dwh
+    service intermediate(database)[Schema: intermediate] in dwh
+    service marts(database)[Schema: marts] in dwh
+
+    service quicksight(server)[Amazon QuickSight] in bi
+
+    pos:B --> T:s3_raw
+    inventory_sys:B --> T:s3_raw
+    customer_sys:B --> T:s3_raw
+    external:B --> T:s3_raw
+    s3_raw:R --> L:glue_etl
+    glue_etl:R --> L:glue_catalog
+    glue_catalog:B --> T:redshift
+    staging:B --> T:intermediate
+    intermediate:B --> T:marts
+    marts:B --> T:quicksight
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Data Sources                                      │
-│                                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │  店舗POS     │  │  在庫管理    │  │  顧客管理    │  │  外部データ   │   │
-│  │  システム    │  │  システム    │  │  システム    │  │  (天気・競合) │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │
-│         │                 │                 │                 │            │
-└─────────┼─────────────────┼─────────────────┼─────────────────┼────────────┘
-          │                 │                 │                 │
-          ▼                 ▼                 ▼                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Amazon S3                                       │
-│                           (Data Lake - Raw Zone)                             │
-│                                                                              │
-│  s3://shopsmart-datalake/                                                   │
-│  ├── raw/                                                                    │
-│  │   ├── pos_transactions/dt=2024-01-15/*.parquet                          │
-│  │   ├── inventory/dt=2024-01-15/*.parquet                                 │
-│  │   ├── customers/full/*.parquet                                          │
-│  │   ├── products/full/*.parquet                                           │
-│  │   └── stores/full/*.parquet                                             │
-│  └── processed/                                                              │
-│      └── ...                                                                 │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       │ AWS Glue ETL
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AWS Glue Data Catalog                                │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Databases:                                                          │   │
-│  │  ├── shopsmart_raw        (Raw層テーブル)                           │   │
-│  │  ├── shopsmart_staging    (Staging層テーブル)                       │   │
-│  │  └── shopsmart_marts      (Mart層テーブル - External)               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       Amazon Redshift Serverless                             │
-│                                                                              │
-│  Workgroup: shopsmart-analytics                                             │
-│  Namespace: shopsmart-dwh                                                    │
-│  Base Capacity: 32 RPU                                                       │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        Schema: staging                               │   │
-│  │  (dbt staging models - Source System Mirroring)                     │   │
-│  │                                                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │ stg_pos_    │  │ stg_        │  │ stg_        │                 │   │
-│  │  │ transactions│  │ inventory   │  │ customers   │                 │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                      │
-│                                       │ dbt transformation                   │
-│                                       ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                      Schema: intermediate                            │   │
-│  │  (dbt intermediate models - Business Logic)                         │   │
-│  │                                                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │ int_daily_  │  │ int_product_│  │ int_customer│                 │   │
-│  │  │ sales       │  │ performance │  │ _segments   │                 │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                       │                                      │
-│                                       │ dbt transformation                   │
-│                                       ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         Schema: marts                                │   │
-│  │  (dbt mart models - Star Schema for Analytics)                      │   │
-│  │                                                                      │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │  │                    Dimension Tables                          │   │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────┐ │   │   │
-│  │  │  │dim_date │ │dim_store│ │dim_     │ │dim_     │ │dim_   │ │   │   │
-│  │  │  │         │ │         │ │product  │ │customer │ │time   │ │   │   │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └───────┘ │   │   │
-│  │  └─────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                      │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │  │                      Fact Tables                             │   │   │
-│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │   │   │
-│  │  │  │ fct_sales   │  │ fct_        │  │ fct_        │         │   │   │
-│  │  │  │             │  │ inventory   │  │ customer_   │         │   │   │
-│  │  │  │             │  │             │  │ activity    │         │   │   │
-│  │  │  └─────────────┘  └─────────────┘  └─────────────┘         │   │   │
-│  │  └─────────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          Amazon QuickSight                                   │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                     経営ダッシュボード                               │   │
-│  │                                                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │ 売上概要    │  │ 店舗別分析  │  │ 商品分析    │                 │   │
-│  │  │ Dashboard   │  │ Dashboard   │  │ Dashboard   │                 │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │   │
-│  │                                                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │   │
-│  │  │ 在庫分析    │  │ 顧客分析    │  │ トレンド    │                 │   │
-│  │  │ Dashboard   │  │ Dashboard   │  │ Dashboard   │                 │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                 │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+**Redshift Serverless 設定:**
+- Workgroup: shopsmart-analytics
+- Namespace: shopsmart-dwh
+- Base Capacity: 32 RPU
+
+**dbt Schema 構成:**
+- **staging**: stg_pos_transactions, stg_inventory, stg_customers
+- **intermediate**: int_daily_sales, int_product_performance, int_customer_segments
+- **marts**: Dimension Tables (dim_date, dim_store, dim_product, dim_customer, dim_time) + Fact Tables (fct_sales, fct_inventory, fct_customer_activity)
+
+**QuickSight Dashboards:**
+- 売上概要 / 店舗別分析 / 商品分析 / 在庫分析 / 顧客分析 / トレンド
 
 ### データパイプラインフロー
 

@@ -110,67 +110,48 @@ sam --version  # 1.90.0以上
 ## 6. アーキテクチャ概要
 
 ### システム構成図
-```
-                    ┌─────────────────────────────────────────────────────────┐
-                    │                      CloudFront                          │
-                    │              (API Caching & WAF)                         │
-                    └────────────────────────┬────────────────────────────────┘
-                                             │
-                                             ▼
-                    ┌─────────────────────────────────────────────────────────┐
-                    │                    API Gateway                           │
-                    │                                                          │
-                    │  /hotels/search    /flights/search    /bookings         │
-                    │  /hotels/{id}      /flights/{id}      /bookings/{id}    │
-                    └──────────┬─────────────────┬──────────────┬─────────────┘
-                               │                 │              │
-           ┌───────────────────┼─────────────────┼──────────────┼───────────────┐
-           │                   │                 │              │               │
-           ▼                   ▼                 ▼              ▼               │
-    ┌─────────────┐    ┌─────────────┐  ┌─────────────┐ ┌─────────────┐       │
-    │   Lambda    │    │   Lambda    │  │   Lambda    │ │   Lambda    │       │
-    │HotelSearch  │    │FlightSearch │  │CreateBooking│ │ GetBooking  │       │
-    └──────┬──────┘    └──────┬──────┘  └──────┬──────┘ └──────┬──────┘       │
-           │                  │                │               │               │
-           │    ┌─────────────┴────────────────┴───────────────┤               │
-           │    │                                              │               │
-           ▼    ▼                                              ▼               │
-    ┌─────────────────┐                                ┌─────────────┐         │
-    │   DynamoDB      │                                │  DynamoDB   │         │
-    │  SearchCache    │                                │  Bookings   │         │
-    │  (TTL: 5min)    │                                │             │         │
-    └────────┬────────┘                                └─────────────┘         │
-             │                                                                  │
-             │ Cache Miss                                                       │
-             ▼                                                                  │
-    ┌─────────────────────────────────────────┐                                │
-    │            External APIs                 │                                │
-    │  ┌──────────────┐  ┌──────────────┐    │                                │
-    │  │ Hotel API    │  │ Airline API  │    │                                │
-    │  │ (Partner)    │  │ (Partner)    │    │                                │
-    │  └──────────────┘  └──────────────┘    │                                │
-    └─────────────────────────────────────────┘                                │
-                                                                               │
-    ┌──────────────────────────────────────────────────────────────────────────┘
-    │
-    │  Async Processing (Booking Confirmation)
-    ▼
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │                           SQS Queue                                      │
-    │                    (BookingConfirmation)                                │
-    └───────────────────────────┬─────────────────────────────────────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │        Lambda           │
-                    │   ProcessConfirmation   │
-                    └───────────────┬─────────┘
-                                    │
-                                    ▼
-                           ┌───────────────┐
-                           │     SES       │
-                           │ (Email Send)  │
-                           └───────────────┘
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+    group edge(server)[Edge Layer] in aws
+    group api(server)[API Layer] in aws
+    group data(database)[Data Layer] in aws
+    group async(server)[Async Processing] in aws
+    group external(cloud)[External APIs]
+
+    service cloudfront(server)[CloudFront API Caching & WAF] in edge
+    service apigw(server)[API Gateway] in api
+
+    service lambda_hotel(server)[Lambda HotelSearch] in api
+    service lambda_flight(server)[Lambda FlightSearch] in api
+    service lambda_booking(server)[Lambda CreateBooking] in api
+    service lambda_get(server)[Lambda GetBooking] in api
+
+    service dynamo_cache(database)[DynamoDB SearchCache TTL 5min] in data
+    service dynamo_booking(database)[DynamoDB Bookings] in data
+
+    service hotel_api(server)[Hotel API Partner] in external
+    service airline_api(server)[Airline API Partner] in external
+
+    service sqs(server)[SQS BookingConfirmation] in async
+    service lambda_confirm(server)[Lambda ProcessConfirmation] in async
+    service ses(server)[SES Email Send] in async
+
+    cloudfront:B --> T:apigw
+    apigw:B --> T:lambda_hotel
+    apigw:B --> T:lambda_flight
+    apigw:B --> T:lambda_booking
+    apigw:B --> T:lambda_get
+    lambda_hotel:B --> T:dynamo_cache
+    lambda_flight:B --> T:dynamo_cache
+    lambda_booking:B --> T:dynamo_booking
+    lambda_get:B --> T:dynamo_booking
+    dynamo_cache:R --> L:hotel_api
+    dynamo_cache:R --> L:airline_api
+    lambda_booking:R --> L:sqs
+    sqs:B --> T:lambda_confirm
+    lambda_confirm:B --> T:ses
 ```
 
 ### API エンドポイント設計

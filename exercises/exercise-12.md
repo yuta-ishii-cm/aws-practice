@@ -114,44 +114,54 @@ cdk --version  # 2.x 以上
 ## 6. アーキテクチャ概要
 
 ### システム構成図
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     CodePipeline                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│
-│  │  Source  │─▶│  Build   │─▶│Dev Deploy│─▶│ Stg Deploy       ││
-│  │(GitHub)  │  │(CodeBuild)│  │          │  │ (Manual Approve) ││
-│  └──────────┘  └──────────┘  └──────────┘  └────────┬─────────┘│
-│                                                      │          │
-│                                             ┌────────▼─────────┐│
-│                                             │ Prod Deploy      ││
-│                                             │ (Manual Approve) ││
-│                                             └──────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│  Development  │    │   Staging     │    │  Production   │
-│               │    │               │    │               │
-│ ┌───────────┐ │    │ ┌───────────┐ │    │ ┌───────────┐ │
-│ │    ALB    │ │    │ │    ALB    │ │    │ │    ALB    │ │
-│ └─────┬─────┘ │    │ └─────┬─────┘ │    │ └─────┬─────┘ │
-│       ▼       │    │       ▼       │    │       ▼       │
-│ ┌───────────┐ │    │ ┌───────────┐ │    │ ┌───────────┐ │
-│ │ECS Fargate│ │    │ │ECS Fargate│ │    │ │ECS Fargate│ │
-│ │ (1 task)  │ │    │ │ (2 tasks) │ │    │ │(4-20 tasks)│ │
-│ └─────┬─────┘ │    │ └─────┬─────┘ │    │ └─────┬─────┘ │
-│       ▼       │    │       ▼       │    │       ▼       │
-│ ┌───────────┐ │    │ ┌───────────┐ │    │ ┌───────────┐ │
-│ │  Aurora   │ │    │ │  Aurora   │ │    │ │  Aurora   │ │
-│ │Serverless │ │    │ │Serverless │ │    │ │Serverless │ │
-│ │ (0.5 ACU) │ │    │ │ (1 ACU)   │ │    │ │(2-16 ACU) │ │
-│ └───────────┘ │    │ └───────────┘ │    │ └───────────┘ │
-│ ┌───────────┐ │    │ ┌───────────┐ │    │ ┌───────────┐ │
-│ │ElastiCache│ │    │ │ElastiCache│ │    │ │ElastiCache│ │
-│ │  (Redis)  │ │    │  (Redis)  │ │    │ │  (Redis)  │ │
-│ └───────────┘ │    │ └───────────┘ │    │ └───────────┘ │
-└───────────────┘    └───────────────┘    └───────────────┘
+
+```mermaid
+architecture-beta
+    group pipeline(cloud)[CodePipeline]
+    group dev_env(cloud)[Development]
+    group stg_env(cloud)[Staging]
+    group prod_env(cloud)[Production]
+
+    service source(server)[Source GitHub] in pipeline
+    service build(server)[Build CodeBuild] in pipeline
+    service dev_deploy(server)[Dev Deploy] in pipeline
+    service stg_deploy(server)[Stg Deploy Manual Approve] in pipeline
+    service prod_deploy(server)[Prod Deploy Manual Approve] in pipeline
+
+    service dev_alb(server)[ALB] in dev_env
+    service dev_ecs(server)[ECS Fargate 1 task] in dev_env
+    service dev_aurora(database)[Aurora Serverless 0.5 ACU] in dev_env
+    service dev_redis(database)[ElastiCache Redis] in dev_env
+
+    service stg_alb(server)[ALB] in stg_env
+    service stg_ecs(server)[ECS Fargate 2 tasks] in stg_env
+    service stg_aurora(database)[Aurora Serverless 1 ACU] in stg_env
+    service stg_redis(database)[ElastiCache Redis] in stg_env
+
+    service prod_alb(server)[ALB] in prod_env
+    service prod_ecs(server)[ECS Fargate 4-20 tasks] in prod_env
+    service prod_aurora(database)[Aurora Serverless 2-16 ACU] in prod_env
+    service prod_redis(database)[ElastiCache Redis] in prod_env
+
+    source:R --> L:build
+    build:R --> L:dev_deploy
+    dev_deploy:R --> L:stg_deploy
+    stg_deploy:R --> L:prod_deploy
+
+    dev_deploy:B --> T:dev_alb
+    dev_alb:B --> T:dev_ecs
+    dev_ecs:B --> T:dev_aurora
+    dev_ecs:B --> T:dev_redis
+
+    stg_deploy:B --> T:stg_alb
+    stg_alb:B --> T:stg_ecs
+    stg_ecs:B --> T:stg_aurora
+    stg_ecs:B --> T:stg_redis
+
+    prod_deploy:B --> T:prod_alb
+    prod_alb:B --> T:prod_ecs
+    prod_ecs:B --> T:prod_aurora
+    prod_ecs:B --> T:prod_redis
 ```
 
 ### 環境別構成

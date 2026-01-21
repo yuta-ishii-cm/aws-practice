@@ -112,75 +112,66 @@ QuickEats は急成長により、既存のオンプレミスインフラが限�
 ## 3. アーキテクチャ要件
 
 ### ターゲットアーキテクチャ
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                           QuickEats AWS Architecture                                     │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              Edge Layer                                          │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │   │
-│  │  │  Route 53   │  │ CloudFront  │  │   AWS WAF   │  │   Shield    │            │   │
-│  │  │  (DNS +     │  │  (CDN +     │  │  (Web App   │  │  Advanced   │            │   │
-│  │  │  Failover)  │  │  Static)    │  │  Firewall)  │  │  (DDoS)     │            │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────────┘            │   │
-│  └─────────┼────────────────┼────────────────┼──────────────────────────────────────┘   │
-│            │                │                │                                           │
-│  ┌─────────┼────────────────┼────────────────┼──────────────────────────────────────┐   │
-│  │         │     API Gateway Layer           │                                       │   │
-│  │         │    ┌────────────────────────────┴───────┐                               │   │
-│  │         │    │        Amazon API Gateway           │                               │   │
-│  │         │    │   (REST API + WebSocket API)       │                               │   │
-│  │         │    └────────────────────────────────────┘                               │   │
-│  └─────────┼─────────────────────────────────────────────────────────────────────────┘   │
-│            │                                                                             │
-│  ┌─────────┼─────────────────────────────────────────────────────────────────────────┐   │
-│  │         │              Compute Layer (EKS)                                        │   │
-│  │         │                                                                          │   │
-│  │  ┌──────┴──────────────────────────────────────────────────────────────────────┐  │   │
-│  │  │                         Amazon EKS Cluster                                   │  │   │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │  │   │
-│  │  │  │  User   │ │  Order  │ │Restaurant│ │Delivery │ │ Payment │ │Notifica-│  │  │   │
-│  │  │  │ Service │ │ Service │ │ Service │ │ Service │ │ Service │ │  tion   │  │  │   │
-│  │  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │  │   │
-│  │  │       │           │           │           │           │           │        │  │   │
-│  │  │       └───────────┴───────────┴─────┬─────┴───────────┴───────────┘        │  │   │
-│  │  │                                     │                                       │  │   │
-│  │  │                         ┌───────────┴───────────┐                          │  │   │
-│  │  │                         │   Service Mesh        │                          │  │   │
-│  │  │                         │   (App Mesh/Istio)    │                          │  │   │
-│  │  │                         └───────────────────────┘                          │  │   │
-│  │  └─────────────────────────────────────────────────────────────────────────────┘  │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              Data Layer                                            │   │
-│  │                                                                                    │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │ Aurora      │  │ DynamoDB    │  │ ElastiCache │  │   Amazon    │              │   │
-│  │  │ PostgreSQL  │  │ (Orders,    │  │   (Redis)   │  │ OpenSearch  │              │   │
-│  │  │ (Users,     │  │  Sessions)  │  │  (Cache)    │  │ (Search)    │              │   │
-│  │  │ Restaurants)│  └─────────────┘  └─────────────┘  └─────────────┘              │   │
-│  │  └─────────────┘                                                                  │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                           Event/Streaming Layer                                    │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │   Amazon    │  │   Amazon    │  │    AWS      │  │   Amazon    │              │   │
-│  │  │    SQS      │  │   Kinesis   │  │   Lambda    │  │    SNS      │              │   │
-│  │  │  (Queue)    │  │ (Location)  │  │ (Processor) │  │   (Pub)     │              │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘              │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                           Observability Layer                                      │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │ CloudWatch  │  │   X-Ray     │  │   Managed   │  │   Managed   │              │   │
-│  │  │ Container   │  │ Distributed │  │ Prometheus  │  │  Grafana    │              │   │
-│  │  │  Insights   │  │  Tracing    │  │   (AMP)     │  │   (AMG)     │              │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘              │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group aws(cloud)[QuickEats AWS Architecture]
+
+    group edge_layer(internet)[Edge Layer] in aws
+    service route53(internet)[Route 53 DNS Failover] in edge_layer
+    service cloudfront(internet)[CloudFront CDN Static] in edge_layer
+    service waf(server)[AWS WAF Web App Firewall] in edge_layer
+    service shield(server)[Shield Advanced DDoS] in edge_layer
+
+    group api_layer(server)[API Gateway Layer] in aws
+    service apigw(internet)[Amazon API Gateway REST plus WebSocket] in api_layer
+
+    group compute_layer(server)[Compute Layer EKS] in aws
+    service user_svc(server)[User Service] in compute_layer
+    service order_svc(server)[Order Service] in compute_layer
+    service restaurant_svc(server)[Restaurant Service] in compute_layer
+    service delivery_svc(server)[Delivery Service] in compute_layer
+    service payment_svc(server)[Payment Service] in compute_layer
+    service notification_svc(server)[Notification Service] in compute_layer
+    service mesh(server)[Service Mesh App Mesh/Istio] in compute_layer
+
+    group data_layer(database)[Data Layer] in aws
+    service aurora(database)[Aurora PostgreSQL Users Restaurants] in data_layer
+    service dynamodb(database)[DynamoDB Orders Sessions] in data_layer
+    service elasticache(database)[ElastiCache Redis Cache] in data_layer
+    service opensearch(database)[Amazon OpenSearch Search] in data_layer
+
+    group event_layer(server)[Event/Streaming Layer] in aws
+    service sqs(server)[Amazon SQS Queue] in event_layer
+    service kinesis(server)[Amazon Kinesis Location] in event_layer
+    service lambda(server)[AWS Lambda Processor] in event_layer
+    service sns(internet)[Amazon SNS Pub] in event_layer
+
+    group observability(server)[Observability Layer] in aws
+    service cloudwatch(server)[CloudWatch Container Insights] in observability
+    service xray(server)[X-Ray Distributed Tracing] in observability
+    service prometheus(server)[Managed Prometheus AMP] in observability
+    service grafana(server)[Managed Grafana AMG] in observability
+
+    route53:R --> L:cloudfront
+    cloudfront:R --> L:waf
+    waf:B --> T:apigw
+    apigw:B --> T:user_svc
+    user_svc:R --> L:order_svc
+    order_svc:R --> L:restaurant_svc
+    restaurant_svc:R --> L:delivery_svc
+    delivery_svc:R --> L:payment_svc
+    payment_svc:R --> L:notification_svc
+    mesh:B --> T:aurora
+    aurora:R --> L:dynamodb
+    dynamodb:R --> L:elasticache
+    elasticache:R --> L:opensearch
+    sqs:R --> L:kinesis
+    kinesis:R --> L:lambda
+    lambda:R --> L:sns
+    cloudwatch:R --> L:xray
+    xray:R --> L:prometheus
+    prometheus:R --> L:grafana
 ```
 
 ---
@@ -613,57 +604,46 @@ LearnAI は、AI を活用した個人最適化学習プラットフォームで
 ## 3. アーキテクチャ設計
 
 ### MVP アーキテクチャ
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                            LearnAI MVP Architecture                                      │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              Frontend (React/Next.js)                            │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │   │
-│  │  │   CloudFront    │  │      S3         │  │    Route 53     │                  │   │
-│  │  │   (CDN)         │◄─┤  (Static Site)  │  │   (DNS)         │                  │   │
-│  │  └────────┬────────┘  └─────────────────┘  └─────────────────┘                  │   │
-│  │           │                                                                       │   │
-│  └───────────┼───────────────────────────────────────────────────────────────────────┘   │
-│              │                                                                           │
-│              ▼                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              Backend (Serverless)                                │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │   │
-│  │  │  API Gateway    │  │   Lambda        │  │   Cognito       │                  │   │
-│  │  │  (REST API)     │─▶│  (Functions)    │  │  (Auth)         │                  │   │
-│  │  └─────────────────┘  └────────┬────────┘  └─────────────────┘                  │   │
-│  │                                │                                                  │   │
-│  └────────────────────────────────┼──────────────────────────────────────────────────┘   │
-│                                   │                                                      │
-│  ┌────────────────────────────────┼──────────────────────────────────────────────────┐   │
-│  │                     Data Layer │                                                   │   │
-│  │                                ▼                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │   │
-│  │  │   DynamoDB      │  │      S3         │  │   OpenSearch    │                   │   │
-│  │  │ (Users, Courses │  │   (Videos,      │  │  Serverless     │                   │   │
-│  │  │  Progress)      │  │   Assets)       │  │  (Search)       │                   │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                   │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              AI/ML Layer                                           │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐                                        │   │
-│  │  │  Amazon Bedrock │  │   Personalize   │                                        │   │
-│  │  │  (Content Gen)  │  │  (Recommend)    │                                        │   │
-│  │  └─────────────────┘  └─────────────────┘                                        │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              Monitoring                                            │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                   │   │
-│  │  │   CloudWatch    │  │    X-Ray        │  │   Budgets       │                   │   │
-│  │  │   (Metrics/Logs)│  │   (Tracing)     │  │   (Cost)        │                   │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                   │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group aws(cloud)[LearnAI MVP Architecture]
+
+    group frontend(internet)[Frontend React/Next.js] in aws
+    service cloudfront(internet)[CloudFront CDN] in frontend
+    service s3_static(disk)[S3 Static Site] in frontend
+    service route53(internet)[Route 53 DNS] in frontend
+
+    group backend(server)[Backend Serverless] in aws
+    service apigw(internet)[API Gateway REST API] in backend
+    service lambda(server)[Lambda Functions] in backend
+    service cognito(server)[Cognito Auth] in backend
+
+    group data_layer(database)[Data Layer] in aws
+    service dynamodb(database)[DynamoDB Users Courses Progress] in data_layer
+    service s3_videos(disk)[S3 Videos Assets] in data_layer
+    service opensearch(database)[OpenSearch Serverless Search] in data_layer
+
+    group ai_ml(server)[AI/ML Layer] in aws
+    service bedrock(server)[Amazon Bedrock Content Gen] in ai_ml
+    service personalize(server)[Personalize Recommend] in ai_ml
+
+    group monitoring(server)[Monitoring] in aws
+    service cloudwatch(server)[CloudWatch Metrics/Logs] in monitoring
+    service xray(server)[X-Ray Tracing] in monitoring
+    service budgets(server)[Budgets Cost] in monitoring
+
+    s3_static:L --> R:cloudfront
+    route53:B --> T:cloudfront
+    cloudfront:B --> T:apigw
+    apigw:R --> L:lambda
+    lambda:L --> R:cognito
+    lambda:B --> T:dynamodb
+    dynamodb:R --> L:s3_videos
+    s3_videos:R --> L:opensearch
+    bedrock:R --> L:personalize
+    cloudwatch:R --> L:xray
+    xray:R --> L:budgets
 ```
 
 ---

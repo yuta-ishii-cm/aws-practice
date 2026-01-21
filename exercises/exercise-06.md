@@ -33,31 +33,36 @@
 
 ## 3. 最終構成図
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            Data Sources                                      │
-│                                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │   RDS MySQL  │  │  DynamoDB    │  │ CloudWatch   │  │   外部API    │   │
-│  │  (購買データ) │  │ (商品マスタ)  │  │    Logs      │  │  (広告データ) │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │
-└─────────┼─────────────────┼─────────────────┼─────────────────┼────────────┘
-          │                 │                 │                 │
-          ▼                 ▼                 ▼                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Amazon S3 Data Lake                             │
-│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐       │
-│  │     Raw Zone      │→│   Processed Zone  │→│    Curated Zone   │       │
-│  │   (CSV/JSON)      │  │    (Parquet)      │  │   (ビジネス指標)   │       │
-│  └───────────────────┘  └───────────────────┘  └───────────────────┘       │
-└─────────────────────────────────────────────────────────────────────────────┘
-          │                        │                        │
-          └────────────────────────┼────────────────────────┘
-                                   ▼
-┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-│  Glue Data       │      │  Amazon Athena   │      │    QuickSight    │
-│  Catalog         │◀────▶│  (SQL Queries)   │◀────▶│  (Dashboard)     │
-└──────────────────┘      └──────────────────┘      └──────────────────┘
+```mermaid
+flowchart TB
+    subgraph DataSources["Data Sources"]
+        RDS[("RDS MySQL<br/>(購買データ)")]
+        DynamoDB[("DynamoDB<br/>(商品マスタ)")]
+        CloudWatchLogs["CloudWatch Logs"]
+        ExternalAPI["外部API<br/>(広告データ)"]
+    end
+
+    subgraph S3DataLake["Amazon S3 Data Lake"]
+        Raw["Raw Zone<br/>(CSV/JSON)"]
+        Processed["Processed Zone<br/>(Parquet)"]
+        Curated["Curated Zone<br/>(ビジネス指標)"]
+        Raw --> Processed --> Curated
+    end
+
+    subgraph Analytics["分析レイヤー"]
+        GlueCatalog["Glue Data Catalog"]
+        Athena["Amazon Athena<br/>(SQL Queries)"]
+        QuickSight["QuickSight<br/>(Dashboard)"]
+    end
+
+    RDS --> Raw
+    DynamoDB --> Raw
+    CloudWatchLogs --> Raw
+    ExternalAPI --> Raw
+
+    S3DataLake --> GlueCatalog
+    GlueCatalog <--> Athena
+    Athena <--> QuickSight
 ```
 
 ---

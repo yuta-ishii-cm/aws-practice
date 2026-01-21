@@ -182,31 +182,45 @@
 
 ### システム全体構成
 
-```
-[ECサイト]
-    ↓ レビュー投稿イベント
-[API Gateway]
-    ↓
-[Kinesis Data Firehose]
-    ├── [Lambda: 感情分析]
-    │     └── Comprehend
-    │         ↓ ネガティブ検出
-    │         [SNS → Slackアラート]
-    │
-    └── [S3: Data Lake]
-            ↓
-        [Glue Crawler]
-            ↓
-        [Athena: SQLクエリ]
-            ↓
-        [QuickSight: ダッシュボード]
+```mermaid
+flowchart TB
+    ECサイト["ECサイト"]
+    APIGateway["API Gateway"]
+    Firehose["Kinesis Data Firehose"]
 
-[定期バッチ]
-    ↓ EventBridge（日次）
-[Lambda: インサイト生成]
-    └── Bedrock
-        ↓
-    [S3: レポート出力]
+    subgraph RealtimeProcessing["リアルタイム処理"]
+        LambdaSentiment["Lambda: 感情分析"]
+        Comprehend["Comprehend"]
+        SNS["SNS → Slackアラート"]
+    end
+
+    subgraph DataLake["データレイク"]
+        S3Lake["S3: Data Lake"]
+        GlueCrawler["Glue Crawler"]
+        Athena["Athena: SQLクエリ"]
+        QuickSight["QuickSight: ダッシュボード"]
+    end
+
+    subgraph BatchProcessing["定期バッチ"]
+        EventBridge["EventBridge（日次）"]
+        LambdaInsight["Lambda: インサイト生成"]
+        Bedrock["Bedrock"]
+        S3Report["S3: レポート出力"]
+    end
+
+    ECサイト -->|レビュー投稿イベント| APIGateway
+    APIGateway --> Firehose
+    Firehose --> LambdaSentiment
+    LambdaSentiment --> Comprehend
+    Comprehend -->|ネガティブ検出| SNS
+    Firehose --> S3Lake
+    S3Lake --> GlueCrawler
+    GlueCrawler --> Athena
+    Athena --> QuickSight
+
+    EventBridge --> LambdaInsight
+    LambdaInsight --> Bedrock
+    Bedrock --> S3Report
 ```
 
 ### データフロー

@@ -139,65 +139,59 @@ GCP → AWS マッピング:
 | **Amazon S3** | ログアーカイブ |
 
 ### アーキテクチャ図
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              RideShare 統合監視基盤                              │
-│                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Amazon EKS Cluster                               │   │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ │   │
-│  │  │  Rider    │ │  Driver   │ │  Matching │ │  Payment  │ │  Pricing  │ │   │
-│  │  │  Service  │ │  Service  │ │  Service  │ │  Service  │ │  Service  │ │   │
-│  │  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ │   │
-│  │        │             │             │             │             │       │   │
-│  │        └─────────────┴──────┬──────┴─────────────┴─────────────┘       │   │
-│  │                             │                                           │   │
-│  │  ┌──────────────────────────┴──────────────────────────┐               │   │
-│  │  │            AWS Distro for OpenTelemetry             │               │   │
-│  │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │               │   │
-│  │  │  │   Traces    │ │   Metrics   │ │    Logs     │   │               │   │
-│  │  │  │  Collector  │ │  Collector  │ │  Collector  │   │               │   │
-│  │  │  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘   │               │   │
-│  │  └─────────┼───────────────┼───────────────┼──────────┘               │   │
-│  └────────────┼───────────────┼───────────────┼──────────────────────────┘   │
-│               │               │               │                               │
-│               ▼               ▼               ▼                               │
-│  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐                    │
-│  │   AWS X-Ray    │ │    Amazon      │ │   CloudWatch   │                    │
-│  │                │ │    Managed     │ │     Logs       │                    │
-│  │  ┌──────────┐  │ │   Prometheus   │ │                │                    │
-│  │  │ Service  │  │ │                │ │  ┌──────────┐  │                    │
-│  │  │   Map    │  │ │  ┌──────────┐  │ │  │  Logs    │  │                    │
-│  │  └──────────┘  │ │  │ Time     │  │ │  │ Insights │  │                    │
-│  │  ┌──────────┐  │ │  │ Series   │  │ │  └──────────┘  │                    │
-│  │  │ Traces   │  │ │  │   DB     │  │ │                │                    │
-│  │  └──────────┘  │ │  └──────────┘  │ │                │                    │
-│  └───────┬────────┘ └───────┬────────┘ └───────┬────────┘                    │
-│          │                  │                  │                              │
-│          └──────────────────┼──────────────────┘                              │
-│                             │                                                 │
-│                             ▼                                                 │
-│  ┌──────────────────────────────────────────────────────────────────────┐    │
-│  │                    Amazon Managed Grafana                             │    │
-│  │  ┌────────────────┐ ┌────────────────┐ ┌────────────────┐            │    │
-│  │  │  SLI/SLO       │ │  Service       │ │  Infrastructure│            │    │
-│  │  │  Dashboard     │ │  Health        │ │  Dashboard     │            │    │
-│  │  └────────────────┘ └────────────────┘ └────────────────┘            │    │
-│  │  ┌────────────────────────────────────────────────────────┐          │    │
-│  │  │                    Alert Rules                          │          │    │
-│  │  │  P99 Latency > 500ms → PagerDuty                       │          │    │
-│  │  │  Error Rate > 1% → Slack #incidents                    │          │    │
-│  │  └────────────────────────────────────────────────────────┘          │    │
-│  └──────────────────────────────────────────────────────────────────────┘    │
-│                             │                                                 │
-│                             ▼                                                 │
-│            ┌────────────────────────────────────┐                            │
-│            │           Notifications            │                            │
-│            │  ┌─────────┐  ┌─────────┐  ┌─────┐│                            │
-│            │  │PagerDuty│  │  Slack  │  │Email││                            │
-│            │  └─────────┘  └─────────┘  └─────┘│                            │
-│            └────────────────────────────────────┘                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph RideShare["RideShare 統合監視基盤"]
+        subgraph EKS["Amazon EKS Cluster"]
+            subgraph Services["Microservices"]
+                Rider["Rider<br/>Service"]
+                Driver["Driver<br/>Service"]
+                Matching["Matching<br/>Service"]
+                Payment["Payment<br/>Service"]
+                Pricing["Pricing<br/>Service"]
+            end
+            subgraph ADOT["AWS Distro for OpenTelemetry"]
+                TracesCol["Traces<br/>Collector"]
+                MetricsCol["Metrics<br/>Collector"]
+                LogsCol["Logs<br/>Collector"]
+            end
+        end
+
+        subgraph Storage["データ保存層"]
+            subgraph XRay["AWS X-Ray"]
+                ServiceMap["Service Map"]
+                Traces["Traces"]
+            end
+            subgraph AMP["Amazon Managed<br/>Prometheus"]
+                TSDB["Time Series DB"]
+            end
+            subgraph CWLogs["CloudWatch Logs"]
+                LogsInsights["Logs Insights"]
+            end
+        end
+
+        subgraph Grafana["Amazon Managed Grafana"]
+            SLISLO["SLI/SLO<br/>Dashboard"]
+            ServiceHealth["Service<br/>Health"]
+            InfraDash["Infrastructure<br/>Dashboard"]
+            AlertRules["Alert Rules<br/>P99 Latency > 500ms → PagerDuty<br/>Error Rate > 1% → Slack"]
+        end
+
+        subgraph Notifications["Notifications"]
+            PagerDuty["PagerDuty"]
+            Slack["Slack"]
+            Email["Email"]
+        end
+    end
+
+    Services --> ADOT
+    TracesCol --> XRay
+    MetricsCol --> AMP
+    LogsCol --> CWLogs
+    XRay --> Grafana
+    AMP --> Grafana
+    CWLogs --> Grafana
+    Grafana --> Notifications
 ```
 
 ---
@@ -1698,71 +1692,51 @@ RideShare社は事業拡大に伴い、マイクロサービスが15個から50�
 
 ### 大規模オブザーバビリティアーキテクチャ
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                         RideShare 大規模オブザーバビリティ基盤                           │
-│                                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              データ収集層                                         │   │
-│  │                                                                                   │   │
-│  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │   │
-│  │   │ Rider Team  │  │ Driver Team │  │Payment Team │  │ ...x15      │            │   │
-│  │   │ Services    │  │ Services    │  │ Services    │  │  Teams      │            │   │
-│  │   │ (5 svcs)    │  │ (4 svcs)    │  │ (3 svcs)    │  │             │            │   │
-│  │   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘            │   │
-│  │          │                │                │                │                    │   │
-│  │          └────────────────┴────────────────┴────────────────┘                    │   │
-│  │                                    │                                              │   │
-│  │                    ┌───────────────┴───────────────┐                              │   │
-│  │                    │   OpenTelemetry Collector     │                              │   │
-│  │                    │   (Gateway Pattern)           │                              │   │
-│  │                    │   ┌─────────┐ ┌─────────┐    │                              │   │
-│  │                    │   │Sampling │ │Filtering│    │                              │   │
-│  │                    │   │Processor│ │Processor│    │                              │   │
-│  │                    │   └─────────┘ └─────────┘    │                              │   │
-│  │                    └───────────────┬───────────────┘                              │   │
-│  └────────────────────────────────────┼──────────────────────────────────────────────┘   │
-│                                       │                                                  │
-│  ┌────────────────────────────────────┼──────────────────────────────────────────────┐   │
-│  │                              データ保存層                                          │   │
-│  │                                    │                                              │   │
-│  │      ┌─────────────────────────────┼─────────────────────────────┐                │   │
-│  │      │                             │                             │                │   │
-│  │      ▼                             ▼                             ▼                │   │
-│  │ ┌──────────────┐          ┌──────────────┐          ┌──────────────┐             │   │
-│  │ │    X-Ray     │          │     AMP      │          │  CloudWatch  │             │   │
-│  │ │   Traces     │          │   Metrics    │          │    Logs      │             │   │
-│  │ │              │          │              │          │              │             │   │
-│  │ │ Sampling:    │          │ Retention:   │          │ Hot: 7d      │             │   │
-│  │ │ - Head: 5%   │          │ 13 months    │          │ Warm: 30d    │             │   │
-│  │ │ - Tail: 100% │          │              │          │ Cold: 365d   │             │   │
-│  │ │   (errors)   │          │ Cardinality: │          │ (S3 export)  │             │   │
-│  │ └──────────────┘          │ <100K series │          └──────────────┘             │   │
-│  │                           └──────────────┘                                        │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              可視化・アラート層                                     │   │
-│  │                                                                                   │   │
-│  │   ┌─────────────────────────────────────────────────────────────────────────┐    │   │
-│  │   │                    Amazon Managed Grafana                                │    │   │
-│  │   │                                                                          │    │   │
-│  │   │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │    │   │
-│  │   │  │ Platform     │  │ Team         │  │ Business     │                   │    │   │
-│  │   │  │ Overview     │  │ Dashboards   │  │ Metrics      │                   │    │   │
-│  │   │  │ (SRE)        │  │ (15 folders) │  │ (Product)    │                   │    │   │
-│  │   │  └──────────────┘  └──────────────┘  └──────────────┘                   │    │   │
-│  │   │                                                                          │    │   │
-│  │   │  Alert Routing:                                                          │    │   │
-│  │   │  ┌─────────────────────────────────────────────────────────────────┐    │    │   │
-│  │   │  │ Critical → PagerDuty (On-call SRE)                              │    │    │   │
-│  │   │  │ High     → PagerDuty (Team On-call) + Slack (#team-alerts)      │    │    │   │
-│  │   │  │ Warning  → Slack (#team-alerts)                                  │    │    │   │
-│  │   │  │ Info     → Slack (#observability-digest)                         │    │    │   │
-│  │   │  └─────────────────────────────────────────────────────────────────┘    │    │   │
-│  │   └─────────────────────────────────────────────────────────────────────────┘    │   │
-│  └───────────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph LargeScale["RideShare 大規模オブザーバビリティ基盤"]
+        subgraph Collection["データ収集層"]
+            subgraph Teams["チーム別サービス (50サービス)"]
+                RiderTeam["Rider Team<br/>Services<br/>(5 svcs)"]
+                DriverTeam["Driver Team<br/>Services<br/>(4 svcs)"]
+                PaymentTeam["Payment Team<br/>Services<br/>(3 svcs)"]
+                OtherTeams["...x15<br/>Teams"]
+            end
+            subgraph OTelCollector["OpenTelemetry Collector<br/>(Gateway Pattern)"]
+                SamplingProc["Sampling<br/>Processor"]
+                FilteringProc["Filtering<br/>Processor"]
+            end
+        end
+
+        subgraph DataStorage["データ保存層"]
+            subgraph XRayStorage["X-Ray Traces"]
+                XRayConfig["Sampling:<br/>- Head: 5%<br/>- Tail: 100% (errors)"]
+            end
+            subgraph AMPStorage["AMP Metrics"]
+                AMPConfig["Retention: 13 months<br/>Cardinality: <100K series"]
+            end
+            subgraph CWLogsStorage["CloudWatch Logs"]
+                CWConfig["Hot: 7d<br/>Warm: 30d<br/>Cold: 365d (S3 export)"]
+            end
+        end
+
+        subgraph Visualization["可視化・アラート層"]
+            subgraph AMG["Amazon Managed Grafana"]
+                PlatformOverview["Platform<br/>Overview<br/>(SRE)"]
+                TeamDashboards["Team<br/>Dashboards<br/>(15 folders)"]
+                BusinessMetrics["Business<br/>Metrics<br/>(Product)"]
+                AlertRouting["Alert Routing:<br/>Critical → PagerDuty (On-call SRE)<br/>High → PagerDuty + Slack<br/>Warning → Slack (#team-alerts)<br/>Info → Slack (#observability-digest)"]
+            end
+        end
+    end
+
+    Teams --> OTelCollector
+    OTelCollector --> XRayStorage
+    OTelCollector --> AMPStorage
+    OTelCollector --> CWLogsStorage
+    XRayStorage --> AMG
+    AMPStorage --> AMG
+    CWLogsStorage --> AMG
 ```
 
 ### 1. メトリクス収集・保存戦略

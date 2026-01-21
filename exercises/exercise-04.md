@@ -181,32 +181,52 @@
 
 ### システム全体構成
 
-```
-[設備センサー]
-      ↓ (MQTT/HTTP)
-[IoT Core / API Gateway]
-      ↓
-[Kinesis Data Streams]
-      ├── [Lambda: データ前処理]
-      │       ↓
-      │   [Timestream: 時系列保存]
-      │
-      └── [Lambda: リアルタイム推論]
-              ├── [SageMaker Endpoint: 異常検知]
-              │       ↓ 異常スコア
-              │   [DynamoDB: 結果保存]
-              │       ↓ 閾値超過
-              └── [SNS: アラート通知]
-                      ↓
-              [保全担当者/管理画面]
+```mermaid
+flowchart TB
+    subgraph Realtime["リアルタイム処理"]
+        Sensor["設備センサー"]
+        IoT["IoT Core / API Gateway"]
+        Kinesis["Kinesis Data Streams"]
 
-[定期バッチ]
-      ↓ EventBridge（週次）
-[Step Functions: モデル再学習パイプライン]
-      ├── [SageMaker Processing: データ準備]
-      ├── [SageMaker Training: モデル学習]
-      ├── [SageMaker Model Registry: 登録]
-      └── [SageMaker Endpoint: デプロイ]
+        subgraph Processing["データ処理"]
+            LambdaPrep["Lambda: データ前処理"]
+            Timestream[("Timestream: 時系列保存")]
+        end
+
+        subgraph Inference["推論処理"]
+            LambdaInf["Lambda: リアルタイム推論"]
+            SageMaker["SageMaker Endpoint: 異常検知"]
+            DynamoDB[("DynamoDB: 結果保存")]
+            SNS["SNS: アラート通知"]
+        end
+
+        Staff["保全担当者/管理画面"]
+    end
+
+    subgraph Batch["定期バッチ"]
+        EventBridge["EventBridge（週次）"]
+        subgraph StepFunctions["Step Functions: モデル再学習パイプライン"]
+            SMProcessing["SageMaker Processing: データ準備"]
+            SMTraining["SageMaker Training: モデル学習"]
+            SMRegistry["SageMaker Model Registry: 登録"]
+            SMDeploy["SageMaker Endpoint: デプロイ"]
+        end
+    end
+
+    Sensor -->|MQTT/HTTP| IoT
+    IoT --> Kinesis
+    Kinesis --> LambdaPrep
+    LambdaPrep --> Timestream
+    Kinesis --> LambdaInf
+    LambdaInf --> SageMaker
+    SageMaker -->|異常スコア| DynamoDB
+    DynamoDB -->|閾値超過| SNS
+    SNS --> Staff
+
+    EventBridge --> SMProcessing
+    SMProcessing --> SMTraining
+    SMTraining --> SMRegistry
+    SMRegistry --> SMDeploy
 ```
 
 ### データフロー

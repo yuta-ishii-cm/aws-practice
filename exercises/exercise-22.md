@@ -155,60 +155,37 @@ GCP → AWS マッピング:
 | **Amazon EventBridge** | スケジュール実行 |
 
 ### アーキテクチャ図
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                         AdMetrics コスト最適化基盤                               │
-│                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         コスト可視化層                                    │   │
-│  │                                                                          │   │
-│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐               │   │
-│  │  │ Cost Explorer │  │     CUR       │  │  QuickSight   │               │   │
-│  │  │               │  │   (S3/Athena) │  │  Dashboard    │               │   │
-│  │  │ ・コスト分析  │  │               │  │               │               │   │
-│  │  │ ・予測       │  │ ・詳細データ  │  │ ・経営向け    │               │   │
-│  │  │ ・RI推奨     │  │ ・SQL分析    │  │ ・部門向け    │               │   │
-│  │  └───────────────┘  └───────────────┘  └───────────────┘               │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         コスト最適化層                                    │   │
-│  │                                                                          │   │
-│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐               │   │
-│  │  │   Compute     │  │   Trusted     │  │   Savings     │               │   │
-│  │  │   Optimizer   │  │   Advisor     │  │   Plans       │               │   │
-│  │  │               │  │               │  │               │               │   │
-│  │  │ ・EC2サイジング│  │ ・未使用EIP  │  │ ・Compute SP │               │   │
-│  │  │ ・Lambda最適化│  │ ・未使用EBS  │  │ ・EC2 SP     │               │   │
-│  │  │ ・EBS最適化  │  │ ・低使用率EC2│  │ ・購入推奨   │               │   │
-│  │  └───────────────┘  └───────────────┘  └───────────────┘               │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                         ガバナンス・自動化層                              │   │
-│  │                                                                          │   │
-│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐               │   │
-│  │  │  AWS Budgets  │  │  EventBridge  │  │   Lambda      │               │   │
-│  │  │               │  │   Scheduler   │  │  Functions    │               │   │
-│  │  │ ・予算設定   │  │               │  │               │               │   │
-│  │  │ ・アラート   │  │ ・定期実行   │  │ ・開発環境停止│               │   │
-│  │  │ ・自動停止   │  │ ・レポート生成│  │ ・未使用削除 │               │   │
-│  │  └───────┬───────┘  └───────┬───────┘  └───────┬───────┘               │   │
-│  │          │                  │                  │                        │   │
-│  │          └──────────────────┼──────────────────┘                        │   │
-│  │                             ▼                                           │   │
-│  │                    ┌───────────────┐                                    │   │
-│  │                    │     SNS       │                                    │   │
-│  │                    │  (通知配信)   │                                    │   │
-│  │                    └───────┬───────┘                                    │   │
-│  │                            │                                            │   │
-│  │               ┌────────────┼────────────┐                               │   │
-│  │               ▼            ▼            ▼                               │   │
-│  │           ┌───────┐   ┌───────┐   ┌───────┐                            │   │
-│  │           │ Slack │   │ Email │   │PagerDuty│                            │   │
-│  │           └───────┘   └───────┘   └───────┘                            │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+architecture-beta
+    group cost_platform(cloud)[AdMetrics コスト最適化基盤]
+
+    group visibility(server)[コスト可視化層] in cost_platform
+    group optimization(server)[コスト最適化層] in cost_platform
+    group governance(server)[ガバナンス・自動化層] in cost_platform
+
+    service cost_explorer(server)[Cost Explorer 分析・予測・RI推奨] in visibility
+    service cur(database)[CUR S3/Athena 詳細データ] in visibility
+    service quicksight(server)[QuickSight Dashboard] in visibility
+
+    service compute_opt(server)[Compute Optimizer EC2・Lambda・EBS] in optimization
+    service trusted_adv(server)[Trusted Advisor 未使用リソース検出] in optimization
+    service savings_plans(server)[Savings Plans Compute/EC2 SP] in optimization
+
+    service budgets(server)[AWS Budgets 予算・アラート] in governance
+    service eventbridge(server)[EventBridge Scheduler] in governance
+    service lambda(server)[Lambda Functions 自動停止・削除] in governance
+    service sns(server)[SNS 通知配信] in governance
+    service slack(internet)[Slack] in governance
+    service email(internet)[Email] in governance
+    service pagerduty(internet)[PagerDuty] in governance
+
+    budgets:B --> T:sns
+    eventbridge:B --> T:sns
+    lambda:B --> T:sns
+    sns:B --> T:slack
+    sns:B --> T:email
+    sns:B --> T:pagerduty
 ```
 
 ---
@@ -1864,51 +1841,45 @@ AdMetrics社は急成長に伴い、AWS アカウントが10個に増加しま�
 
 ### エンタープライズコストガバナンスアーキテクチャ
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                         AWS Organizations 構造                                           │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Management Account (Root)                                 │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │   │
-│  │  │ Consolidated    │  │ Organization    │  │ Cost Explorer   │                  │   │
-│  │  │ Billing         │  │ Policies (SCP)  │  │ (Central)       │                  │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                  │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                    Security OU                                                    │   │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐    │   │
-│  │  │ Security Account                                                         │    │   │
-│  │  │ - CloudTrail Organization Trail                                         │    │   │
-│  │  │ - Config Aggregator                                                     │    │   │
-│  │  │ - Cost and Usage Report (CUR)                                           │    │   │
-│  │  └─────────────────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                          │
-│  ┌────────────────────────────────┐  ┌────────────────────────────────┐               │
-│  │         Workloads OU           │  │       Sandbox OU               │               │
-│  │                                 │  │                                │               │
-│  │  ┌───────────┐ ┌───────────┐  │  │  ┌───────────┐ ┌───────────┐  │               │
-│  │  │Production │ │ Staging   │  │  │  │Development│ │   Test    │  │               │
-│  │  │  Account  │ │  Account  │  │  │  │  Account  │ │  Account  │  │               │
-│  │  │           │ │           │  │  │  │ (Budget   │ │ (Budget   │  │               │
-│  │  │ No Budget │ │ Budget    │  │  │  │  Limited) │ │  Limited) │  │               │
-│  │  │  Limit    │ │ Tracked   │  │  │  │           │ │           │  │               │
-│  │  └───────────┘ └───────────┘  │  │  └───────────┘ └───────────┘  │               │
-│  └────────────────────────────────┘  └────────────────────────────────┘               │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Team Accounts OU                                          │   │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐         │   │
-│  │  │ Platform  │ │ Backend   │ │   Data    │ │ Frontend  │ │    ML     │         │   │
-│  │  │   Team    │ │   Team    │ │   Team    │ │   Team    │ │   Team    │         │   │
-│  │  │ (Budget:  │ │ (Budget:  │ │ (Budget:  │ │ (Budget:  │ │ (Budget:  │         │   │
-│  │  │  200万円) │ │  300万円) │ │  400万円) │ │  150万円) │ │  250万円) │         │   │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘         │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph org[AWS Organizations 構造]
+        subgraph mgmt[Management Account - Root]
+            billing[Consolidated Billing]
+            scp[Organization Policies - SCP]
+            explorer[Cost Explorer - Central]
+        end
+
+        subgraph securityOU[Security OU]
+            secAccount[Security Account]
+            secAccount --> trail[CloudTrail Organization Trail]
+            secAccount --> config[Config Aggregator]
+            secAccount --> cur[Cost and Usage Report]
+        end
+
+        subgraph workloadsOU[Workloads OU]
+            prod[Production Account<br/>No Budget Limit]
+            staging[Staging Account<br/>Budget Tracked]
+        end
+
+        subgraph sandboxOU[Sandbox OU]
+            dev[Development Account<br/>Budget Limited]
+            test[Test Account<br/>Budget Limited]
+        end
+
+        subgraph teamOU[Team Accounts OU]
+            platform[Platform Team<br/>Budget: 200万円]
+            backend[Backend Team<br/>Budget: 300万円]
+            data[Data Team<br/>Budget: 400万円]
+            frontend[Frontend Team<br/>Budget: 150万円]
+            ml[ML Team<br/>Budget: 250万円]
+        end
+    end
+
+    mgmt --> securityOU
+    mgmt --> workloadsOU
+    mgmt --> sandboxOU
+    mgmt --> teamOU
 ```
 
 ### コスト配分タグ戦略

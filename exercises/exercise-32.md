@@ -44,143 +44,82 @@ BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可シス�
 
 ## 2. アーキテクチャ図
 
+```mermaid
+architecture-beta
+    group teamhub(cloud)[TeamHub マルチテナント認証アーキテクチャ]
+
+    group tenants(cloud)[Tenants] in teamhub
+    group cognito(server)[Amazon Cognito] in teamhub
+    group triggers(server)[Lambda Triggers] in teamhub
+    group api(server)[API Layer] in teamhub
+    group backend(server)[Backend Services] in teamhub
+    group data(database)[Data Layer] in teamhub
+    group portal(server)[Management Portal] in teamhub
+
+    service tenant_a(internet)[Tenant A Users] in tenants
+    service tenant_b(internet)[Tenant B Users] in tenants
+    service tenant_c(internet)[Tenant C Users] in tenants
+
+    service userpool(server)[Cognito User Pool] in cognito
+
+    service pre_signup(server)[Pre-SignUp Trigger] in triggers
+    service post_auth(server)[Post-Auth Trigger] in triggers
+    service pre_token(server)[Pre-Token Generation] in triggers
+
+    service apigw(server)[API Gateway] in api
+    service authorizer(server)[Lambda Authorizer JWT RBAC] in api
+
+    service project_svc(server)[Project Service Lambda] in backend
+    service task_svc(server)[Task Service Lambda] in backend
+    service team_svc(server)[Team Service Lambda] in backend
+
+    service dynamodb(database)[DynamoDB Single Table] in data
+    service tenant_meta(database)[Tenant Metadata Table] in data
+
+    service admin_ui(server)[Tenant Admin UI] in portal
+    service user_mgmt(server)[User Management] in portal
+    service usage_dash(server)[Usage Dashboard] in portal
+
+    tenant_a:B --> T:userpool
+    tenant_b:B --> T:userpool
+    tenant_c:B --> T:userpool
+    userpool:B --> T:pre_signup
+    userpool:B --> T:post_auth
+    userpool:B --> T:pre_token
+    pre_token:B --> T:authorizer
+    authorizer:B --> T:project_svc
+    authorizer:B --> T:task_svc
+    authorizer:B --> T:team_svc
+    project_svc:B --> T:dynamodb
+    task_svc:B --> T:dynamodb
+    team_svc:B --> T:dynamodb
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                        TeamHub マルチテナント認証アーキテクチャ                        │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                         │
-│  │  Tenant A   │      │  Tenant B   │      │  Tenant C   │   ... (100 tenants)     │
-│  │   Users     │      │   Users     │      │   Users     │                         │
-│  └──────┬──────┘      └──────┬──────┘      └──────┬──────┘                         │
-│         │                    │                    │                                │
-│         └────────────────────┼────────────────────┘                                │
-│                              ▼                                                     │
-│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
-│  │                         Amazon Cognito User Pool                             │  │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐  │  │
-│  │  │  Custom Attributes:                                                    │  │  │
-│  │  │  - custom:tenant_id (必須)                                             │  │  │
-│  │  │  - custom:tenant_role (admin/manager/member)                           │  │  │
-│  │  │  - custom:tenant_tier (free/standard/enterprise)                       │  │  │
-│  │  └────────────────────────────────────────────────────────────────────────┘  │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │  │
-│  │  │ Pre-SignUp  │  │ Post-Auth   │  │ Pre-Token   │  │ Custom Message      │  │  │
-│  │  │  Trigger    │  │  Trigger    │  │ Generation  │  │    Trigger          │  │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────┬───────────┘  │  │
-│  └─────────┼────────────────┼────────────────┼───────────────────┼──────────────┘  │
-│            │                │                │                   │                 │
-│            ▼                ▼                ▼                   ▼                 │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │                          Lambda Triggers                                      │ │
-│  │  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────────┐  │ │
-│  │  │ Tenant Validation  │  │ Context Enrichment │  │ Claims Injection       │  │ │
-│  │  │ - Tenant存在確認    │  │ - ログイン履歴記録   │  │ - tenant_id追加         │  │ │
-│  │  │ - ユーザー数上限    │  │ - 異常検知           │  │ - permissions追加       │  │ │
-│  │  └────────────────────┘  └────────────────────┘  └────────────────────────┘  │ │
-│  └───────────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                                     │
-│                              ▼                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │                        API Gateway + Lambda Authorizer                        │ │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐  │ │
-│  │  │  Custom Lambda Authorizer                                              │  │ │
-│  │  │  1. JWT検証（署名、有効期限）                                           │  │ │
-│  │  │  2. テナントコンテキスト抽出                                            │  │ │
-│  │  │  3. RBAC権限チェック                                                   │  │ │
-│  │  │  4. リソースレベル認可                                                  │  │ │
-│  │  └────────────────────────────────────────────────────────────────────────┘  │ │
-│  └───────────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                                     │
-│                              ▼                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │                         Backend Services                                      │ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐   │ │
-│  │  │ Project Service │  │ Task Service    │  │ Team Service                │   │ │
-│  │  │ (Lambda)        │  │ (Lambda)        │  │ (Lambda)                    │   │ │
-│  │  └────────┬────────┘  └────────┬────────┘  └─────────────┬───────────────┘   │ │
-│  └───────────┼────────────────────┼─────────────────────────┼───────────────────┘ │
-│              │                    │                         │                     │
-│              └────────────────────┼─────────────────────────┘                     │
-│                                   ▼                                               │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │                         Data Layer (Tenant Isolation)                        │ │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐  │ │
-│  │  │  DynamoDB (Single Table Design with Tenant Partition)                  │  │ │
-│  │  │  ┌──────────────────────┬──────────────────────────────────────────┐  │  │ │
-│  │  │  │ PK: TENANT#A         │ SK: PROJECT#001 │ Data: {...}            │  │  │ │
-│  │  │  │ PK: TENANT#A         │ SK: TASK#001    │ Data: {...}            │  │  │ │
-│  │  │  │ PK: TENANT#B         │ SK: PROJECT#001 │ Data: {...}            │  │  │ │
-│  │  │  └──────────────────────┴──────────────────────────────────────────┘  │  │ │
-│  │  └────────────────────────────────────────────────────────────────────────┘  │ │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐  │ │
-│  │  │  Tenant Metadata Table                                                 │  │ │
-│  │  │  - テナント設定、ユーザー上限、機能フラグ                                 │  │ │
-│  │  └────────────────────────────────────────────────────────────────────────┘  │ │
-│  └───────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                     │
-│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │                         Tenant Management Portal                              │ │
-│  │  ┌────────────────────┐  ┌────────────────────┐  ┌────────────────────────┐  │ │
-│  │  │ Tenant Admin UI    │  │ User Management    │  │ Usage Dashboard        │  │ │
-│  │  │ - テナント作成      │  │ - ユーザー招待     │  │ - 使用量モニタリング    │  │ │
-│  │  │ - 設定管理          │  │ - ロール割り当て   │  │ - 課金情報             │  │ │
-│  │  └────────────────────┘  └────────────────────┘  └────────────────────────┘  │ │
-│  └───────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
+
+**Custom Attributes:** tenant_id (必須), tenant_role (admin/manager/member), tenant_tier (free/standard/enterprise)
+
+**Lambda Authorizer:** JWT検証、テナントコンテキスト抽出、RBAC権限チェック、リソースレベル認可
+
+**DynamoDB Single Table Design:** PK: TENANT#X, SK: PROJECT#/TASK# (Tenant Partition)
 
 ### RBACモデル
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TeamHub RBAC Model                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Platform Level (Super Admin)                                               │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  platform:admin                                                        │ │
-│  │  - テナント作成/削除                                                    │ │
-│  │  - システム設定管理                                                     │ │
-│  │  - 全テナントのモニタリング                                             │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                              │
-│                              ▼                                              │
-│  Tenant Level                                                               │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  tenant:admin                                                          │ │
-│  │  - テナント設定管理                                                     │ │
-│  │  - ユーザー招待/削除                                                    │ │
-│  │  - ロール割り当て                                                       │ │
-│  │  - 全リソースへのフルアクセス                                           │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  tenant:manager                                                        │ │
-│  │  - プロジェクト作成/編集                                                │ │
-│  │  - タスク管理                                                           │ │
-│  │  - チームメンバー管理                                                   │ │
-│  │  - レポート閲覧                                                         │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  tenant:member                                                         │ │
-│  │  - 割り当てられたタスクの閲覧/更新                                      │ │
-│  │  - コメント投稿                                                         │ │
-│  │  - 自分のプロファイル管理                                               │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                              │                                              │
-│                              ▼                                              │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  tenant:guest (read-only)                                              │ │
-│  │  - プロジェクト閲覧のみ                                                 │ │
-│  │  - コメント閲覧のみ                                                     │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph platform[Platform Level - Super Admin]
+        admin[platform:admin<br/>テナント作成/削除<br/>システム設定管理<br/>全テナントのモニタリング]
+    end
+
+    subgraph tenant[Tenant Level]
+        tadmin[tenant:admin<br/>テナント設定管理<br/>ユーザー招待/削除<br/>ロール割り当て<br/>全リソースへのフルアクセス]
+        manager[tenant:manager<br/>プロジェクト作成/編集<br/>タスク管理<br/>チームメンバー管理<br/>レポート閲覧]
+        member[tenant:member<br/>割り当てタスクの閲覧/更新<br/>コメント投稿<br/>自分のプロファイル管理]
+        guest[tenant:guest read-only<br/>プロジェクト閲覧のみ<br/>コメント閲覧のみ]
+    end
+
+    admin --> tadmin
+    tadmin --> manager
+    manager --> member
+    member --> guest
 ```
 
 ---
@@ -200,51 +139,41 @@ GCPでのマルチテナント経験がある方向けの比較：
 
 ### 3.2 テナント分離パターン
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Tenant Isolation Patterns                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  1. Silo Model（完全分離）                                              │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  Tenant A          Tenant B          Tenant C                   │   │
-│  │  ┌─────────┐      ┌─────────┐      ┌─────────┐                 │   │
-│  │  │ User    │      │ User    │      │ User    │                 │   │
-│  │  │ Pool A  │      │ Pool B  │      │ Pool C  │                 │   │
-│  │  └────┬────┘      └────┬────┘      └────┬────┘                 │   │
-│  │       │                │                │                       │   │
-│  │  ┌────▼────┐      ┌────▼────┐      ┌────▼────┐                 │   │
-│  │  │Database │      │Database │      │Database │                 │   │
-│  │  │   A     │      │   B     │      │   C     │                 │   │
-│  │  └─────────┘      └─────────┘      └─────────┘                 │   │
-│  │  ✓ 完全分離  ✗ コスト高  ✗ 管理複雑                             │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  2. Pool Model（共有 + 論理分離）← 本課題で採用                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │        Shared Cognito User Pool                                 │   │
-│  │  ┌─────────────────────────────────────────────────────────┐   │   │
-│  │  │  User (tenant_id=A)  User (tenant_id=B)  User (tenant_id=C)│   │   │
-│  │  └─────────────────────────────────────────────────────────┘   │   │
-│  │                          │                                      │   │
-│  │              ┌───────────┴───────────┐                         │   │
-│  │              ▼                       ▼                         │   │
-│  │     Lambda Authorizer          DynamoDB                        │   │
-│  │     (tenant context)     (partition by tenant_id)              │   │
-│  │  ✓ コスト効率  ✓ 管理容易  △ 分離はアプリケーション責務          │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  3. Bridge Model（ハイブリッド）                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  Enterprise Tenants (Silo)    Standard Tenants (Pool)          │   │
-│  │  ┌─────────┐ ┌─────────┐     ┌─────────────────────────┐      │   │
-│  │  │Dedicated│ │Dedicated│     │   Shared Infrastructure │      │   │
-│  │  │ Tenant A│ │ Tenant B│     │   Tenants C, D, E...    │      │   │
-│  │  └─────────┘ └─────────┘     └─────────────────────────┘      │   │
-│  │  ✓ 柔軟性  ✓ エンタープライズ対応  △ 複雑性増加                  │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph silo[1. Silo Model 完全分離]
+        direction TB
+        subgraph siloA[Tenant A]
+            poolA[User Pool A] --> dbA[Database A]
+        end
+        subgraph siloB[Tenant B]
+            poolB[User Pool B] --> dbB[Database B]
+        end
+        subgraph siloC[Tenant C]
+            poolC[User Pool C] --> dbC[Database C]
+        end
+    end
+    siloNote[✓ 完全分離  ✗ コスト高  ✗ 管理複雑]
+
+    subgraph pool[2. Pool Model 共有+論理分離 - 本課題で採用]
+        direction TB
+        sharedPool[Shared Cognito User Pool<br/>User tenant_id=A / B / C]
+        sharedPool --> authorizer[Lambda Authorizer<br/>tenant context]
+        sharedPool --> dynamodb[DynamoDB<br/>partition by tenant_id]
+    end
+    poolNote[✓ コスト効率  ✓ 管理容易  △ 分離はアプリケーション責務]
+
+    subgraph bridge[3. Bridge Model ハイブリッド]
+        direction LR
+        subgraph enterprise[Enterprise Tenants - Silo]
+            dedA[Dedicated Tenant A]
+            dedB[Dedicated Tenant B]
+        end
+        subgraph standard[Standard Tenants - Pool]
+            shared[Shared Infrastructure<br/>Tenants C, D, E...]
+        end
+    end
+    bridgeNote[✓ 柔軟性  ✓ エンタープライズ対応  △ 複雑性増加]
 ```
 
 ---

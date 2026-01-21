@@ -29,31 +29,30 @@
 DevBoost株式会社は、単一のAWSアカウントで本番・開発・検証環境を運用しています。
 急成長に伴い、以下の問題が深刻化しています：
 
-```
-現状の問題点:
-┌─────────────────────────────────────────────────────────────────┐
-│                   現行システム構成（単一アカウント）             │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. セキュリティリスク                                           │
-│    - 本番環境に全員がアクセス可能                               │
-│    - IAMポリシーが複雑化、管理不能                              │
-│    - 機密データへのアクセス制御が不十分                          │
-│                                                                  │
-│ 2. コスト管理の困難                                             │
-│    - 環境別・チーム別のコストが把握できない                      │
-│    - 開発者が本番リソースを誤って変更                            │
-│    - リソースの野放し状態                                       │
-│                                                                  │
-│ 3. 運用効率の低下                                               │
-│    - 新環境構築に30分以上                                       │
-│    - 設定ミスによるインシデント頻発                              │
-│    - チーム間の依存関係で開発停滞                                │
-│                                                                  │
-│ 4. コンプライアンス不備                                         │
-│    - 監査証跡が整備されていない                                  │
-│    - セキュリティ基準の統一管理ができない                        │
-│    - 顧客からのSOC2要求に対応困難                               │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CurrentSystem["現行システム構成（単一アカウント）"]
+        subgraph Security["1. セキュリティリスク"]
+            S1["本番環境に全員がアクセス可能"]
+            S2["IAMポリシーが複雑化、管理不能"]
+            S3["機密データへのアクセス制御が不十分"]
+        end
+        subgraph Cost["2. コスト管理の困難"]
+            C1["環境別・チーム別のコストが把握できない"]
+            C2["開発者が本番リソースを誤って変更"]
+            C3["リソースの野放し状態"]
+        end
+        subgraph Operations["3. 運用効率の低下"]
+            O1["新環境構築に30分以上"]
+            O2["設定ミスによるインシデント頻発"]
+            O3["チーム間の依存関係で開発停滞"]
+        end
+        subgraph Compliance["4. コンプライアンス不備"]
+            CP1["監査証跡が整備されていない"]
+            CP2["セキュリティ基準の統一管理ができない"]
+            CP3["顧客からのSOC2要求に対応困難"]
+        end
+    end
 ```
 
 ### ビジネス要件
@@ -151,65 +150,63 @@ GCP → AWS マッピング:
 | **Amazon SNS** | 通知 |
 
 ### アーキテクチャ図
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                              DevBoost AWS Organizations                                  │
-│                                                                                          │
-│  ┌─────────────────────────────────────────────────────────────────────────────────┐   │
-│  │                         Management Account (Root)                                │   │
-│  │                                                                                   │   │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐                  │   │
-│  │  │  Organizations  │  │  IAM Identity   │  │   Billing &     │                  │   │
-│  │  │  Management     │  │    Center       │  │   Cost Mgmt     │                  │   │
-│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘                  │   │
-│  │                                                                                   │   │
-│  │  SCP: DenyRootUser, RequireIMDSv2, DenyLeaveOrg                                 │   │
-│  └─────────────────────────────────────────────────────────────────────────────────┘   │
-│                                          │                                              │
-│                    ┌─────────────────────┼─────────────────────┐                       │
-│                    │                     │                     │                       │
-│                    ▼                     ▼                     ▼                       │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐           │
-│  │   Security OU       │  │   Infrastructure OU │  │   Workloads OU      │           │
-│  │                     │  │                     │  │                     │           │
-│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  ┌───────────────┐  │           │
-│  │  │    Log        │  │  │  │   Network     │  │  │  │  Production   │  │           │
-│  │  │   Account     │  │  │  │   Account     │  │  │  │   OU          │  │           │
-│  │  │               │  │  │  │               │  │  │  │ ┌───────────┐ │  │           │
-│  │  │ - CloudTrail  │  │  │  │ - Transit GW  │  │  │  │ │Production │ │  │           │
-│  │  │ - Config Agg  │  │  │  │ - VPN/DX      │  │  │  │ │ Account   │ │  │           │
-│  │  │ - S3 Logs     │  │  │  │ - DNS (R53)   │  │  │  │ └───────────┘ │  │           │
-│  │  └───────────────┘  │  │  └───────────────┘  │  │  │               │  │           │
-│  │                     │  │                     │  │  │  ┌───────────┐ │  │           │
-│  │  ┌───────────────┐  │  │  ┌───────────────┐  │  │  │ │ Staging   │ │  │           │
-│  │  │   Security    │  │  │  │   Shared      │  │  │  │ │ Account   │ │  │           │
-│  │  │   Account     │  │  │  │   Services    │  │  │  │ └───────────┘ │  │           │
-│  │  │               │  │  │  │               │  │  │  └───────────────┘  │           │
-│  │  │ - GuardDuty   │  │  │  │ - ECR         │  │  │                     │           │
-│  │  │ - Sec Hub     │  │  │  │ - CI/CD       │  │  │  ┌───────────────┐  │           │
-│  │  │ - Detective   │  │  │  │ - Artifacts   │  │  │  │  Development  │  │           │
-│  │  └───────────────┘  │  │  └───────────────┘  │  │  │   OU          │  │           │
-│  │                     │  │                     │  │  │ ┌───────────┐ │  │           │
-│  │  SCP: Restrict      │  │  SCP: Network      │  │  │ │   Dev     │ │  │           │
-│  │       Regions       │  │       Admin Only   │  │  │ │ Account   │ │  │           │
-│  └─────────────────────┘  └─────────────────────┘  │  │ └───────────┘ │  │           │
-│                                                    │  │               │  │           │
-│                                                    │  │ SCP: Budget   │  │           │
-│                                                    │  │      Limit    │  │           │
-│                                                    │  └───────────────┘  │           │
-│                                                    │                     │           │
-│                                                    │  ┌───────────────┐  │           │
-│                                                    │  │   Sandbox OU  │  │           │
-│                                                    │  │ ┌───────────┐ │  │           │
-│                                                    │  │ │ Sandbox   │ │  │           │
-│                                                    │  │ │ Account   │ │  │           │
-│                                                    │  │ └───────────┘ │  │           │
-│                                                    │  │               │  │           │
-│                                                    │  │ SCP: Strict   │  │           │
-│                                                    │  │      Budget   │  │           │
-│                                                    │  └───────────────┘  │           │
-│                                                    └─────────────────────┘           │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Organizations["DevBoost AWS Organizations"]
+        subgraph Management["Management Account (Root)"]
+            OrgMgmt["Organizations<br/>Management"]
+            IAMCenter["IAM Identity<br/>Center"]
+            Billing["Billing &<br/>Cost Mgmt"]
+            RootSCP["SCP: DenyRootUser, RequireIMDSv2, DenyLeaveOrg"]
+        end
+
+        subgraph SecurityOU["Security OU"]
+            subgraph LogAccount["Log Account"]
+                CloudTrail["CloudTrail"]
+                ConfigAgg["Config Agg"]
+                S3Logs["S3 Logs"]
+            end
+            subgraph SecAccount["Security Account"]
+                GuardDuty["GuardDuty"]
+                SecHub["Security Hub"]
+                Detective["Detective"]
+            end
+            SecuritySCP["SCP: Restrict Regions"]
+        end
+
+        subgraph InfraOU["Infrastructure OU"]
+            subgraph NetworkAccount["Network Account"]
+                TransitGW["Transit GW"]
+                VPNDX["VPN/DX"]
+                DNS["DNS (R53)"]
+            end
+            subgraph SharedServices["Shared Services"]
+                ECR["ECR"]
+                CICD["CI/CD"]
+                Artifacts["Artifacts"]
+            end
+            InfraSCP["SCP: Network Admin Only"]
+        end
+
+        subgraph WorkloadsOU["Workloads OU"]
+            subgraph ProdOU["Production OU"]
+                ProdAccount["Production Account"]
+            end
+            subgraph NonProdOU["Non-Production"]
+                StagingAccount["Staging Account"]
+                DevAccount["Dev Account"]
+            end
+            subgraph SandboxOU["Sandbox OU"]
+                SandboxAccount["Sandbox Account"]
+                SandboxSCP["SCP: Strict Budget"]
+            end
+            WorkloadsSCP["SCP: Budget Limit"]
+        end
+    end
+
+    Management --> SecurityOU
+    Management --> InfraOU
+    Management --> WorkloadsOU
 ```
 
 ---
@@ -1676,36 +1673,38 @@ DevBoost社は1年後に従業員50名（エンジニア20名）への成長を�
 
 ### 拡張 OU 構造
 
-```
-Root
-├── Security OU
-│   ├── Log Archive Account
-│   └── Security Tooling Account
-│
-├── Infrastructure OU
-│   ├── Network Account
-│   └── Shared Services Account
-│
-├── Workloads OU
-│   ├── Production OU
-│   │   └── Production Account
-│   │
-│   ├── Pre-Production OU
-│   │   ├── Staging Account
-│   │   └── QA Account
-│   │
-│   ├── Development OU
-│   │   ├── Platform-Dev Account
-│   │   ├── ProductA-Dev Account
-│   │   ├── ProductB-Dev Account
-│   │   └── Data-Dev Account
-│   │
-│   └── Sandbox OU
-│       └── Sandbox Account
-│
-└── Analytics OU (New)
-    ├── Data Lake Account
-    └── BI Account
+```mermaid
+flowchart TB
+    Root["Root"]
+
+    Root --> SecurityOU["Security OU"]
+    SecurityOU --> LogArchive["Log Archive Account"]
+    SecurityOU --> SecTooling["Security Tooling Account"]
+
+    Root --> InfraOU["Infrastructure OU"]
+    InfraOU --> NetworkAcc["Network Account"]
+    InfraOU --> SharedSvc["Shared Services Account"]
+
+    Root --> WorkloadsOU["Workloads OU"]
+    WorkloadsOU --> ProdOU["Production OU"]
+    ProdOU --> ProdAcc["Production Account"]
+
+    WorkloadsOU --> PreProdOU["Pre-Production OU"]
+    PreProdOU --> StagingAcc["Staging Account"]
+    PreProdOU --> QAAcc["QA Account"]
+
+    WorkloadsOU --> DevOU["Development OU"]
+    DevOU --> PlatformDev["Platform-Dev Account"]
+    DevOU --> ProductADev["ProductA-Dev Account"]
+    DevOU --> ProductBDev["ProductB-Dev Account"]
+    DevOU --> DataDev["Data-Dev Account"]
+
+    WorkloadsOU --> SandboxOU["Sandbox OU"]
+    SandboxOU --> SandboxAcc["Sandbox Account"]
+
+    Root --> AnalyticsOU["Analytics OU (New)"]
+    AnalyticsOU --> DataLakeAcc["Data Lake Account"]
+    AnalyticsOU --> BIAcc["BI Account"]
 ```
 
 ### IAM Identity Center 権限セット設計
