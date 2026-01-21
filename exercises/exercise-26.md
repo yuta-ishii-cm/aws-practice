@@ -10,8 +10,8 @@
 |------|------|
 | 難易度 | 中級 |
 | カテゴリ | IaC・DevOps |
-| 処理形態 | マイクロサービスCI/CD |
-| 使用するIaCツール | Terraform + CodePipeline |
+| 処理タイプ | 非同期 |
+| 使用IaC | Terraform |
 | 想定所要時間 | 6-7時間 |
 
 ---

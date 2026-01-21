@@ -10,8 +10,8 @@
 |------|------|
 | 難易度 | 中級 |
 | カテゴリ | IaC・DevOps |
-| 処理形態 | ブルーグリーンデプロイ |
-| 使用するIaCツール | CloudFormation + CodeDeploy |
+| 処理タイプ | 非同期 |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---

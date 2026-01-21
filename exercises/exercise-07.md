@@ -8,11 +8,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| **カテゴリ** | オブザーバビリティ・監視 |
-| **難易度** | 初級〜中級（Beginner to Intermediate） |
-| **所要時間** | 4-5時間 |
-| **前提スキル** | AWS基礎、Linux基礎、Docker基礎 |
-| **関連AWS認定** | AWS Certified DevOps Engineer、Solutions Architect Associate |
+| 難易度 | 初級〜中級 |
+| カテゴリ | オブザーバビリティ・監視 |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 

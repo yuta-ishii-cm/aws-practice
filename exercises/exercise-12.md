@@ -10,8 +10,8 @@
 |------|------|
 | 難易度 | 初級〜中級 |
 | カテゴリ | IaC・DevOps |
-| 処理形態 | マルチ環境管理・CI/CD |
-| 使用するIaCツール | AWS CDK (TypeScript) + CodePipeline |
+| 処理タイプ | バッチ |
+| 使用IaC | CDK |
 | 想定所要時間 | 5-6時間 |
 
 ---

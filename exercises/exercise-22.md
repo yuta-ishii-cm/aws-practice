@@ -8,11 +8,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| **カテゴリ** | コスト管理・最適化 |
-| **難易度** | 中級（Intermediate） |
-| **所要時間** | 4-5時間 |
-| **前提スキル** | AWS基礎、EC2/RDS基礎、コスト意識 |
-| **関連AWS認定** | AWS Certified Cloud Practitioner、Solutions Architect Associate |
+| 難易度 | 中級 |
+| カテゴリ | コスト管理・最適化 |
+| 処理タイプ | バッチ |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 

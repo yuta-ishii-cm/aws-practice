@@ -8,12 +8,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| **カテゴリ** | マルチアカウント戦略・ガバナンス |
-| **難易度** | 初級〜中級（Beginner to Intermediate） |
-| **所要時間** | 5-6時間 |
-| **使用IaC** | Terraform |
-| **前提スキル** | AWS基礎、Terraform基礎 |
-| **関連AWS認定** | Solutions Architect Associate、DevOps Engineer |
+| 難易度 | 初級〜中級 |
+| カテゴリ | マルチアカウント戦略・ガバナンス |
+| 処理タイプ | バッチ |
+| 使用IaC | Terraform |
+| 想定所要時間 | 5-6時間 |
 
 ---
 

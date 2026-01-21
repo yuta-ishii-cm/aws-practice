@@ -8,11 +8,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| **カテゴリ** | セキュリティ・コンプライアンス |
-| **難易度** | 中級（Intermediate） |
-| **所要時間** | 5-6時間 |
-| **前提スキル** | AWS基礎、セキュリティ基礎知識、Python基礎 |
-| **関連AWS認定** | AWS Certified Security - Specialty、Solutions Architect Professional |
+| 難易度 | 中級 |
+| カテゴリ | セキュリティ・コンプライアンス |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
