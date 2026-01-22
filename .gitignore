@@ -8,5 +8,3 @@ node_modules/
 exercises/.vitepress/cache/
 exercises/.vitepress/dist/
 
-# pnpm
-pnpm-lock.yaml
