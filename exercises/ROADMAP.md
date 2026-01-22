@@ -6,28 +6,22 @@ GCP経験者向けのAWS実践演習。初級から統合課題まで段階的�
 
 | フェーズ | 問題数 | 推定学習時間 | 対象レベル |
 |----------|--------|--------------|------------|
-| フェーズ1: 基礎固め | 8問 | 12〜20時間 | 初級 |
-| フェーズ2: 実践力養成 | 17問 | 51〜102時間 | 初級〜中級 |
-| フェーズ3: 高度な実装 | 12問 | 48〜96時間 | 中級 |
-| フェーズ4: 実践統合 | 3問 | 3〜9日 | 中級〜上級 |
-| **合計** | **40問** | **約120〜230時間** | - |
+| フェーズ1: 基礎固め | 2問 | 8〜10時間 | 初級 |
+| フェーズ2: 実践力養成 | 17問 | 85〜115時間 | 初級〜中級 |
+| フェーズ3: 高度な実装 | 20問 | 115〜150時間 | 中級 |
+| フェーズ4: 実践統合 | 1問 | 8〜10時間 | 上級 |
+| **合計** | **40問** | **約216〜285時間** | - |
 
 ---
 
-## フェーズ1: 基礎固め（初級）【8問】
+## フェーズ1: 基礎固め（初級）【2問】
 
 AWSの基本サービスとサーバーレスアーキテクチャの基礎を学びます。
 
-| # | ファイル | タイトル | カテゴリ | 所要時間 | 主要サービス |
-|---|----------|----------|----------|----------|--------------|
-| 1 | [exercise-01.md](exercise-01.md) | CloudShop - サーバーレスECサイト | サーバーレス基礎 | 1.5〜2h | Lambda, API Gateway, DynamoDB |
-| 2 | [exercise-02.md](exercise-02.md) | CostWatch - コスト最適化 | コスト管理 | 1.5〜2h | Cost Explorer, Budgets, Lambda |
-| 3 | [exercise-03.md](exercise-03.md) | EventHub - イベント駆動アーキテクチャ | イベント駆動 | 2〜3h | EventBridge, SQS, SNS, Lambda |
-| 4 | [exercise-04.md](exercise-04.md) | TalkBot - AIチャットボット | AI入門 | 2〜3h | Lex, Bedrock, Lambda |
-| 5 | [exercise-05.md](exercise-05.md) | DocuMind - 生成AIドキュメント処理 | 生成AI | 2〜3h | Bedrock, Textract, Comprehend |
-| 6 | [exercise-06.md](exercise-06.md) | VisualSearch - 画像認識検索 | 画像AI | 2〜3h | Rekognition, OpenSearch, Lambda |
-| 7 | [exercise-07.md](exercise-07.md) | CodeAssist - AIコード支援 | 開発支援AI | 1.5〜2h | Bedrock, CodeWhisperer, Lambda |
-| 8 | [exercise-08.md](exercise-08.md) | DevBoost - Organizations Landing Zone | マルチアカウント | 2〜3h | Organizations, Control Tower |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 23 | [FinanceFlow 月次レポート自動生成](exercise-23.md) | バッチ処理 / SaaS | 4〜5h |
+| 27 | [旅行予約サイトのサーバーレスAPI基盤](exercise-27.md) | マイクロサービス・API | 4〜5h |
 
 ---
 
@@ -35,102 +29,133 @@ AWSの基本サービスとサーバーレスアーキテクチャの基礎を�
 
 本格的なアプリケーション構築とAIの実践的な活用パターンを学びます。
 
-### 2-1. サーバーレス・API応用（2問）
+### 2-1. AI・機械学習入門（5問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 9 | [exercise-09.md](exercise-09.md) | SecureBank - セキュアAPI基盤 | 3〜4h | API Gateway, WAF, Secrets Manager |
-| 10 | [exercise-10.md](exercise-10.md) | GlobalCDN - グローバルコンテンツ配信 | 3〜4h | CloudFront, Lambda@Edge, Route 53 |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 1 | [カスタマーサポート自動化システム](exercise-01.md) | AI / カスタマーサポート | 6〜8h |
+| 9 | [ECレビュー分析・インサイト抽出](exercise-09.md) | AI / データ分析 / EC | 6〜7h |
+| 11 | [物件画像自動分析システム](exercise-11.md) | AI / 画像分析 / 不動産テック | 5〜7h |
+| 15 | [動画教材自動字幕生成](exercise-15.md) | AI / メディア処理 / EdTech | 5〜6h |
+| 35 | [AIマッチング非同期処理](exercise-35.md) | バッチ処理 / AI / 人材サービス | 5〜6h |
 
-### 2-2. 非同期・バッチ処理（3問）
+### 2-2. マイクロサービス・API（1問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 11 | [exercise-11.md](exercise-11.md) | MediaFlow - 画像・動画変換パイプライン | 3〜4h | Step Functions, MediaConvert, S3 |
-| 12 | [exercise-12.md](exercise-12.md) | BatchMaster - 大規模バッチ処理 | 4〜5h | AWS Batch, Step Functions |
-| 13 | [exercise-13.md](exercise-13.md) | PayEasy - Step Functionsワークフロー | 4〜6h | Step Functions, Lambda, CDK |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 2 | [ヘルスケアアプリのマイクロサービス化](exercise-02.md) | マイクロサービス・API | 6〜7h |
 
-### 2-3. データ処理・分析（3問）
+### 2-3. IaC・DevOps（2問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 14 | [exercise-14.md](exercise-14.md) | DataLake - データレイク構築 | 4〜5h | S3, Glue, Athena, QuickSight |
-| 15 | [exercise-15.md](exercise-15.md) | LogWatch - ログ分析プラットフォーム | 3〜4h | CloudWatch, Kinesis, OpenSearch |
-| 16 | [exercise-16.md](exercise-16.md) | MegaMart - DynamoDB実践設計 | 4〜6h | DynamoDB, DAX, CloudFormation |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 3 | [スタートアップの開発環境自動構築](exercise-03.md) | IaC・DevOps | 4〜5h |
+| 12 | [ゲーム会社のマルチ環境管理](exercise-12.md) | IaC・DevOps | 5〜6h |
 
-### 2-4. 生成AI応用（6問）
+### 2-4. コンテナ（2問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 17 | [exercise-17.md](exercise-17.md) | VoiceAssist - 音声AIアシスタント | 3〜4h | Transcribe, Polly, Bedrock, Lex |
-| 18 | [exercise-18.md](exercise-18.md) | RAGChat - RAGチャットボット | 4〜5h | Bedrock, OpenSearch Serverless, Kendra |
-| 19 | [exercise-19.md](exercise-19.md) | ContractAI - 契約書AI分析 | 3〜4h | Textract, Comprehend, Bedrock |
-| 20 | [exercise-20.md](exercise-20.md) | AIWorkflow - マルチモーダルAI処理 | 4〜5h | Bedrock, Step Functions, Rekognition |
-| 21 | [exercise-21.md](exercise-21.md) | RealtimeAI - リアルタイムAI分析 | 4〜5h | Kinesis, Bedrock, Lambda |
-| 22 | [exercise-22.md](exercise-22.md) | PersonalizeAI - AIパーソナライゼーション | 4〜5h | Personalize, Bedrock, DynamoDB |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 5 | [スタートアップのコンテナCI/CD構築](exercise-05.md) | コンテナ | 4〜5h |
+| 31 | [ニュースメディアのCMS基盤](exercise-31.md) | コンテナ | 5〜6h |
 
-### 2-5. コンテナ・認証基礎（3問）
+### 2-5. データ基盤（1問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 23 | [exercise-23.md](exercise-23.md) | ContainerApp - コンテナ化Webアプリ | 3〜4h | ECS, Fargate, ALB, ECR |
-| 24 | [exercise-24.md](exercise-24.md) | MedConnect - Cognito認証基盤 | 3〜4h | Cognito, API Gateway, Lambda |
-| 25 | [exercise-25.md](exercise-25.md) | TechCorp - IAM Identity Center | 3〜4h | IAM Identity Center, Organizations |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 6 | [EC企業のデータレイク構築](exercise-06.md) | データ基盤 | 5〜6h |
+
+### 2-6. オブザーバビリティ・ガバナンス（2問）
+
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 7 | [配車サービスの統合監視基盤](exercise-07.md) | オブザーバビリティ・監視 | 4〜5h |
+| 8 | [AWS基盤設計（Organizations + Landing Zone）](exercise-08.md) | マルチアカウント戦略・ガバナンス | 5〜6h |
+
+### 2-7. セキュリティ（3問）
+
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 20 | [金融系SaaSのセキュア基盤](exercise-20.md) | セキュリティ | 5〜6h |
+| 21 | [グローバルWebサービスのDDoS対策](exercise-21.md) | セキュリティ | 4〜5h |
+| 24 | [MedConnect Cognito認証基盤](exercise-24.md) | 認証・認可 / セキュリティ | 4〜5h |
+
+### 2-8. メディア処理（1問）
+
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 33 | [動画エンコーディングパイプライン](exercise-33.md) | バッチ処理 / メディア | 5〜6h |
 
 ---
 
-## フェーズ3: 高度な実装（中級）【12問】
+## フェーズ3: 高度な実装（中級）【20問】
 
 IaC、CI/CD、セキュリティ、MLOpsなど高度なトピックを学びます。
 
-### 3-1. IaC・DevOps（3問）
+### 3-1. AI・MLOps（4問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 26 | [exercise-26.md](exercise-26.md) | DevOps Pipeline - CI/CDパイプライン | 4〜6h | CodePipeline, CodeBuild, CodeDeploy |
-| 27 | [exercise-27.md](exercise-27.md) | DisasterGuard - DR/バックアップ | 4〜6h | AWS Backup, DRS, Route 53 |
-| 28 | [exercise-28.md](exercise-28.md) | TaskFlow - マルチリージョン構成 | 5〜7h | Route 53, DynamoDB Global Tables, CDK |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 4 | [設備異常検知AIモデル運用基盤](exercise-04.md) | AI / IoT / 製造業 / MLOps | 8〜10h |
+| 14 | [契約書レビュー支援システム](exercise-14.md) | AI / ドキュメント処理 / リーガルテック | 8〜10h |
+| 36 | [SageMaker モデル基盤（需要予測）](exercise-36.md) | 機械学習 / SageMaker | 6〜8h |
+| 37 | [CreditAI MLOpsパイプライン](exercise-37.md) | MLOps / 機械学習パイプライン | 6〜8h |
 
-### 3-2. セキュリティ・コンプライアンス（2問）
+### 3-2. データ基盤・分析（4問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 29 | [exercise-29.md](exercise-29.md) | ComplianceHub - コンプライアンス自動化 | 4〜6h | Config, Security Hub, GuardDuty |
-| 30 | [exercise-30.md](exercise-30.md) | ShopNow - Chaos Engineering | 4〜6h | AWS FIS, CloudWatch, Terraform |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 10 | [センサーデータ集計・異常検知レポート](exercise-10.md) | バッチ処理 / データ基盤 / IoT | 7〜9h |
+| 16 | [DynamoDB実践設計（シングルテーブル）](exercise-16.md) | データベース / NoSQL設計 | 5〜6h |
+| 17 | [モバイルアプリのリアルタイム分析基盤](exercise-17.md) | データ基盤 | 5〜6h |
+| 18 | [小売業のデータウェアハウス](exercise-18.md) | データ基盤 | 6〜7h |
 
-### 3-3. 認証・認可応用（2問）
+### 3-3. IaC・DevOps（3問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 31 | [exercise-31.md](exercise-31.md) | ServerlessSaaS - サーバーレスSaaS | 5〜7h | AppSync, Cognito, DynamoDB |
-| 32 | [exercise-32.md](exercise-32.md) | TeamHub - マルチテナントSaaS認証 | 5〜7h | Cognito, Lambda Authorizer, CDK |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 26 | [広告テック企業のマイクロサービスCI/CD](exercise-26.md) | IaC・DevOps | 6〜7h |
+| 38 | [Fintech企業のゼロダウンタイムデプロイ](exercise-38.md) | IaC・DevOps | 5〜6h |
+| 13 | [PayEasy Step Functionsワークフロー](exercise-13.md) | サーバーレス / ワークフロー | 5〜6h |
 
-### 3-4. IoT（2問）
+### 3-4. セキュリティ・コンプライアンス（3問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 33 | [exercise-33.md](exercise-33.md) | SmartHome - IoTデバイス管理 | 4〜5h | IoT Core, Timestream, Lambda |
-| 34 | [exercise-34.md](exercise-34.md) | EdgeFactory - エッジコンピューティング | 4〜6h | IoT Greengrass, SageMaker Edge |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 19 | [ヘルスケア企業のセキュリティ監視基盤](exercise-19.md) | セキュリティ・コンプライアンス | 5〜6h |
+| 25 | [TechCorp IAM Identity Center](exercise-25.md) | 認証・認可 / セキュリティ | 5〜6h |
+| 32 | [TeamHub マルチテナントSaaS認証](exercise-32.md) | 認証・認可 / セキュリティ | 5〜6h |
 
-### 3-5. ML/MLOps（3問）
+### 3-5. コスト管理・信頼性（2問）
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 35 | [exercise-35.md](exercise-35.md) | MLServe - 機械学習推論基盤 | 4〜5h | SageMaker Endpoints, Lambda |
-| 36 | [exercise-36.md](exercise-36.md) | SmartRetail - SageMakerモデル基盤 | 5〜7h | SageMaker Studio, Training, Batch |
-| 37 | [exercise-37.md](exercise-37.md) | CreditAI - MLOpsパイプライン | 6〜8h | SageMaker Pipelines, Model Registry |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 22 | [マーケティングSaaSのAWSコスト最適化](exercise-22.md) | コスト管理・最適化 | 4〜5h |
+| 30 | [ShopNow Chaos Engineering](exercise-30.md) | 信頼性エンジニアリング | 5〜6h |
+
+### 3-6. グローバル・マルチリージョン（1問）
+
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 28 | [グローバル展開のマルチリージョン構成](exercise-28.md) | グローバルアーキテクチャ | 6〜7h |
+
+### 3-7. マイクロサービス・コンテナ（3問）
+
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 29 | [物流企業のイベント駆動配送管理](exercise-29.md) | マイクロサービス・API | 5〜6h |
+| 34 | [SaaS企業のマルチテナント基盤](exercise-34.md) | コンテナ | 6〜8h |
+| 39 | [小売チェーンの在庫管理API](exercise-39.md) | マイクロサービス・API | 6〜7h |
 
 ---
 
-## フェーズ4: 実践統合（中級〜上級）【3問】
+## フェーズ4: 実践統合（上級）【1問】
 
 複数の技術領域を統合した本格的なアーキテクチャを構築します。
 
-| # | ファイル | タイトル | 所要時間 | 主要サービス |
-|---|----------|----------|----------|--------------|
-| 38 | [exercise-38.md](exercise-38.md) | MicroServices - マイクロサービス | 1〜2日 | EKS, App Mesh, X-Ray |
-| 39 | [exercise-39.md](exercise-39.md) | HybridConnect - ハイブリッドネットワーク | 1〜2日 | Transit Gateway, Direct Connect, VPN |
-| 40 | [exercise-40.md](exercise-40.md) | MultiAgentAI - マルチエージェントAI | 1〜3日 | Bedrock Agents, Step Functions |
+| # | タイトル | カテゴリ | 所要時間 |
+|---|----------|----------|----------|
+| 40 | [統合課題 - AWSアーキテクチャ総合演習](exercise-40.md) | 統合課題 | 8〜10h |
 
 ---
 
@@ -139,72 +164,71 @@ IaC、CI/CD、セキュリティ、MLOpsなど高度なトピックを学びま�
 ```mermaid
 flowchart TB
     subgraph phase1[フェーズ1: 基礎固め 初級]
-        p1_1[1.CloudShop] --> p1_2[2.CostWatch]
-        p1_2 --> p1_3[3.EventHub]
-        p1_3 --> p1_4[4.TalkBot]
-        p1_1 --> p1_5[5.DocuMind]
-        p1_5 --> p1_6[6.VisualSearch]
-        p1_6 --> p1_7[7.CodeAssist]
-        p1_4 --> p1_7
-        p1_7 --> p1_8[8.DevBoost]
+        p1_23[23.月次レポート自動生成]
+        p1_27[27.サーバーレスAPI基盤]
     end
 
     subgraph phase2[フェーズ2: 実践力養成 初級〜中級]
-        subgraph p2_serverless[サーバーレス応用]
-            p2_9[9.SecureBank]
-            p2_10[10.GlobalCDN]
+        subgraph p2_ai[AI・機械学習入門]
+            p2_1[1.カスタマーサポート自動化]
+            p2_9[9.ECレビュー分析]
+            p2_11[11.物件画像分析]
+            p2_15[15.動画字幕生成]
+            p2_35[35.AIマッチング]
         end
-        subgraph p2_batch[非同期・バッチ]
-            p2_11[11.MediaFlow]
-            p2_12[12.BatchMaster]
-            p2_13[13.PayEasy]
+        subgraph p2_infra[インフラ・DevOps]
+            p2_2[2.マイクロサービス化]
+            p2_3[3.開発環境自動構築]
+            p2_5[5.コンテナCI/CD]
+            p2_6[6.データレイク構築]
+            p2_7[7.統合監視基盤]
+            p2_8[8.Organizations]
+            p2_12[12.マルチ環境管理]
         end
-        subgraph p2_data[データ分析]
-            p2_14[14.DataLake]
-            p2_15[15.LogWatch]
-            p2_16[16.MegaMart]
+        subgraph p2_security[セキュリティ]
+            p2_20[20.セキュア基盤]
+            p2_21[21.DDoS対策]
+            p2_24[24.Cognito認証]
         end
-        subgraph p2_ai[生成AI応用]
-            p2_17[17.VoiceAssist] --> p2_18[18.RAGChat]
-            p2_18 --> p2_19[19.ContractAI]
-            p2_20[20.AIWorkflow] --> p2_21[21.RealtimeAI]
-            p2_21 --> p2_22[22.Personalize]
-        end
-        subgraph p2_container[コンテナ・認証基礎]
-            p2_23[23.ContainerApp]
-            p2_24[24.MedConnect]
-            p2_25[25.TechCorp]
-        end
+        p2_31[31.CMS基盤]
+        p2_33[33.動画エンコーディング]
     end
 
     subgraph phase3[フェーズ3: 高度な実装 中級]
-        subgraph p3_devops[IaC・DevOps]
-            p3_26[26.CI/CD Pipeline]
-            p3_27[27.DisasterGuard]
-            p3_28[28.TaskFlow]
+        subgraph p3_ml[AI・MLOps]
+            p3_4[4.設備異常検知AI]
+            p3_14[14.契約書レビューAI]
+            p3_36[36.SageMakerモデル]
+            p3_37[37.MLOpsパイプライン]
+        end
+        subgraph p3_data[データ分析]
+            p3_10[10.センサーデータ分析]
+            p3_16[16.DynamoDB設計]
+            p3_17[17.リアルタイム分析]
+            p3_18[18.データウェアハウス]
+        end
+        subgraph p3_devops[DevOps]
+            p3_13[13.Step Functions]
+            p3_26[26.マイクロサービスCI/CD]
+            p3_38[38.ゼロダウンタイムデプロイ]
         end
         subgraph p3_security[セキュリティ]
-            p3_29[29.ComplianceHub]
-            p3_30[30.Chaos Eng]
+            p3_19[19.セキュリティ監視]
+            p3_25[25.IAM Identity Center]
+            p3_32[32.マルチテナント認証]
         end
-        subgraph p3_auth[認証・認可応用]
-            p3_31[31.ServerlessSaaS]
-            p3_32[32.TeamHub]
-        end
-        subgraph p3_iot[IoT]
-            p3_33[33.SmartHome]
-            p3_34[34.EdgeFactory]
-        end
-        subgraph p3_ml[ML/MLOps]
-            p3_35[35.MLServe]
-            p3_36[36.SmartRetail]
-            p3_37[37.CreditAI]
+        subgraph p3_other[その他]
+            p3_22[22.コスト最適化]
+            p3_28[28.マルチリージョン]
+            p3_29[29.イベント駆動配送]
+            p3_30[30.Chaos Engineering]
+            p3_34[34.マルチテナント基盤]
+            p3_39[39.在庫管理API]
         end
     end
 
-    subgraph phase4[フェーズ4: 実践統合 中級〜上級]
-        p4_38[38.MicroServices EKS+メッシュ] --> p4_39[39.HybridConnect ハイブリッドNW]
-        p4_39 --> p4_40[40.MultiAgentAI AIエージェント]
+    subgraph phase4[フェーズ4: 実践統合 上級]
+        p4_40[40.統合課題]
     end
 
     phase1 --> phase2
@@ -214,61 +238,14 @@ flowchart TB
 
 ---
 
-## 新旧課題番号 対応表
-
-| 新番号 | 旧番号 | タイトル |
-|--------|--------|----------|
-| 1 | 1 | CloudShop - サーバーレスECサイト |
-| 2 | 16 | CostWatch - コスト最適化 |
-| 3 | 11 | EventHub - イベント駆動アーキテクチャ |
-| 4 | 6 | TalkBot - AIチャットボット |
-| 5 | 21 | DocuMind - 生成AIドキュメント処理 |
-| 6 | 22 | VisualSearch - 画像認識検索 |
-| 7 | 28 | CodeAssist - AIコード支援 |
-| 8 | 31 | DevBoost - Organizations Landing Zone |
-| 9 | 5 | SecureBank - セキュアAPI基盤 |
-| 10 | 10 | GlobalCDN - グローバルコンテンツ配信 |
-| 11 | 2 | MediaFlow - 画像・動画変換パイプライン |
-| 12 | 12 | BatchMaster - 大規模バッチ処理 |
-| 13 | 34 | PayEasy - Step Functionsワークフロー |
-| 14 | 3 | DataLake - データレイク構築 |
-| 15 | 4 | LogWatch - ログ分析プラットフォーム |
-| 16 | 33 | MegaMart - DynamoDB実践設計 |
-| 17 | 23 | VoiceAssist - 音声AIアシスタント |
-| 18 | 24 | RAGChat - RAGチャットボット |
-| 19 | 27 | ContractAI - 契約書AI分析 |
-| 20 | 25 | AIWorkflow - マルチモーダルAI処理 |
-| 21 | 26 | RealtimeAI - リアルタイムAI分析 |
-| 22 | 29 | PersonalizeAI - AIパーソナライゼーション |
-| 23 | 8 | ContainerApp - コンテナ化Webアプリ |
-| 24 | 38 | MedConnect - Cognito認証基盤 |
-| 25 | 40 | TechCorp - IAM Identity Center |
-| 26 | 14 | DevOps Pipeline - CI/CDパイプライン |
-| 27 | 15 | DisasterGuard - DR/バックアップ |
-| 28 | 32 | TaskFlow - マルチリージョン構成 |
-| 29 | 17 | ComplianceHub - コンプライアンス自動化 |
-| 30 | 35 | ShopNow - Chaos Engineering |
-| 31 | 19 | ServerlessSaaS - サーバーレスSaaS |
-| 32 | 39 | TeamHub - マルチテナントSaaS認証 |
-| 33 | 7 | SmartHome - IoTデバイス管理 |
-| 34 | 20 | EdgeFactory - エッジコンピューティング |
-| 35 | 9 | MLServe - 機械学習推論基盤 |
-| 36 | 36 | SmartRetail - SageMakerモデル基盤 |
-| 37 | 37 | CreditAI - MLOpsパイプライン |
-| 38 | 13 | MicroServices - マイクロサービス |
-| 39 | 18 | HybridConnect - ハイブリッドネットワーク |
-| 40 | 30 | MultiAgentAI - マルチエージェントAI |
-
----
-
 ## 推奨学習スケジュール
 
 | 期間 | フェーズ | 問題数 | 1日2時間の場合 | 1日4時間の場合 |
 |------|----------|--------|----------------|----------------|
-| 第1-2週 | フェーズ1 | 8問 | 2週間 | 1週間 |
-| 第3-8週 | フェーズ2 | 17問 | 6週間 | 3週間 |
-| 第9-14週 | フェーズ3 | 12問 | 6週間 | 3週間 |
-| 第15-17週 | フェーズ4 | 3問 | 3週間 | 1.5週間 |
+| 第1週 | フェーズ1 | 2問 | 1週間 | 3日 |
+| 第2-8週 | フェーズ2 | 17問 | 7週間 | 3.5週間 |
+| 第9-16週 | フェーズ3 | 20問 | 8週間 | 4週間 |
+| 第17週 | フェーズ4 | 1問 | 1週間 | 3日 |
 | **合計** | - | **40問** | **約4ヶ月** | **約2ヶ月** |
 
 ---
@@ -278,5 +255,5 @@ flowchart TB
 1. **順番通りに進める** - 前の課題の知識が次の課題で活きます
 2. **手を動かす** - 読むだけでなく実際にAWS環境で構築しましょう
 3. **トラブルシューティング** - エラーが出ても諦めず、原因を調査する力をつけましょう
-4. **コスト管理** - 課題2で学んだコスト意識を常に持ちましょう
+4. **コスト管理** - 課題22で学んだコスト意識を常に持ちましょう
 5. **復習** - 各フェーズ終了時に振り返りチェックリストを確認しましょう
