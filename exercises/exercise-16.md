@@ -1,4 +1,4 @@
-# 課題16: 金融系SaaSのセキュア基盤構築
+# 課題16: スタートアップのコンテナCI/CD構築
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,10 +9,10 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | セキュリティ |
-| 処理タイプ | リアルタイム |
+| カテゴリ | コンテナ |
+| 処理タイプ | 非同期 |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 5-6時間 |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
@@ -22,49 +22,49 @@
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | InvestPro株式会社 |
-| **業種** | 投資管理SaaS |
-| **従業員数** | 60名（エンジニア20名） |
-| **顧客数** | 機関投資家・資産運用会社100社 |
-| **管理資産額** | 10兆円相当のデータ管理 |
-| **規制要件** | 金融庁ガイドライン、FISC安全対策基準 |
+| **企業名** | SmartAssist株式会社 |
+| **業種** | AIスタートアップ（チャットボットSaaS） |
+| **従業員数** | 25名（エンジニア8名） |
+| **サービス** | AIチャットボット「SmartBot」 |
+| **顧客数** | 導入企業50社、月間会話100万件 |
+| **デプロイ頻度** | 現状週2回 → 目標1日10回 |
 
 ### 現状の課題
 
 ```
-InvestPro株式会社は機関投資家向けの投資管理SaaSを提供しています。
-金融庁の監督指針対応において以下の課題を抱えています：
+SmartAssist株式会社は急成長するAIチャットボットSaaSを提供しています。
+現在のデプロイプロセスには以下の課題があります：
 
-1. ネットワークセキュリティの不備
-   - パブリックサブネットにアプリケーションが配置
-   - インターネット経由でのAWSサービスアクセス
-   - セグメンテーションが不十分
+1. 手動デプロイの限界
+   - エンジニアがEC2に手動でDocker pullしてデプロイ
+   - 1回のデプロイに30分以上かかる
+   - 深夜作業でエンジニアが疲弊
 
-2. 認証情報管理の問題
-   - データベースパスワードが環境変数にハードコード
-   - APIキーがソースコードに含まれている
-   - シークレットのローテーションが手動
+2. デプロイの不安定さ
+   - 本番環境で問題が発覚することが多い
+   - ロールバックに1時間以上かかる
+   - 顧客影響が発生するリスク
 
-3. アクセス制御の課題
-   - IPアドレス制限が不完全
-   - WAFが未導入
-   - 監査ログが不十分
+3. 環境差異の問題
+   - 開発環境と本番環境の設定が異なる
+   - 「自分のPCでは動いた」問題が頻発
+   - テスト環境がない
 
-4. コンプライアンス対応
-   - 金融庁ガイドラインへの対応が不完全
-   - セキュリティ監査で指摘事項あり
-   - 顧客からのセキュリティ質問への回答に時間がかかる
+4. スケーリングの課題
+   - ピーク時（平日9-11時）に応答遅延
+   - 手動でインスタンスを追加している
+   - コスト効率が悪い
 ```
 
 ### ビジネス目標
 
 | KPI | 現状 | 目標 |
 |-----|------|------|
-| セキュリティ監査スコア | 60点 | 90点以上 |
-| 金融庁ガイドライン準拠率 | 70% | 100% |
-| シークレットローテーション | 手動（年1回） | 自動（90日ごと） |
-| インシデント検知時間 | 数時間 | 5分以内 |
-| セキュリティ質問対応 | 3日 | 即日 |
+| デプロイ所要時間 | 30分 | 5分以下 |
+| デプロイ頻度 | 週2回 | 1日10回（オンデマンド） |
+| ロールバック時間 | 1時間 | 5分以下 |
+| デプロイ成功率 | 80% | 99%以上 |
+| ダウンタイム | 5分/回 | ゼロ |
 
 ---
 
@@ -75,36 +75,35 @@ InvestPro株式会社は機関投資家向けの投資管理SaaSを提供して�
 ```
 この課題を完了すると、以下ができるようになります：
 
-1. セキュアなVPC設計
-   - マルチAZ構成とサブネット分離
-   - VPCエンドポイントによるプライベートアクセス
-   - ネットワークACLとセキュリティグループの多層防御
+1. ECRによるコンテナイメージ管理
+   - プライベートリポジトリの作成と管理
+   - イメージのタグ付けとライフサイクル管理
+   - 脆弱性スキャンの活用
 
-2. AWS PrivateLinkの活用
-   - VPCエンドポイントサービスの構築
-   - Interface/Gateway Endpoint の使い分け
-   - プライベートなサービス連携
+2. CodePipelineによるCI/CDパイプライン構築
+   - ソースステージ（GitHub/CodeCommit連携）
+   - ビルドステージ（CodeBuild）
+   - デプロイステージ（ECS）
 
-3. AWS WAFによるWebアプリケーション保護
-   - マネージドルールの適用
-   - カスタムルールの作成
-   - レート制限とIP制限
+3. ECS Fargateによるコンテナ運用
+   - タスク定義とサービス設定
+   - Auto Scalingの構成
+   - Blue/Greenデプロイメント
 
-4. AWS Secrets Managerによる認証情報管理
-   - シークレットの安全な保存
-   - 自動ローテーションの設定
-   - アプリケーション統合
+4. 運用監視の基礎
+   - CloudWatchによるログ・メトリクス監視
+   - アラート設定とSlack通知
 ```
 
 ### 合格基準
 
 | 項目 | 基準 |
 |------|------|
-| VPC設計 | プライベートサブネットにアプリが配置されていること |
-| PrivateLink | AWSサービスへのアクセスがVPCエンドポイント経由であること |
-| WAF | 主要な攻撃パターンがブロックされること |
-| Secrets | DBパスワードがSecrets Managerで管理されていること |
-| 監査 | CloudTrailで全アクションが記録されていること |
+| パイプライン | GitプッシュからECSデプロイまで自動化されること |
+| デプロイ時間 | 10分以内にデプロイが完了すること |
+| ゼロダウンタイム | Blue/Greenデプロイでダウンタイムがないこと |
+| ロールバック | 1クリックで前バージョンに戻せること |
+| 監視 | コンテナログとメトリクスが収集されていること |
 
 ---
 
@@ -113,44 +112,40 @@ InvestPro株式会社は機関投資家向けの投資管理SaaSを提供して�
 ### コア技術スタック
 
 ```yaml
+コンテナ基盤:
+  - Amazon ECR: コンテナイメージリポジトリ
+  - Amazon ECS: コンテナオーケストレーション
+  - AWS Fargate: サーバーレスコンテナ実行環境
+
+CI/CD:
+  - AWS CodePipeline: CI/CDオーケストレーション
+  - AWS CodeBuild: コンテナビルド
+  - AWS CodeDeploy: Blue/Greenデプロイ
+
 ネットワーク:
-  - Amazon VPC: 仮想ネットワーク
-  - VPC Endpoints: プライベートサービスアクセス
-  - AWS PrivateLink: サービス間プライベート接続
-  - AWS Transit Gateway: VPC間接続（オプション）
-  - Network Firewall: 高度なトラフィック制御（オプション）
+  - Amazon VPC: ネットワーク分離
+  - Application Load Balancer: トラフィック分散
+  - AWS Certificate Manager: SSL/TLS証明書
 
-Webアプリケーション保護:
-  - AWS WAF: Webアプリケーションファイアウォール
-  - AWS Shield: DDoS保護
-  - Amazon CloudFront: CDN + WAF統合
+監視・運用:
+  - Amazon CloudWatch: ログ・メトリクス・アラーム
+  - AWS Systems Manager Parameter Store: 設定管理
+  - Amazon SNS: 通知
 
-認証情報管理:
-  - AWS Secrets Manager: シークレット管理・ローテーション
-  - AWS Systems Manager Parameter Store: 設定パラメータ
-  - AWS KMS: 暗号化キー管理
-
-アクセス制御:
-  - AWS IAM: 認証・認可
-  - IAM Identity Center: SSO
-  - AWS Organizations: マルチアカウント管理
-
-監視・監査:
-  - AWS CloudTrail: API監査ログ
-  - Amazon GuardDuty: 脅威検知
-  - AWS Config: 構成管理
-  - AWS Security Hub: セキュリティ統合ダッシュボード
+セキュリティ:
+  - AWS IAM: アクセス制御
+  - AWS Secrets Manager: シークレット管理
 ```
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| プライベート接続 | PrivateLink | Private Service Connect |
-| WAF | AWS WAF | Cloud Armor |
-| シークレット管理 | Secrets Manager | Secret Manager |
-| 脅威検知 | GuardDuty | Security Command Center |
-| 構成監査 | Config | Security Health Analytics |
+| コンテナレジストリ | ECR | Artifact Registry |
+| コンテナ実行 | ECS Fargate | Cloud Run |
+| CI/CD | CodePipeline + CodeBuild | Cloud Build |
+| デプロイ戦略 | CodeDeploy | Cloud Deploy |
+| ロードバランサ | ALB | Cloud Load Balancing |
 
 ---
 
@@ -161,7 +156,8 @@ Webアプリケーション保護:
 ```bash
 # 必要なCLIツール
 aws --version          # 2.x
-terraform --version    # 1.5+
+docker --version       # 20.x+
+git --version          # 2.x+
 
 # AWS設定
 aws configure
@@ -172,22 +168,25 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 ### 事前準備
 
 ```bash
-# プロジェクト構造
-investpro-secure-infra/
-├── terraform/
-│   ├── main.tf
-│   ├── vpc.tf
-│   ├── endpoints.tf
-│   ├── waf.tf
-│   ├── secrets.tf
-│   ├── security_groups.tf
-│   ├── iam.tf
-│   └── variables.tf
-├── policies/
-│   ├── waf-rules.json
-│   └── iam-policies/
-└── docs/
-    └── security-architecture.md
+# 1. GitHubリポジトリの準備（またはCodeCommit）
+# リポジトリ名: smartassist-chatbot
+
+# 2. サンプルアプリケーションの構造
+smartassist-chatbot/
+├── src/
+│   ├── app.py              # Flaskアプリケーション
+│   ├── chatbot/
+│   │   ├── __init__.py
+│   │   ├── engine.py       # チャットボットエンジン
+│   │   └── responses.py    # 応答生成
+│   └── tests/
+│       └── test_app.py
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── buildspec.yml           # CodeBuild設定
+├── appspec.yaml            # CodeDeploy設定
+└── taskdef.json            # ECSタスク定義
 ```
 
 ---
@@ -197,302 +196,233 @@ investpro-secure-infra/
 ### 全体構成
 
 ```mermaid
-architecture-beta
-    group internet(cloud)[Internet]
-    group edge(server)[Edge Protection]
-    group vpc(cloud)[VPC 10.0.0.0/16]
-    group public_subnet(server)[Public Subnets] in vpc
-    group app_subnet(server)[Private Subnets Application] in vpc
-    group data_subnet(database)[Private Subnets Data] in vpc
-    group endpoints(server)[VPC Endpoints] in vpc
-    group secrets(server)[Secrets Manager]
+flowchart TB
+    subgraph Pipeline["CI/CD Pipeline - AWS CodePipeline"]
+        GitHub["GitHub<br/>(Source)"]
+        CodeBuild["CodeBuild<br/>(Build&Test)"]
+        ECR["ECR<br/>(Image)"]
+        CodeDeploy["CodeDeploy<br/>(Blue/Green)"]
+    end
 
-    service user(internet)[User] in internet
-    service shield(server)[AWS Shield DDoS] in edge
-    service cloudfront(server)[CloudFront + WAF] in edge
+    subgraph VPC["VPC"]
+        subgraph PublicSubnets["Public Subnets (Multi-AZ)"]
+            subgraph ALB["Application Load Balancer<br/>(HTTP:80 → HTTPS:443 redirect)"]
+                Listener443["Listener Port: 443<br/>(Production)"]
+                Listener8443["Listener Port: 8443<br/>(Test)"]
+            end
+        end
 
-    service alb(server)[Application Load Balancer] in public_subnet
-    service nat(server)[NAT Gateway Multi-AZ] in public_subnet
+        subgraph PrivateSubnets["Private Subnets"]
+            subgraph BlueGroup["Target Group (Blue - Active)"]
+                BlueECS["ECS Fargate Tasks"]
+                BlueTask1["Task v1"]
+                BlueTask2["Task v1"]
+            end
 
-    service ecs(server)[ECS Fargate Tasks] in app_subnet
-    service api_svc(server)[API Service] in app_subnet
-    service portfolio_svc(server)[Portfolio Service] in app_subnet
-    service report_svc(server)[Report Service] in app_subnet
+            subgraph GreenGroup["Target Group (Green - Standby)"]
+                GreenECS["ECS Fargate Tasks"]
+                GreenTask1["Task v2"]
+                GreenTask2["Task v2"]
+            end
 
-    service rds(database)[RDS PostgreSQL Multi-AZ] in data_subnet
+            AutoScaling["Auto Scaling: Min 2, Max 10, Target CPU 70%"]
+        end
+    end
 
-    service ecr_ep(server)[ECR Endpoints] in endpoints
-    service secrets_ep(server)[Secrets Manager EP] in endpoints
-    service logs_ep(server)[CloudWatch Logs EP] in endpoints
-    service kms_ep(server)[KMS Endpoint] in endpoints
-    service s3_gw(server)[S3 Gateway] in endpoints
+    subgraph Support["Supporting Services"]
+        CloudWatch["CloudWatch Logs"]
+        Secrets["Secrets Manager"]
+        ParamStore["Parameter Store"]
+    end
 
-    service secrets_mgr(disk)[Secrets Manager KMS] in secrets
+    GitHub --> CodeBuild
+    CodeBuild --> ECR
+    ECR --> CodeDeploy
+    CodeDeploy --> VPC
 
-    user:B --> T:shield
-    shield:B --> T:cloudfront
-    cloudfront:B --> T:alb
-    alb:B --> T:ecs
-    ecs:B --> T:rds
-    ecs:R --> L:ecr_ep
-    ecs:R --> L:secrets_ep
-    rds:R --> L:secrets_mgr
+    Listener443 --> BlueGroup
+    Listener8443 --> GreenGroup
+
+    VPC --> CloudWatch
+    VPC --> Secrets
+    VPC --> ParamStore
 ```
 
-**WAF Rules:** SQL Injection, XSS, Rate Limit, IP Block, Geo Block
-
-**Security Groups:**
-- alb-sg: Inbound 443 from CloudFront IPs only
-- app-sg: Inbound 8080 from alb-sg only, Outbound 443 to VPC Endpoints only
-- db-sg: Inbound 5432 from app-sg only, Encrypted with KMS CMK
-
-**Secrets Manager:** investpro/db/credentials, investpro/api/keys, investpro/external/tokens (Rotation: 90 days)
-
-### セキュリティレイヤー
+### デプロイフロー
 
 ```mermaid
 flowchart TB
-    subgraph defense[Defense in Depth]
-        direction TB
-        subgraph layer1[Layer 1: Edge Protection]
-            shield[AWS Shield - DDoS Protection]
-            cf[CloudFront - Geographic Restrictions]
-            waf[AWS WAF - Application Layer Protection]
-        end
-
-        subgraph layer2[Layer 2: Network Security]
-            vpc[VPC - Network Isolation]
-            subnets[Subnets - Tier Separation<br/>Public/Private/Data]
-            nacl[Network ACLs - Stateless Packet Filtering]
-            sg[Security Groups - Stateful Firewall]
-        end
-
-        subgraph layer3[Layer 3: Access Control]
-            iam[IAM Roles/Policies - Least Privilege]
-            vpce[VPC Endpoints - Private AWS Service Access]
-            secrets[Secrets Manager - Credential Management]
-        end
-
-        subgraph layer4[Layer 4: Data Protection]
-            kms[KMS - Encryption at Rest]
-            tls[TLS 1.2+ - Encryption in Transit]
-            s3policy[S3 Bucket Policies - Data Access Control]
-        end
-
-        subgraph layer5[Layer 5: Monitoring and Response]
-            trail[CloudTrail - API Logging]
-            guard[GuardDuty - Threat Detection]
-            hub[Security Hub - Centralized Security View]
-            config[Config - Compliance Monitoring]
-        end
-
-        layer1 --> layer2
-        layer2 --> layer3
-        layer3 --> layer4
-        layer4 --> layer5
+    subgraph Step1["1. 開発者がGitHubにプッシュ"]
+        Push["Git Push"] --> Webhook["Webhookでパイプライン起動"]
     end
+
+    subgraph Step2["2. CodeBuild実行"]
+        GetSource["ソースコード取得"]
+        UnitTest["ユニットテスト実行"]
+        DockerBuild["Dockerイメージビルド"]
+        ECRPush["ECRにプッシュ"]
+        Artifact["アーティファクト生成<br/>(imageDetail.json)"]
+        GetSource --> UnitTest --> DockerBuild --> ECRPush --> Artifact
+    end
+
+    subgraph Step3["3. CodeDeploy Blue/Green"]
+        CreateGreen["新タスクセット作成（Green）"]
+        TestTraffic["テストリスナーでトラフィック切り替え"]
+        HealthCheck["ヘルスチェック確認"]
+        ProdTraffic["本番リスナーでトラフィック切り替え"]
+        TerminateBlue["旧タスクセット（Blue）を終了"]
+        CreateGreen --> TestTraffic --> HealthCheck --> ProdTraffic --> TerminateBlue
+    end
+
+    subgraph Step4["4. 問題発生時"]
+        Rollback["ロールバック（Blueに戻す）"]
+    end
+
+    Step1 --> Step2
+    Step2 --> Step3
+    Step3 -.->|問題発生| Step4
 ```
 
 ---
 
 ## 8. トラブルシューティングチャレンジ
 
-### Challenge 1: VPCエンドポイント経由でSecrets Managerにアクセスできない
+### Challenge 1: CodeBuildでDockerビルドが失敗する
 
 ```
 問題:
-ECSタスクからSecrets Managerへのアクセスがタイムアウトする。
-VPCエンドポイントを設定したはずだが機能しない。
+CodeBuildでDockerビルド時にエラーが発生する。
 
-エラーログ:
-botocore.exceptions.ConnectTimeoutError:
-Connect timeout on endpoint URL: "https://secretsmanager.ap-northeast-1.amazonaws.com"
+エラーメッセージ:
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock.
+Is the docker daemon running?
 
 調査項目:
-1. VPCエンドポイントの設定
-2. セキュリティグループ
-3. DNS設定
+1. CodeBuildプロジェクトの設定
+2. IAMロールの権限
 ```
 
 <details>
 <summary>解決のヒント</summary>
 
 ```bash
-# 1. VPCエンドポイントの状態確認
-aws ec2 describe-vpc-endpoints \
-    --filters "Name=service-name,Values=com.amazonaws.ap-northeast-1.secretsmanager" \
-    --query "VpcEndpoints[*].{ID:VpcEndpointId,State:State,DNS:DnsEntries}"
+# 1. CodeBuildプロジェクトでPrivileged modeが有効か確認
+aws codebuild batch-get-projects --names smartassist-build \
+    --query "projects[0].environment.privilegedMode"
 
-# 2. Private DNSが有効か確認
-# private_dns_enabled = true である必要がある
+# 2. 無効の場合、有効化
+aws codebuild update-project \
+    --name smartassist-build \
+    --environment '{
+        "type": "LINUX_CONTAINER",
+        "image": "aws/codebuild/amazonlinux2-x86_64-standard:5.0",
+        "computeType": "BUILD_GENERAL1_SMALL",
+        "privilegedMode": true
+    }'
 
-# 3. セキュリティグループ確認
-aws ec2 describe-security-groups \
-    --group-ids sg-vpce-xxx \
-    --query "SecurityGroups[0].IpPermissions"
-
-# Inbound: 443 from VPC CIDR が必要
-
-# 4. ECSタスクのセキュリティグループ確認
-# Outbound: 443 to VPCE Security Group が必要
-
-# 5. ルートテーブル確認（S3エンドポイントがGateway型の場合）
-aws ec2 describe-route-tables \
-    --route-table-ids rtb-xxx
-
-# 6. DNS解決テスト（ECSタスク内から）
-nslookup secretsmanager.ap-northeast-1.amazonaws.com
-# VPCエンドポイントのプライベートIPが返されるべき
-
-# 解決策:
-# - private_dns_enabled = true を設定
-# - セキュリティグループでHTTPS許可
-# - サブネットにVPCエンドポイントを配置
+# 3. または buildspec.yml で docker-in-docker を使用
+# install:
+#   commands:
+#     - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock &
+#     - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
 ```
 </details>
 
-### Challenge 2: WAFでブロックされるべきリクエストが通過する
+### Challenge 2: Blue/Greenデプロイでヘルスチェックが失敗する
 
 ```
 問題:
-SQLインジェクション攻撃がWAFをバイパスしてアプリケーションに到達している。
-
-ログ:
-WAF: ALLOW
-Application: SQL Injection detected in parameter 'search'
-
-攻撃例:
-/api/search?q=1%27%20OR%20%271%27%3D%271
-
-調査項目:
-1. WAFルールの設定
-2. ルールの優先順位
-3. エンコーディング
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. WAFルールのテスト
-aws wafv2 get-sampled-requests \
-    --web-acl-arn arn:aws:wafv2:...:webacl/investpro-web-acl \
-    --rule-metric-name AWSManagedRulesSQLiRuleSetMetric \
-    --scope CLOUDFRONT \
-    --time-window StartTime=...,EndTime=... \
-    --max-items 100
-
-# 2. SQLiルールがCOUNTモードになっていないか確認
-# override_action { count {} } ではなく none {} である必要
-
-# 3. Text Transformationの追加
-# URL_DECODEを追加してエンコードされた攻撃を検知
-
-# terraform/waf.tf に追加
-rule {
-  name     = "CustomSQLiRule"
-  priority = 2
-
-  action {
-    block {}
-  }
-
-  statement {
-    sqli_match_statement {
-      field_to_match {
-        query_string {}
-      }
-      text_transformation {
-        priority = 0
-        type     = "URL_DECODE"
-      }
-      text_transformation {
-        priority = 1
-        type     = "HTML_ENTITY_DECODE"
-      }
-      text_transformation {
-        priority = 2
-        type     = "LOWERCASE"
-      }
-    }
-  }
-
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "CustomSQLiRuleMetric"
-    sampled_requests_enabled   = true
-  }
-}
-
-# 4. CloudFront経由でのみアクセス可能にする
-# ALBのセキュリティグループでCloudFront IPsのみ許可
-```
-</details>
-
-### Challenge 3: シークレットローテーション後にアプリケーションが接続エラー
-
-```
-問題:
-Secrets Managerの自動ローテーション実行後、
-アプリケーションがデータベースに接続できなくなった。
+新しいタスクセットがデプロイされたが、ヘルスチェックが失敗して
+デプロイがロールバックされる。
 
 エラー:
-psycopg2.OperationalError: FATAL: password authentication failed for user "app_user"
+The deployment timed out while waiting for the replacement task set
+to become healthy.
 
 調査項目:
-1. ローテーションLambdaの実行ログ
-2. シークレットのバージョン
-3. アプリケーションのキャッシュ
+1. ターゲットグループのヘルスチェック設定
+2. コンテナの起動ログ
+3. セキュリティグループの設定
 ```
 
 <details>
 <summary>解決のヒント</summary>
 
 ```bash
-# 1. シークレットのバージョン確認
-aws secretsmanager list-secret-version-ids \
-    --secret-id investpro/db/credentials
-
-# AWSCURRENT と AWSPREVIOUS を確認
-
-# 2. ローテーションLambdaのログ確認
+# 1. CloudWatchログで起動エラーを確認
 aws logs get-log-events \
-    --log-group-name /aws/lambda/investpro-secret-rotation \
-    --log-stream-name $(aws logs describe-log-streams \
-        --log-group-name /aws/lambda/investpro-secret-rotation \
-        --order-by LastEventTime --descending \
-        --query "logStreams[0].logStreamName" --output text)
+    --log-group-name /ecs/smartassist \
+    --log-stream-name chatbot/chatbot/xxxxx \
+    --limit 50
 
-# 3. 実際のシークレット値確認
-aws secretsmanager get-secret-value \
-    --secret-id investpro/db/credentials \
-    --query SecretString --output text | jq .
+# 2. ターゲットグループのヘルスチェック設定確認
+aws elbv2 describe-target-groups \
+    --names smartassist-blue-tg smartassist-green-tg \
+    --query "TargetGroups[*].{Name:TargetGroupName,Path:HealthCheckPath,Interval:HealthCheckIntervalSeconds,Timeout:HealthCheckTimeoutSeconds}"
 
-# 4. データベースでパスワード確認（手動テスト）
-psql -h xxx.rds.amazonaws.com -U app_user -d investpro
+# 3. ヘルスチェックパスを修正
+aws elbv2 modify-target-group \
+    --target-group-arn arn:aws:elasticloadbalancing:...:targetgroup/smartassist-green-tg/... \
+    --health-check-path /health \
+    --health-check-interval-seconds 30 \
+    --healthy-threshold-count 2 \
+    --unhealthy-threshold-count 5
 
-# 5. アプリケーションのキャッシュクリア
-# @lru_cache を使用している場合、キャッシュをクリア
+# 4. コンテナのヘルスチェックコマンド確認
+# タスク定義のhealthCheckが正しく設定されているか
+# コンテナ内でcurlがインストールされているか
 
-# 解決策:
-# a) アプリケーションでシークレットのキャッシュTTLを設定
-# b) ローテーション時のエラーハンドリング改善
-# c) データベース接続のリトライロジック追加
+# 5. セキュリティグループでALBからの通信が許可されているか
+aws ec2 describe-security-groups \
+    --group-ids sg-xxxxx \
+    --query "SecurityGroups[0].IpPermissions"
+```
+</details>
 
-# キャッシュTTL付きの実装例
-from cachetools import TTLCache
+### Challenge 3: デプロイ後にメモリ不足でタスクが再起動する
 
-class SecretsManager:
-    def __init__(self):
-        self.cache = TTLCache(maxsize=10, ttl=300)  # 5分キャッシュ
+```
+問題:
+デプロイ後しばらくするとタスクがOOMKilledで再起動する。
 
-    def get_secret(self, secret_name):
-        if secret_name in self.cache:
-            return self.cache[secret_name]
+CloudWatchメトリクス:
+- MemoryUtilization: 95%以上
+- タスク再起動頻度: 10分に1回
 
-        secret = self._fetch_secret(secret_name)
-        self.cache[secret_name] = secret
-        return secret
+調査項目:
+1. タスク定義のメモリ設定
+2. アプリケーションのメモリ使用パターン
+3. コンテナのリソース制限
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. 現在のメモリ使用状況を確認
+aws cloudwatch get-metric-statistics \
+    --namespace AWS/ECS \
+    --metric-name MemoryUtilization \
+    --dimensions Name=ClusterName,Value=smartassist-cluster Name=ServiceName,Value=smartassist-service \
+    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+    --period 300 \
+    --statistics Average Maximum
+
+# 2. タスク定義のメモリを増やす
+# taskdef.jsonで "memory": "1024" に変更
+
+# 3. アプリケーション側の最適化
+# gunicorn のワーカー数を調整
+# gunicorn --workers 2 --threads 2 ではなく
+# gunicorn --workers 1 --threads 4 に変更
+
+# 4. Pythonのメモリ使用を最適化
+# requirements.txt に memory-profiler を追加してプロファイリング
+
+# 5. Container Insightsで詳細分析
+# CloudWatch Container Insights ダッシュボードで
+# コンテナごとのメモリ使用パターンを確認
 ```
 </details>
 
@@ -500,196 +430,162 @@ class SecretsManager:
 
 ## 9. 設計考慮ポイント
 
-### 金融庁ガイドライン対応マッピング
+### デプロイ戦略の選択
 
 ```yaml
-金融機関のシステムリスク管理基準:
+Blue/Green デプロイ（本課題で採用）:
+  メリット:
+    - ゼロダウンタイム
+    - 即時ロールバック可能
+    - テスト環境で事前検証可能
+  デメリット:
+    - 一時的にリソースが2倍必要
+    - 設定が複雑
 
-1. アクセス管理:
-   対応: IAM, VPC Security Groups, WAF IP制限
-   証跡: CloudTrail, VPC Flow Logs
+ローリングアップデート:
+  メリット:
+    - リソース効率が良い
+    - シンプルな設定
+  デメリット:
+    - ロールバックに時間がかかる
+    - 新旧バージョンが混在する期間がある
 
-2. ネットワーク管理:
-   対応: VPC分離, PrivateLink, Network ACL
-   証跡: VPC Flow Logs, Config
-
-3. 暗号化:
-   対応: KMS (AES-256), TLS 1.2+, RDS暗号化
-   証跡: KMS監査ログ, Config Rules
-
-4. 監査ログ:
-   対応: CloudTrail, CloudWatch Logs
-   保持: 7年以上
-
-5. 脆弱性管理:
-   対応: WAF, GuardDuty, Security Hub
-   対応: ECRスキャン, Inspector
-
-6. インシデント対応:
-   対応: GuardDuty, Security Hub, SNS通知
-   手順: ランブック自動化
+カナリアデプロイ:
+  メリット:
+    - 段階的なリリースで影響範囲を限定
+    - A/Bテストに活用可能
+  デメリット:
+    - 設定がさらに複雑
+    - モニタリングが必須
 ```
 
-### コスト vs セキュリティのトレードオフ
+### イメージタグ戦略
 
+```bash
+# 推奨: 不変タグ + セマンティックバージョニング
+
+# コミットハッシュ（CI/CDで自動付与）
+smartassist/chatbot:abc1234
+
+# 環境タグ
+smartassist/chatbot:prod-abc1234
+smartassist/chatbot:staging-abc1234
+
+# バージョンタグ（リリース時）
+smartassist/chatbot:v1.2.3
+smartassist/chatbot:v1.2.3-abc1234
+
+# 避けるべき: mutableタグの使用
+# smartassist/chatbot:latest を本番で使わない
 ```
-High Security (本課題構成):
-┌─────────────────────────────────────────┐
-│ • Multi-AZ NAT Gateway: $90/月         │
-│ • VPC Endpoints (8個): $80/月          │
-│ • WAF: $10/月 + $0.60/100万リクエスト  │
-│ • GuardDuty: $4/月〜                   │
-│ • CloudTrail: $2/月〜                  │
-│                                         │
-│ セキュリティレベル: ★★★★★            │
-│ 月額追加コスト: 約$190                  │
-└─────────────────────────────────────────┘
 
-Medium Security (代替構成):
-┌─────────────────────────────────────────┐
-│ • Single NAT Gateway: $45/月           │
-│ • 主要VPC Endpoints (3個): $30/月      │
-│ • WAF: $10/月                          │
-│                                         │
-│ セキュリティレベル: ★★★☆☆            │
-│ 月額追加コスト: 約$85                   │
-└─────────────────────────────────────────┘
+### セキュリティ考慮事項
 
-金融系では High Security が必須
+```yaml
+コンテナセキュリティ:
+  - 非rootユーザーで実行
+  - イメージの脆弱性スキャン（ECR自動スキャン）
+  - 最小権限のIAMロール
+  - Secrets Managerで機密情報管理
+
+ネットワークセキュリティ:
+  - ECSタスクをプライベートサブネットに配置
+  - ALBのみがタスクにアクセス可能
+  - VPCエンドポイントでAWSサービスにアクセス
+
+CI/CDセキュリティ:
+  - 最小権限のビルドロール
+  - Secrets Manager でDockerHub認証情報管理
+  - ビルドログの機密情報マスキング
 ```
 
 ---
 
 ## 10. 発展課題
 
-### 上級チャレンジ1: ゼロトラストアーキテクチャ
+### 上級チャレンジ1: マルチステージパイプライン
 
 ```yaml
-# AWS Verified Access による実装
+# 開発 → ステージング → 本番 の多段階パイプライン
 
-ゼロトラスト原則:
-  - Never trust, always verify
-  - Assume breach
-  - Verify explicitly
+Stages:
+  - Source
+  - Build
+  - DeployToStaging:
+      - ECS Staging環境にデプロイ
+      - 自動テスト実行
+  - ManualApproval:
+      - 手動承認ステージ
+  - DeployToProduction:
+      - ECS Production環境にBlue/Greenデプロイ
 
-実装コンポーネント:
-  - AWS Verified Access: アプリケーションアクセス制御
-  - IAM Identity Center: 統合認証
-  - Device Trust: デバイス検証
-  - Continuous Verification: 継続的な認証
-
-# Verified Access Trust Provider
-resource "aws_verifiedaccess_trust_provider" "oidc" {
-  policy_reference_name = "investpro-idp"
-  trust_provider_type   = "user"
-
-  oidc_options {
-    authorization_endpoint = "https://idp.investpro.example/authorize"
-    client_id              = var.oidc_client_id
-    client_secret          = var.oidc_client_secret
-    issuer                 = "https://idp.investpro.example"
-    token_endpoint         = "https://idp.investpro.example/token"
-    user_info_endpoint     = "https://idp.investpro.example/userinfo"
-    scope                  = "openid profile email"
-  }
-}
+# 環境別設定の分離
+environments/
+├── staging/
+│   ├── taskdef.json
+│   └── appspec.yaml
+└── production/
+    ├── taskdef.json
+    └── appspec.yaml
 ```
 
-### 上級チャレンジ2: SOC2/SOC3レポート対応
+### 上級チャレンジ2: カナリアデプロイ実装
 
 ```yaml
-# AWS Artifact + 自社監査証跡
+# appspec.yaml - カナリア設定
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION>
+        LoadBalancerInfo:
+          ContainerName: "chatbot"
+          ContainerPort: 8080
 
-SOC2 Type II 対応項目:
+Hooks:
+  - BeforeAllowTraffic: "arn:aws:lambda:...:function:ValidateCanary"
+  - AfterAllowTraffic: "arn:aws:lambda:...:function:MonitorCanary"
 
-Security:
-  - 実装: WAF, Security Groups, KMS
-  - 証跡: CloudTrail, Config
-
-Availability:
-  - 実装: Multi-AZ, Auto Scaling
-  - 証跡: CloudWatch, Health Dashboard
-
-Processing Integrity:
-  - 実装: Lambda検証, データ整合性チェック
-  - 証跡: アプリケーションログ
-
-Confidentiality:
-  - 実装: 暗号化, VPC分離, IAM
-  - 証跡: KMS監査ログ, Access Analyzer
-
-Privacy:
-  - 実装: データ分類, アクセス制御
-  - 証跡: Macie, IAM Access Analyzer
+# CodeDeploy設定でカナリア比率を指定
+# CodeDeployDefault.ECSCanary10Percent5Minutes
+# - 10%のトラフィックで5分間テスト
+# - 問題なければ残り90%に切り替え
 ```
 
-### 上級チャレンジ3: セキュリティ自動修復
+### 上級チャレンジ3: GitOps実装
 
-```python
-# Lambda: GuardDuty検知時の自動対応
+```yaml
+# ArgoCD + EKS構成への発展
+# GitリポジトリがSingle Source of Truth
 
-import boto3
-import json
+argocd/
+├── applications/
+│   └── smartassist-chatbot.yaml
+└── manifests/
+    ├── deployment.yaml
+    ├── service.yaml
+    └── hpa.yaml
 
-def lambda_handler(event, context):
-    """
-    GuardDuty検知イベントに対する自動対応
-    """
-    finding = event['detail']
-    finding_type = finding['type']
-    severity = finding['severity']
-
-    # 重大度に応じた対応
-    if severity >= 7:
-        # 高重大度: 即座にブロック
-        handle_high_severity(finding)
-    elif severity >= 4:
-        # 中重大度: アラート + 調査開始
-        handle_medium_severity(finding)
-    else:
-        # 低重大度: ログ記録のみ
-        log_finding(finding)
-
-
-def handle_high_severity(finding):
-    """高重大度の検知への対応"""
-    ec2 = boto3.client('ec2')
-    wafv2 = boto3.client('wafv2')
-
-    finding_type = finding['type']
-
-    if 'UnauthorizedAccess' in finding_type:
-        # 不正アクセス: IPをWAFでブロック
-        source_ip = finding['service']['action']['networkConnectionAction']['remoteIpDetails']['ipAddressV4']
-        block_ip_in_waf(wafv2, source_ip)
-
-    elif 'CryptoCurrency' in finding_type:
-        # マイニング検知: インスタンス隔離
-        instance_id = finding['resource']['instanceDetails']['instanceId']
-        isolate_instance(ec2, instance_id)
-
-    # SNS通知
-    notify_security_team(finding)
-
-
-def block_ip_in_waf(client, ip_address):
-    """WAFのIPブロックリストにIPを追加"""
-    client.update_ip_set(
-        Name='investpro-ip-block-list',
-        Scope='CLOUDFRONT',
-        Id='xxx',
-        Addresses=[f"{ip_address}/32"],
-        LockToken='xxx'
-    )
-
-
-def isolate_instance(client, instance_id):
-    """インスタンスを隔離用セキュリティグループに変更"""
-    # 全トラフィックを拒否するSGに変更
-    client.modify_instance_attribute(
-        InstanceId=instance_id,
-        Groups=['sg-isolation']
-    )
+# ArgoCD Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smartassist-chatbot
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/smartassist/chatbot
+    targetRevision: HEAD
+    path: argocd/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ```
 
 ---
@@ -700,35 +596,44 @@ def isolate_instance(client, instance_id):
 
 | サービス | スペック | 月額コスト |
 |----------|----------|------------|
-| NAT Gateway | 2 × Multi-AZ | $90 |
-| VPC Endpoints | 8 Interface Endpoints | $80 |
-| WAF | Web ACL + ルール | $15 |
-| Secrets Manager | 5 シークレット | $2 |
-| KMS | 3 CMK | $3 |
-| CloudTrail | Multi-region | $2 |
-| GuardDuty | 基本 | $5 |
-| Config | 基本 | $3 |
-| CloudWatch Logs | 10GB | $5 |
-| **合計** | | **約 $205/月** |
+| ECS Fargate | 2タスク × 0.25vCPU × 0.5GB | $15 |
+| ALB | 1 ALB + LCU | $25 |
+| NAT Gateway | 1 AZ | $45 |
+| ECR | 10GB ストレージ | $1 |
+| CodePipeline | 1パイプライン | $1 |
+| CodeBuild | 100分/月 | $5 |
+| CloudWatch | ログ5GB + メトリクス | $10 |
+| **合計** | | **約 $102/月** |
 
-### ROI分析
+### スケール時の見積もり
 
 ```
-セキュリティ投資対効果:
+ピーク時（10タスク）:
+- ECS Fargate: $75/月
+- ALB LCU増加: +$10/月
+- その他は同じ
 
-コスト:
-- 月額インフラ追加費用: $205
-- 年間: $2,460
+月間合計: 約 $170/月
 
-リスク軽減効果:
-- データ漏洩時の想定被害: 1億円〜
-- セキュリティインシデントによる信用失墜: 計り知れない
-- 金融庁による行政処分リスク: 事業継続に影響
+1日10回のデプロイ:
+- CodeBuild: 300分/月 → $15/月
+- 合計: 約 $180/月
+```
 
-ROI:
-- セキュリティ投資は保険として考える
-- 金融業界では必須投資
-- 顧客獲得時のセキュリティ質問対応が容易に
+### コスト最適化ポイント
+
+```
+1. Fargate Spot活用:
+   - 開発・ステージング環境でSpot使用
+   - 最大70%削減
+
+2. Auto Scaling最適化:
+   - 夜間・週末の最小タスク数を1に
+   - CPU/メモリの適切なサイジング
+
+3. NAT Gateway最適化:
+   - VPCエンドポイント使用でNAT通信削減
+   - 1AZのみNAT Gateway（可用性とのトレードオフ）
 ```
 
 ---
@@ -738,56 +643,52 @@ ROI:
 ### 今回学んだこと
 
 ```
-1. セキュアなVPC設計
-   □ サブネット分離（Public/Private/Data）
-   □ セキュリティグループの多層防御
-   □ Network ACLによる追加防御
+1. ECRによるコンテナ管理
+   □ プライベートリポジトリの作成
+   □ ライフサイクルポリシーでコスト最適化
+   □ 脆弱性スキャンの有効化
 
-2. VPCエンドポイント
-   □ Interface vs Gateway Endpoint
-   □ PrivateLink によるプライベート接続
-   □ エンドポイントポリシー
+2. CodePipelineによるCI/CD
+   □ GitHub連携（CodeStar Connections）
+   □ CodeBuildでのテスト・ビルド自動化
+   □ アーティファクト管理
 
-3. AWS WAF
-   □ マネージドルールの活用
-   □ カスタムルールの作成
-   □ レート制限とIP制限
+3. ECS Fargateによるコンテナ運用
+   □ タスク定義とサービス設定
+   □ Blue/Greenデプロイメント
+   □ Auto Scalingの構成
 
-4. Secrets Manager
-   □ シークレットの安全な保存
-   □ 自動ローテーション
-   □ アプリケーション統合
-
-5. 監査とコンプライアンス
-   □ CloudTrail
-   □ AWS Config
-   □ Security Hub
+4. 運用のベストプラクティス
+   □ ヘルスチェックの重要性
+   □ ログ集約とモニタリング
+   □ ロールバック手順の確立
 ```
 
 ### GCPとの比較まとめ
 
-| 観点 | AWS | GCP |
-|------|-----|-----|
-| プライベート接続 | PrivateLink | Private Service Connect |
-| WAF | AWS WAF (マネージドルール豊富) | Cloud Armor |
-| シークレット管理 | Secrets Manager | Secret Manager |
-| 監査 | CloudTrail + Config | Cloud Audit Logs |
-| 統合ダッシュボード | Security Hub | Security Command Center |
+| 観点 | AWS (ECS + CodePipeline) | GCP (Cloud Run + Cloud Build) |
+|------|--------------------------|-------------------------------|
+| サーバーレスコンテナ | ECS Fargate | Cloud Run |
+| ビルド | CodeBuild | Cloud Build |
+| デプロイ | CodeDeploy | Cloud Deploy |
+| 設定の複雑さ | 中〜高 | 低〜中 |
+| カスタマイズ性 | 高 | 中 |
+| Blue/Green | CodeDeploy統合 | Traffic splitting |
 
 ### 次のステップ
 
 ```
 1. 発展学習:
-   - AWS Network Firewall
-   - AWS Verified Access
-   - AWS Macie (データ分類)
+   - EKS (Kubernetes) への移行
+   - Argo CDによるGitOps
+   - カナリアデプロイの自動化
 
-2. 認定対応:
-   - FISC安全対策基準
-   - PCI DSS
-   - ISO 27001
+2. 運用改善:
+   - 本番監視ダッシュボードの構築
+   - アラート自動化（PagerDuty/Slack連携）
+   - カオスエンジニアリングの導入
 
 3. 認定資格:
-   - AWS Certified Security - Specialty
-   - AWS Certified Solutions Architect - Professional
+   - AWS Certified DevOps Engineer - Professional
+   - AWS Certified Solutions Architect - Associate
 ```

@@ -1,6 +1,6 @@
-# 課題17: グローバルWebサービスのDDoS対策
+# 課題17: ニュースメディアのCMS基盤
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜🟡 中級**
 
 ---
 
@@ -9,507 +9,164 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | セキュリティ |
+| カテゴリ | コンテナ |
 | 処理タイプ | リアルタイム |
-| 使用IaC | CloudFormation |
-| 想定所要時間 | 4-5時間 |
+| 使用IaC | Terraform |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. シナリオ
 
-### 企業プロファイル
-
-| 項目 | 内容 |
-|------|------|
-| **企業名** | 〇〇株式会社 |
-| **業種** | グローバルSNS |
-| **従業員数** | 200名（エンジニア60名） |
-| **月間UU** | 500万人（グローバル） |
-| **リージョン** | 日本、US、EU |
-| **可用性目標** | 99.99% |
+### 企業プロフィール
+**〇〇株式会社**は、政治・経済・スポーツなど幅広いジャンルのニュースを配信するオンラインメディアです。月間PVは1,000万を超え、速報ニュース配信時には瞬間的に10倍以上のアクセスが発生します。
 
 ### 現状の課題
+オンプレミスのCMSサーバーでは、急激なトラフィック増加に対応できていません：
 
-```
-〇〇株式会社はグローバル展開するSNSサービスを運営しています。
-サービス可用性において以下の課題を抱えています：
+1. **スパイク対応の遅れ**：速報時にサーバーがダウンし、機会損失が発生
+2. **コンテンツ配信の遅延**：画像・動画が重く、ページ読み込みが遅い
+3. **可用性の問題**：単一障害点があり、メンテナンス時にサービス停止
+4. **運用負荷**：サーバーの手動管理に工数を取られている
 
-1. DDoS攻撃の増加
-   - 月に2-3回のDDoS攻撃を受けている
-   - 攻撃時にサービスが数時間停止
-   - 競合他社からの攻撃が疑われるケースも
+### 数値で見る問題
+- 速報時のダウン回数：月 **3回**
+- ページ読み込み時間：平均 **4秒**
+- 可用性（SLA）：**99.0%**（目標99.9%）
+- サーバー管理工数：月 **40時間**
 
-2. レイテンシの問題
-   - 海外ユーザーからのレスポンスが遅い
-   - 日本リージョンへの直接アクセス
-   - CDN未導入
-
-3. セキュリティ対策の不足
-   - WAFが未導入
-   - ボットアクセスの増加
-   - 不正アカウント作成の多発
-
-4. 運用負荷
-   - 攻撃時の手動対応
-   - 24/365の監視体制がない
-   - インシデント対応に時間がかかる
-```
-
-### ビジネス目標
-
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| 可用性 | 99.5% | 99.99% |
-| DDoS攻撃時のダウンタイム | 2-3時間 | 0分 |
-| グローバルレイテンシ（P50） | 500ms | 100ms |
-| ボットトラフィック率 | 30% | 5%以下 |
-| 攻撃検知時間 | 30分 | 即時 |
+### 成功指標（KPI）
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| スパイク時ダウン | 3回/月 | 0回 |
+| ページ読み込み時間 | 4秒 | 1秒以下 |
+| 可用性 | 99.0% | 99.9% |
+| 運用工数 | 40時間/月 | 10時間/月 |
 
 ---
 
-## 3. 達成目標（ゴール）
+## 3. 学習目標
 
 ### 主要な学習成果
+1. ECS Fargateによるコンテナベースアプリケーションの構築
+2. CloudFrontとS3を組み合わせたコンテンツ配信最適化
+3. Aurora Serverlessによるスケーラブルなデータベース構築
+4. Application Auto Scalingによる自動スケーリング
 
-```
-この課題を完了すると、以下ができるようになります：
-
-1. Amazon CloudFrontによるグローバル配信
-   - エッジロケーションの活用
-   - キャッシュ戦略の設計
-   - オリジン保護
-
-2. AWS Shieldによる DDoS 保護
-   - Shield Standard の自動保護
-   - Shield Advanced の高度な保護
-   - DDoS Response Team (DRT) との連携
-
-3. AWS WAFによるアプリケーション保護
-   - ボット対策
-   - レート制限
-   - 地理的制限
-
-4. Amazon Route 53による耐障害性DNS
-   - ヘルスチェック
-   - フェイルオーバールーティング
-   - GeoDNS
-```
-
-### 合格基準
-
-| 項目 | 基準 |
-|------|------|
-| CloudFront | グローバルにコンテンツが配信されること |
-| Shield | DDoS攻撃が自動的に緩和されること |
-| WAF | 悪意のあるトラフィックがブロックされること |
-| Route53 | DNS障害時にフェイルオーバーすること |
-| 可用性 | 攻撃シミュレーション時もサービス継続すること |
+### 習得するスキル
+- ECS タスク定義とサービス設計
+- CloudFront Cache Policy の設定
+- S3 への静的アセット保存
+- Auto Scaling ポリシーの設計
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### コア技術スタック
+### コアサービス
+| サービス | 用途 | 重要度 |
+|----------|------|--------|
+| ECS Fargate | CMS アプリケーション実行 | 高 |
+| Aurora Serverless v2 | コンテンツデータベース | 高 |
+| CloudFront | CDN・コンテンツ配信 | 高 |
+| S3 | 画像・動画ストレージ | 高 |
+| ALB | ロードバランシング | 高 |
 
-```yaml
-エッジセキュリティ:
-  - Amazon CloudFront: グローバルCDN
-  - AWS Shield Standard: 基本DDoS保護（無料）
-  - AWS Shield Advanced: 高度なDDoS保護
-  - AWS WAF: Webアプリケーション保護
-
-DNS:
-  - Amazon Route 53: マネージドDNS
-  - Route 53 Health Checks: ヘルスチェック
-  - Route 53 Traffic Flow: 高度なルーティング
-
-オリジン:
-  - Application Load Balancer: ロードバランサ
-  - Amazon S3: 静的コンテンツ
-  - AWS Global Accelerator: 固定IP・最適化ルーティング（オプション）
-
-監視・対応:
-  - Amazon CloudWatch: メトリクス・ダッシュボード
-  - AWS Firewall Manager: 一元管理
-  - Amazon SNS: アラート通知
-```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| CDN | CloudFront | Cloud CDN |
-| DDoS保護 | Shield | Cloud Armor |
-| WAF | AWS WAF | Cloud Armor WAF |
-| DNS | Route 53 | Cloud DNS |
-| Anycast | Global Accelerator | Cloud Load Balancing |
+### 補助サービス
+| サービス | 用途 |
+|----------|------|
+| ElastiCache (Redis) | セッション・キャッシュ |
+| ECR | コンテナイメージ保存 |
+| CloudWatch | ログ・メトリクス |
+| WAF | セキュリティ |
+| Route 53 | DNS管理 |
 
 ---
 
 ## 5. 前提条件
 
-### 技術要件
-
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
-
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+### 必要な知識
+- Dockerの基本操作
+- HTTPの基本（キャッシュ、ヘッダー）
+- CDNの概念
 
 ### 事前準備
-
-```bash
-# ドメイン設定
-# socialconnect.example.com を Route 53 で管理済み
-
-# 既存リソース
-# - ALB (オリジン)
-# - S3バケット (静的コンテンツ)
-# - ACM証明書 (us-east-1)
-```
+1. AWSアカウント
+2. AWS CLI v2
+3. Docker Desktop
+4. Terraform CLI
 
 ---
 
-## 6. トラブルシューティングチャレンジ
+## 6. トラブルシューティング課題
 
-### Challenge 1: CloudFrontキャッシュがヒットしない
+### Challenge 1: CloudFront でキャッシュが効かない
+**状況**: 記事ページが毎回オリジンに到達している
 
-```
-問題:
-キャッシュヒット率が10%以下で、ほとんどのリクエストがオリジンに到達している。
+**調査ポイント**:
+1. Cache-Control ヘッダーの確認
+2. Cookie の影響確認
+3. CloudFront Cache Policy の設定確認
 
-メトリクス:
-- CacheHitRate: 8%
-- OriginRequests: 90%
+### Challenge 2: ECS タスクが頻繁に再起動
+**状況**: ヘルスチェックに失敗してタスクが再起動
 
-調査項目:
-1. キャッシュポリシー設定
-2. Varyヘッダー
-3. クエリストリング
-```
+**調査ポイント**:
+1. ヘルスチェックの設定（interval, timeout）
+2. アプリケーションの起動時間
+3. メモリ使用量の確認
 
-<details>
-<summary>解決のヒント</summary>
+### Challenge 3: 速報時のスケールアウトが間に合わない
+**状況**: トラフィック急増時にスケールアウトが遅い
 
-```bash
-# 1. キャッシュポリシー確認
-aws cloudfront get-cache-policy --id POLICY_ID
-
-# 2. オリジンのレスポンスヘッダー確認
-curl -I https://example.com/api/posts | grep -i cache
-
-# Cache-Control: no-store が原因の可能性
-
-# 3. クエリストリングの影響確認
-# ?timestamp=xxx のような動的パラメータがキャッシュを無効化
-
-# 解決策:
-# a) Cache-Control ヘッダーの適切な設定
-# オリジンで: Cache-Control: public, max-age=300
-
-# b) クエリストリングのホワイトリスト設定
-# 必要なクエリパラメータのみをキャッシュキーに含める
-
-# c) キャッシュポリシーの最適化
-aws cloudfront create-cache-policy --cache-policy-config '{
-    "Name": "OptimizedCachePolicy",
-    "MinTTL": 1,
-    "MaxTTL": 86400,
-    "DefaultTTL": 300,
-    "ParametersInCacheKeyAndForwardedToOrigin": {
-        "EnableAcceptEncodingGzip": true,
-        "EnableAcceptEncodingBrotli": true,
-        "HeadersConfig": {
-            "HeaderBehavior": "none"
-        },
-        "CookiesConfig": {
-            "CookieBehavior": "none"
-        },
-        "QueryStringsConfig": {
-            "QueryStringBehavior": "whitelist",
-            "QueryStrings": {
-                "Items": ["page", "limit"]
-            }
-        }
-    }
-}'
-```
-</details>
-
-### Challenge 2: WAFがレジティメートなボットをブロック
-
-```
-問題:
-Google botやBing botがWAFにブロックされ、
-SEOに悪影響が出ている。
-
-WAFログ:
-terminatingRuleId: AWSManagedRulesBotControlRuleSet
-action: BLOCK
-labels: ["awswaf:managed:aws:bot-control:bot:verified"]
-
-調査項目:
-1. ボット制御ルールの設定
-2. ラベルマッチング
-3. 例外設定
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. 検証済みボットを許可する例外ルールを追加
-
-# WAF Web ACLに新しいルールを追加（優先度を上げる）
-{
-    "Name": "AllowVerifiedBots",
-    "Priority": 0,
-    "Action": {"Allow": {}},
-    "Statement": {
-        "LabelMatchStatement": {
-            "Scope": "LABEL",
-            "Key": "awswaf:managed:aws:bot-control:bot:verified"
-        }
-    },
-    "VisibilityConfig": {
-        "SampledRequestsEnabled": true,
-        "CloudWatchMetricsEnabled": true,
-        "MetricName": "AllowVerifiedBotsMetric"
-    }
-}
-
-# 2. 特定のUser-Agentを許可
-{
-    "Name": "AllowGoogleBot",
-    "Priority": 1,
-    "Action": {"Allow": {}},
-    "Statement": {
-        "ByteMatchStatement": {
-            "SearchString": "Googlebot",
-            "FieldToMatch": {
-                "SingleHeader": {"Name": "user-agent"}
-            },
-            "TextTransformations": [
-                {"Priority": 0, "Type": "LOWERCASE"}
-            ],
-            "PositionalConstraint": "CONTAINS"
-        }
-    },
-    "VisibilityConfig": {...}
-}
-
-# 3. ボット制御ルールのモード変更
-# COMMON → TARGETED に変更して、悪意のあるボットのみブロック
-```
-</details>
-
-### Challenge 3: Shield Advanced でコスト保護が機能しない
-
-```
-問題:
-大規模DDoS攻撃を受け、CloudFrontとALBのデータ転送料金が
-大幅に増加したが、Shield Advancedのコスト保護が適用されない。
-
-請求:
-- CloudFront データ転送: $50,000
-- ALB データ転送: $10,000
-- Shield Advanced: $3,000
-
-調査項目:
-1. コスト保護の条件
-2. 保護対象リソースの設定
-3. DRT への連絡
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# Shield Advancedのコスト保護を受けるための条件:
-
-# 1. リソースが保護対象として登録されていること
-aws shield list-protections
-
-# 2. 攻撃がShieldによって検知されていること
-aws shield list-attacks --start-time "2024-01-01T00:00:00Z" --end-time "2024-01-31T23:59:59Z"
-
-# 3. WAFがAssociateされていること（L7攻撃の場合）
-aws wafv2 get-web-acl-for-resource \
-    --resource-arn arn:aws:cloudfront::xxx:distribution/yyy
-
-# コスト保護申請手順:
-# a) AWS サポートケースを開く
-# b) 以下の情報を提供:
-#    - Shield 攻撃ID
-#    - 影響を受けたリソースのARN
-#    - 異常なコストが発生した期間
-#    - コスト増加の証拠（請求書）
-
-# c) DRTに連絡（プロアクティブエンゲージメント有効時）
-aws shield describe-subscription
-# ProactiveEngagementStatus: ENABLED であることを確認
-
-# 注意: コスト保護は攻撃が正当にDDoS攻撃として認定された場合のみ適用
-# スケーリングによる正常なトラフィック増加は対象外
-```
-</details>
+**調査ポイント**:
+1. スケーリングポリシーのクールダウン設定
+2. 予測スケーリングの導入検討
+3. Scheduled Scaling の活用
 
 ---
 
 ## 7. 設計考慮ポイント
 
-### Shield Standard vs Advanced
+### ディスカッション1: CDN キャッシュ戦略
+**テーマ**: キャッシュTTLの最適化
 
-```yaml
-Shield Standard (無料):
-  保護対象:
-    - CloudFront
-    - Route 53
-    - Global Accelerator
-  保護内容:
-    - Layer 3/4 DDoS攻撃の自動緩和
-    - SYN floods, UDP floods, Reflection attacks
-  制限:
-    - 可視性なし
-    - コスト保護なし
-    - DRTサポートなし
+| コンテンツ | 推奨TTL | 理由 |
+|-----------|---------|------|
+| 静的アセット | 1年 | バージョン管理で無効化 |
+| 画像 | 1日-1週間 | 更新頻度が低い |
+| 記事ページ | 5-15分 | リアルタイム性とのバランス |
+| トップページ | 1-5分 | 新着記事の反映 |
 
-Shield Advanced ($3,000/月 + WAF費用):
-  追加保護:
-    - ALB, NLB, EIP, EC2
-  追加機能:
-    - リアルタイム攻撃可視性
-    - DDoS Response Team (24/7)
-    - コスト保護
-    - WAF無料（Shield関連）
-    - Health-based detection
-  適用ケース:
-    - ミッションクリティカル
-    - 高頻度の攻撃
-    - SLA要件あり
+### ディスカッション2: FARGATE vs FARGATE_SPOT
+**テーマ**: コスト最適化とリスク
 
-選択基準:
-  月間UU > 100万 または
-  ダウンタイムコスト > $10,000/時間
-  → Shield Advanced を推奨
-```
+| 観点 | FARGATE | FARGATE_SPOT |
+|------|---------|--------------|
+| コスト | 100% | 約30%OFF |
+| 可用性 | 高 | 中断リスクあり |
+| ユースケース | 常時必要なタスク | スケールアウト分 |
 
-### グローバル配信戦略
+### ディスカッション3: キャッシュ無効化戦略
+**テーマ**: コンテンツ更新時の反映
 
-```
-エッジロケーション最適化:
-
-┌─────────────────────────────────────────────────────────────┐
-│                    Price Class 選択                         │
-├─────────────────────────────────────────────────────────────┤
-│ PriceClass_All        : 全リージョン (最高パフォーマンス)    │
-│ PriceClass_200        : 北米、欧州、アジア、中東、アフリカ   │
-│ PriceClass_100        : 北米、欧州のみ (最低コスト)          │
-└─────────────────────────────────────────────────────────────┘
-
-推奨:
-- グローバルサービス → PriceClass_All
-- 日本中心 + 一部海外 → PriceClass_200
-- 開発環境 → PriceClass_100
-```
+**選択肢**:
+1. TTL ベース（シンプルだが遅延あり）
+2. 明示的な無効化（即時だが複雑）
+3. バージョン付きURL（キャッシュ永続化）
 
 ---
 
-## 8. 発展課題（オプション）
+## 8. 発展課題
 
-### 上級チャレンジ1: Global Acceleratorによる最適化
+### Advanced 1: Lambda@Edge による動的コンテンツ
+**課題**: エッジでのA/Bテストやパーソナライゼーション実装
 
-```bash
-# AWS Global Accelerator設定
-# 固定IPアドレスとAnycastルーティング
+### Advanced 2: 予測スケーリング
+**課題**: CloudWatch の予測スケーリングを有効化し、計画的なイベントに対応
 
-aws globalaccelerator create-accelerator \
-    --name example-accelerator \
-    --ip-address-type IPV4 \
-    --enabled
-
-# リスナー作成
-aws globalaccelerator create-listener \
-    --accelerator-arn arn:aws:globalaccelerator::xxx:accelerator/yyy \
-    --port-ranges '[{"FromPort":443,"ToPort":443}]' \
-    --protocol TCP
-
-# エンドポイントグループ作成（複数リージョン）
-aws globalaccelerator create-endpoint-group \
-    --listener-arn arn:aws:globalaccelerator::xxx:accelerator/yyy/listener/zzz \
-    --endpoint-group-region ap-northeast-1 \
-    --endpoint-configurations '[{"EndpointId":"arn:aws:elasticloadbalancing:...","Weight":100}]' \
-    --traffic-dial-percentage 100 \
-    --health-check-path "/health" \
-    --health-check-interval-seconds 10
-```
-
-### 上級チャレンジ2: 多層キャッシング戦略
-
-```yaml
-# CloudFront + Origin Shield + ALB + ElastiCache
-
-Layer 1: CloudFront Edge
-  - 静的コンテンツ: 24時間キャッシュ
-  - 動的コンテンツ: 5分キャッシュ
-  - キャッシュヒット率目標: 80%
-
-Layer 2: Origin Shield
-  - リージョナルエッジキャッシュの一元化
-  - オリジンへのリクエスト削減: 50%
-
-Layer 3: Application Cache (ElastiCache)
-  - API レスポンスキャッシュ
-  - セッションストア
-  - TTL: 1-5分
-
-結果:
-  - オリジンへの到達率: 10%以下
-  - レイテンシ改善: 80%
-```
-
-### 上級チャレンジ3: カオスエンジニアリング
-
-```python
-# DDoS攻撃シミュレーション（AWS FISを使用）
-# 注意: 本番環境では事前にAWSサポートに連絡が必要
-
-# FIS実験テンプレート
-{
-    "description": "Simulate high traffic load",
-    "targets": {
-        "alb": {
-            "resourceType": "aws:elasticloadbalancing:loadbalancer",
-            "resourceArns": ["arn:aws:elasticloadbalancing:..."],
-            "selectionMode": "ALL"
-        }
-    },
-    "actions": {
-        "inject-fault": {
-            "actionId": "aws:fis:inject-api-throttle-error",
-            "parameters": {
-                "duration": "PT5M",
-                "percentage": "50"
-            },
-            "targets": {
-                "LoadBalancers": "alb"
-            }
-        }
-    },
-    "stopConditions": [
-        {
-            "source": "aws:cloudwatch:alarm",
-            "value": "arn:aws:cloudwatch:...:alarm:emergency-stop"
-        }
-    ],
-    "roleArn": "arn:aws:iam::xxx:role/FISRole"
-}
-```
+### Advanced 3: マルチリージョン展開
+**課題**: 災害対策として別リージョンにスタンバイ環境を構築
 
 ---
 
@@ -517,92 +174,50 @@ Layer 3: Application Cache (ElastiCache)
 
 ### 月額コスト概算
 
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| CloudFront | 10TB転送 + 1億リクエスト | $1,200 |
-| Shield Advanced | 基本料金 | $3,000 |
-| WAF | Web ACL + ルール + ボット制御 | $50 |
-| Route 53 | ホステッドゾーン + クエリ | $10 |
-| ヘルスチェック | 3つ | $2 |
-| CloudWatch | ログ・メトリクス | $30 |
-| **合計** | | **約 $4,292/月** |
+| サービス | 構成 | 月額コスト |
+|----------|------|------------|
+| ECS Fargate | 0.5vCPU/1GB × 2-20タスク | $70-350 |
+| Aurora Serverless v2 | 2-8 ACU | $170-700 |
+| CloudFront | 10TB転送 + 1億リクエスト | $150 |
+| S3 | 100GB | $2 |
+| ElastiCache | cache.t3.medium | $50 |
+| ALB | 1 | $16 |
+| NAT Gateway | 1 | $32 |
 
-### Shield Advancedなしの場合
-
-```
-Shield Standard (無料) の場合:
-- CloudFront: $1,200
-- WAF: $50
-- Route 53: $12
-- CloudWatch: $30
-合計: 約 $1,292/月
-
-差額: $3,000/月
-
-判断基準:
-- DDoS攻撃によるダウンタイムコスト
-- ブランド毀損のリスク
-- SLA要件
-
-500万UU × 広告収入 $0.01/UU = $50,000/月
-1時間ダウンタイム = $2,000+ の損失
-→ Shield Advanced の投資対効果は高い
-```
+**合計**: 約 **$490-1,300/月**（約74,000-195,000円）
 
 ---
 
 ## 10. 学習のポイント
 
-### 今回学んだこと
+### 重要な概念の整理
 
-```
-1. CloudFrontによるグローバル配信
-   - エッジロケーションの活用
-   - キャッシュ戦略
-   - オリジン保護
+1. **CDN キャッシング**
+   - エッジロケーションでのコンテンツ配信
+   - Cache-Control ヘッダーの重要性
+   - ETag による条件付きリクエスト
 
-2. AWS ShieldによるDDoS保護
-   - Standard vs Advanced
-   - 自動緩和
-   - DRTサポート
+2. **コンテナオーケストレーション**
+   - タスク定義とサービス
+   - Auto Scaling ポリシー
+   - ヘルスチェックとローリングアップデート
 
-3. AWS WAFによるL7保護
-   - マネージドルール
-   - ボット制御
-   - レート制限
+3. **サーバーレスデータベース**
+   - Aurora Serverless の自動スケーリング
+   - ACU（Aurora Capacity Units）
+   - 一時停止機能（開発環境向け）
 
-4. Route 53による高可用性DNS
-   - ヘルスチェック
-   - フェイルオーバー
-   - GeoDNS
-```
+### GCPとの比較
 
-### GCPとの比較まとめ
-
-| 観点 | AWS | GCP |
+| 概念 | AWS | GCP |
 |------|-----|-----|
-| CDN | CloudFront (450+ PoPs) | Cloud CDN |
-| DDoS | Shield (Standard無料) | Cloud Armor |
-| 専門サポート | DRT (Shield Advanced) | なし（標準サポート内） |
-| 価格モデル | 月額固定 + 従量 | 従量課金のみ |
+| CDN | CloudFront | Cloud CDN |
+| コンテナ実行 | ECS Fargate | Cloud Run |
+| オブジェクトストレージ | S3 | Cloud Storage |
+| サーバーレスDB | Aurora Serverless | Cloud SQL |
+| キャッシュ | ElastiCache | Memorystore |
 
 ### 次のステップ
-
-```
-1. 発展学習:
-   - AWS Global Accelerator
-   - CloudFront Functions/Lambda@Edge
-   - Origin Shield
-
-2. 実務応用:
-   - 攻撃シミュレーション訓練
-   - インシデントレスポンス計画
-   - SLA設計
-
-3. 認定資格:
-   - AWS Certified Security - Specialty
-   - AWS Certified Advanced Networking - Specialty
-```
-
----
-
+1. WAF ルールの高度な設定
+2. リアルタイムログ分析（Kinesis + Athena）
+3. 画像最適化（Lambda@Edge）

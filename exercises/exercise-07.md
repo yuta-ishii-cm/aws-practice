@@ -1,18 +1,93 @@
-# 課題7: TalentBridge株式会社のAIマッチング非同期処理システム構築
+# 課題7: 旅行予約サイトのサーバーレスAPI基盤
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟢 初級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | バッチ処理 / AI / 人材サービス |
-| 処理タイプ | 非同期 / イベント駆動 |
-| 使用IaC | CloudFormation |
-| 所要時間 | 5〜6時間 |
+| 難易度 | 初級 |
+| カテゴリ | マイクロサービス・API |
+| 処理タイプ | 非同期 |
+| 使用IaC | SAM |
+| 想定所要時間 | 4-5時間 |
+
+---
+
+## 学習するAWSサービス
+
+この演習では以下のAWSサービスを実践的に学習します。
+
+### メインサービス
+
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon API Gateway** | REST APIエンドポイント | リソース設計、メソッド設定、キャッシュ |
+| **AWS Lambda** | ビジネスロジック実行 | コールドスタート対策、メモリ最適化 |
+| **Amazon DynamoDB** | 検索結果キャッシュ、予約データ | TTL、GSI、パーティション設計 |
+| **Amazon SQS** | 非同期処理キュー | 予約確認メール送信の分離 |
+
+### 補助サービス
+
+| サービス | 役割 |
+|----------|------|
+| **Amazon CloudFront** | API キャッシング、WAF連携 |
+| **Amazon CloudWatch** | ログ・メトリクス監視 |
+| **AWS X-Ray** | 分散トレーシング |
+| **AWS WAF** | API保護 |
+| **AWS IAM** | サービス間の権限管理 |
+
+---
+
+## 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group edge(server)[Edge Layer] in aws
+    group api(server)[API Layer] in aws
+    group data(database)[Data Layer] in aws
+    group async(server)[Async Processing] in aws
+
+    service user(internet)[User]
+    service cloudfront(server)[CloudFront + WAF] in edge
+    service apigw(server)[API Gateway] in api
+    service lambda_hotel(server)[Lambda HotelSearch] in api
+    service lambda_flight(server)[Lambda FlightSearch] in api
+    service lambda_booking(server)[Lambda CreateBooking] in api
+    service dynamo_cache(database)[DynamoDB SearchCache] in data
+    service dynamo_booking(database)[DynamoDB Bookings] in data
+    service sqs(server)[SQS] in async
+    service lambda_confirm(server)[Lambda SendConfirmation] in async
+    service ses(server)[SES] in async
+
+    user:R --> L:cloudfront
+    cloudfront:B --> T:apigw
+    apigw:B --> T:lambda_hotel
+    apigw:B --> T:lambda_flight
+    apigw:B --> T:lambda_booking
+    lambda_hotel:R --> L:dynamo_cache
+    lambda_flight:R --> L:dynamo_cache
+    lambda_booking:R --> L:dynamo_booking
+    lambda_booking:B --> T:sqs
+    sqs:R --> L:lambda_confirm
+    lambda_confirm:R --> L:ses
+```
+
+### API エンドポイント設計
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | /hotels/search | ホテル検索 |
+| GET | /hotels/{hotelId} | ホテル詳細取得 |
+| GET | /flights/search | フライト検索 |
+| GET | /flights/{flightId} | フライト詳細取得 |
+| POST | /bookings | 予約作成 |
+| GET | /bookings/{bookingId} | 予約詳細取得 |
+| DELETE | /bookings/{bookingId} | 予約キャンセル |
 
 ---
 
@@ -20,67 +95,30 @@
 
 ### 企業プロフィール
 
-**TalentBridge株式会社**は、IT・Web業界に特化した人材紹介サービスを運営しています。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | 人材紹介（IT特化） |
-| 設立 | 2016年 |
-| 従業員数 | 100名（うちキャリアアドバイザー40名） |
-| 登録求職者数 | 2万人 |
-| 掲載求人数 | 5,000件 |
-| 月間マッチング件数 | 1万件 |
-| 成約数 | 月150件 |
-| 年間売上 | 20億円 |
-| 平均紹介手数料 | 年収の30%（約130万円） |
+**〇〇株式会社**は、ホテルと航空券を組み合わせたパッケージ旅行の予約サービスを提供しています。日次約10万リクエストを処理し、ゴールデンウィークや年末年始にはピーク時5倍のトラフィックが発生します。
 
 ### 現状の課題
+既存のモノリシックなAPIサーバーでは、ピーク時の対応に問題が発生しています：
 
-求職者と求人のマッチングを人手とルールベースで行っていますが、マッチング精度が低く、成約率が上がりません。また、日次1万件のマッチング処理がピーク時にシステム負荷を与え、レスポンス低下を招いています。
+1. **スケーリングの遅延**：EC2のオートスケーリングに5-10分かかる
+2. **コスト非効率**：通常時もピーク対応用のキャパシティを維持
+3. **検索のレイテンシ**：複数の外部APIを順次呼び出しており、応答が遅い
+4. **キャッシュ効率の悪さ**：同一検索が繰り返されているが、毎回外部APIを叩いている
 
-### 数値で示された問題
-
-| 指標 | 現状 | 業界平均 |
-|------|------|----------|
-| マッチング精度 | 15%（推薦→応募） | 25% |
-| 日次マッチング処理 | 1万件 | - |
-| マッチング処理時間 | 4時間（夜間バッチ） | - |
-| 成約率 | 1.5% | 3% |
-| キャリアアドバイザー工数 | 30%がマッチング確認 | - |
-| システム負荷（ピーク時） | CPU 90%超 | - |
-
-### 現状のマッチングロジック
-
-```
-ルールベースマッチング:
-1. 勤務地: 求職者希望 ∩ 求人勤務地
-2. 職種: 求職者経験職種 = 求人職種
-3. 年収: 求職者希望年収 ≤ 求人提示年収
-4. スキル: 求職者スキル ⊇ 求人必須スキル
-
-問題点:
-- 単純なルールでは潜在的なマッチが見落とされる
-- スキルの類似性が考慮されない
-- 求職者の成長可能性が考慮されない
-```
-
-### 解決したいこと
-
-1. AIによる高精度なマッチングスコア算出
-2. 日次マッチング処理の非同期・分散処理
-3. リアルタイムの新着求人マッチング通知
-4. マッチング理由の説明生成（キャリアアドバイザー支援）
-5. 処理のスケーラビリティ確保
+### 数値で見る問題
+- 通常時リクエスト数：**10万件/日**（平均 1.2 req/sec）
+- ピーク時リクエスト数：**50万件/日**（平均 6 req/sec、瞬間最大 50 req/sec）
+- 検索API応答時間：**平均 3秒**（外部API呼び出し含む）
+- インフラコスト：**月額 $3,000**（常時稼働EC2）
+- ピーク時のエラー率：**5%**
 
 ### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| マッチング精度 | 15% | 30%以上 | 3ヶ月後 |
-| 処理時間 | 4時間 | 30分以内 | 1ヶ月後 |
-| 成約率 | 1.5% | 3%以上 | 6ヶ月後 |
-| システム負荷 | ピーク90% | ピーク50%以下 | 1ヶ月後 |
-| CA工数削減 | - | 50%削減 | 3ヶ月後 |
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 検索API応答時間 | 3秒 | 1秒以内 |
+| ピーク時エラー率 | 5% | 0.1%以下 |
+| インフラコスト | $3,000/月 | $1,000/月 |
+| スケーリング時間 | 5-10分 | 即時 |
 
 ---
 
@@ -89,339 +127,185 @@
 この演習で習得できるスキル：
 
 ### 技術的な学習ポイント
-
-1. **SQS + Lambdaによる非同期処理**
-   - メッセージキューイング
-   - 並列処理とスケーリング
-   - デッドレターキュー
-
-2. **Amazon Bedrockによるマッチングスコア算出**
-   - 埋め込みベクトル生成
-   - 類似度計算
-   - 説明生成
-
-3. **DynamoDBの設計パターン**
-   - 複合キー設計
-   - GSIの活用
-   - クエリパターンの最適化
-
-4. **イベント駆動アーキテクチャ**
-   - 疎結合な設計
-   - イベントソーシング
+1. API GatewayとLambdaによるサーバーレスAPI構築
+2. DynamoDBを使った高速な検索結果キャッシュ
+3. 非同期処理による外部API呼び出しの並列化
+4. SAMを使ったサーバーレスアプリケーションのIaC
 
 ### 実務で活かせる知識
 
-- 大量データの非同期処理設計
-- AIを活用したマッチングシステム
-- スケーラブルなバッチ処理
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| メッセージキュー | SQS | Pub/Sub |
-| サーバーレス関数 | Lambda | Cloud Functions |
-| NoSQL | DynamoDB | Firestore / Bigtable |
-| 生成AI | Bedrock | Vertex AI |
+- サーバーレスAPIの設計パターン
+- キャッシュ戦略によるパフォーマンス改善
+- 非同期処理による応答時間短縮
+- Infrastructure as Codeによるデプロイ自動化
 
 ---
-
-## 使用するAWSサービス
-
-### メインサービス
-
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon SQS | マッチング処理キュー | 大量メッセージのバッファリング |
-| AWS Lambda | マッチング処理実行 | 並列スケーリング |
-| Amazon Bedrock | AIマッチングスコア算出 | 高精度な類似度計算 |
-| Amazon DynamoDB | 求職者・求人・マッチング結果保存 | 高速読み書き |
-| Amazon SNS | 通知配信 | プッシュ通知 |
-
-### 補助サービス
-
-| サービス | 役割 |
-|----------|------|
-| Amazon S3 | レジュメファイル保存 |
-| Amazon EventBridge | 日次バッチトリガー |
-| Amazon CloudWatch | 監視・ログ |
 
 ---
 
 ## 前提条件
 
-### 必要な事前知識
+### 必要な知識
+- REST APIの基本概念
+- Python または Node.js の基礎
+- DynamoDBの基本操作
 
-- AWSの基本操作（S3, Lambda, DynamoDB）
-- Pythonの基礎
-- メッセージキューの概念
+### 事前準備
+1. AWSアカウント
+2. AWS CLI v2
+3. AWS SAM CLI
+4. Python 3.11 または Node.js 18.x
 
-### 準備するもの
+### 環境要件
+```bash
+# SAM CLIインストール
+pip install aws-sam-cli
 
-1. **AWSアカウント**
-   - Bedrock有効化（Claude 3 / Titan Embeddings）
-   - 適切なIAM権限
-
-2. **開発環境**
-   - AWS CLI v2
-   - Python 3.9以上
-
-3. **テストデータ**
-   - サンプル求職者データ
-   - サンプル求人データ
-
----
-
-## アーキテクチャ概要
-
-### システム全体構成
-
+# バージョン確認
+sam --version  # 1.90.0以上
 ```
-[日次バッチ]
-    ↓ EventBridge（毎日 AM 2:00）
-[Lambda: EnqueueMatchingJobs]
-    ↓ 全求職者をキューに投入
-[SQS: MatchingQueue]
-    ↓ バッチサイズ10
-[Lambda: ProcessMatching] × N並列
-    ├── DynamoDB: 求職者情報取得
-    ├── DynamoDB: 求人一覧取得
-    ├── Bedrock: マッチングスコア算出
-    └── DynamoDB: マッチング結果保存
-    ↓ 高スコアマッチング
-[SNS: MatchingNotification]
-    ↓
-[求職者/キャリアアドバイザーに通知]
-
-[新着求人イベント]
-    ↓
-[Lambda: NewJobMatching]
-    └── リアルタイムマッチング
-```
-
-### データフロー
-
-1. **日次バッチ**: 全求職者に対してマッチング処理をキューイング
-2. **並列処理**: Lambdaが自動スケールして並列にマッチング実行
-3. **スコア算出**: Bedrockで求職者と求人の類似度を計算
-4. **結果保存**: マッチング結果をDynamoDBに保存
-5. **通知**: 高スコアマッチングをSNS経由で通知
 
 ---
 
 ## トラブルシューティング課題
 
-### 問題1: Lambdaがタイムアウト
+### Challenge 1: Lambda コールドスタートが遅い
+**状況**: 初回リクエストで3秒以上のレイテンシが発生
 
-**症状:**
-```
-Task timed out after 120.00 seconds
-マッチング処理が完了しない
-```
+**調査ポイント**:
+1. CloudWatch Logs で Init Duration を確認
+2. Lambda のメモリサイズを確認
+3. 依存パッケージのサイズを確認
 
-**ヒント:**
-1. Bedrock呼び出し回数を確認
-2. 求人数が多すぎないか確認
-3. バッチサイズの調整
-
-**解決方法:**
-```python
-# 求人数を制限
-jobs = jobs_response.get('Items', [])[:50]  # 上位50件のみ
-
-# 埋め込み生成をキャッシュ（DynamoDB/ElastiCache）
-def get_cached_embedding(key: str, text: str) -> list:
-    # キャッシュから取得、なければ生成してキャッシュ
-    pass
+**解決策**:
+```yaml
+# Provisioned Concurrency の設定
+HotelSearchFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    # ... 既存の設定 ...
+    ProvisionedConcurrencyConfig:
+      ProvisionedConcurrentExecutions: 5
 ```
 
-### 問題2: SQSメッセージが処理されない
+### Challenge 2: DynamoDB の読み取り容量超過
+**状況**: ピーク時に `ProvisionedThroughputExceededException` が発生
 
-**症状:**
-```
-メッセージがDLQに溜まる
-Lambda呼び出しエラー
-```
+**調査ポイント**:
+1. CloudWatch で ConsumedReadCapacityUnits を確認
+2. ホットパーティションの有無を確認
+3. キャッシュヒット率を確認
 
-**ヒント:**
-1. Lambda実行ロールの権限を確認
-2. イベントソースマッピングの設定を確認
-3. VisibilityTimeoutとLambda Timeoutの関係
+### Challenge 3: 外部API呼び出しタイムアウト
+**状況**: パートナーAPIの応答が遅く、Lambdaがタイムアウト
 
-**解決方法:**
-```bash
-# イベントソースマッピング確認
-aws lambda list-event-source-mappings --function-name talentbridge-process-matching-dev
-
-# VisibilityTimeoutはLambda Timeoutの6倍以上推奨
-aws sqs set-queue-attributes \
-  --queue-url <QUEUE_URL> \
-  --attributes '{"VisibilityTimeout": "720"}'
-```
-
-### 問題3: マッチングスコアが全体的に低い
-
-**症状:**
-```
-全てのマッチングスコアが閾値以下
-高スコアマッチングが出ない
-```
-
-**ヒント:**
-1. 埋め込み生成のテキストを確認
-2. スコアの重み付けを調整
-3. 閾値を下げて検証
-
-**解決方法:**
-```python
-# スコア計算の調整
-total_score = (
-    semantic_score * 0.5 +  # 意味的類似度を重視
-    skill_score * 0.35 +
-    salary_score * 0.15
-)
-
-# 閾値を調整
-SCORE_THRESHOLD = 0.6  # 0.7から下げる
-```
+**調査ポイント**:
+1. X-Ray でボトルネックを特定
+2. 各外部APIの応答時間を確認
+3. 並列呼び出しが正しく動作しているか確認
 
 ---
 
 ## 設計の考察ポイント
 
-### 1. SQS + Lambda パターンの利点
+### ディスカッション1: キャッシュ戦略
+**テーマ**: TTL設定とキャッシュ無効化
 
-**考察ポイント:**
-- 疎結合による耐障害性
-- 自動スケーリング
-- リトライ・DLQによるエラー処理
-- コスト効率（アイドル時ゼロ）
+| パターン | メリット | デメリット |
+|----------|----------|------------|
+| 短いTTL（1-5分） | 鮮度が高い | キャッシュヒット率低下 |
+| 長いTTL（30分以上） | ヒット率向上 | 古いデータを返すリスク |
+| 明示的無効化 | 精度が高い | 実装が複雑 |
 
-### 2. 埋め込みベクトルの活用
+### ディスカッション2: API Gateway vs ALB + Lambda
+**テーマ**: エントリーポイントの選択
 
-**考察ポイント:**
-- ルールベース vs セマンティック検索
-- 埋め込みのキャッシング戦略
-- 次元数とコストのトレードオフ
+| 観点 | API Gateway | ALB + Lambda |
+|------|-------------|--------------|
+| コスト（高トラフィック） | 高い | 安い |
+| 機能 | 豊富（認証、スロットリング等） | 基本的 |
+| WebSocket | 対応 | 非対応 |
 
-### 3. マッチングスコアの設計
+### ディスカッション3: 同期 vs 非同期処理
+**テーマ**: 予約確定処理のパターン
 
-**考察ポイント:**
-- 複数指標の重み付け
-- ビジネス要件との整合性
-- 説明可能性の確保
-
-### 4. リアルタイム vs バッチ
-
-**考察ポイント:**
-- 新着求人の即時マッチング
-- 日次バッチの必要性
-- ハイブリッドアプローチ
-
-### 5. スケーラビリティ
-
-**考察ポイント:**
-- 求職者・求人数が10倍になった場合
-- Bedrockのレート制限
-- コストのスケール
+**選択肢**:
+1. **完全同期**: 予約→決済→確認メールを1リクエストで
+2. **部分非同期**: 予約→決済は同期、確認メールは非同期
+3. **Saga パターン**: 全処理を非同期で、補償トランザクション
 
 ---
 
-## 発展課題（オプション）
+## 発展課題
 
-### 1. 埋め込みベクトルのキャッシング
-- DynamoDBに埋め込みを保存
-- 更新時のみ再計算
-- コスト削減と高速化
+### Advanced 1: GraphQL API への移行
+**課題**: AppSync を使って GraphQL API を構築し、クライアントが必要なデータのみを取得
 
-### 2. ストリーミングマッチング
-- 新着求人投稿時の即時マッチング
-- DynamoDB Streamsの活用
-- リアルタイム通知
+### Advanced 2: リアルタイム価格更新
+**課題**: WebSocket API と DynamoDB Streams を使って、価格変動をリアルタイムにクライアントへプッシュ
 
-### 3. フィードバックループ
-- 応募/不応募の結果収集
-- マッチングモデルの改善
-- A/Bテスト
-
-### 4. レコメンデーションUI
-- APIエンドポイント追加
-- マッチング結果の表示
-- フィルタリング・ソート
-
-### 5. 類似求職者検索
-- 企業向け機能
-- 条件に合う求職者のサジェスト
+### Advanced 3: マルチリージョン対応
+**課題**: Route 53 ヘルスチェックと DynamoDB Global Tables を使った災害対策
 
 ---
 
 ## 想定コストと削減方法
 
-### 月額概算コスト（日次1万件マッチング想定）
+### 月額コスト概算
 
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| Amazon Bedrock (Titan Embeddings) | 30万回 × $0.0001/1K tokens | $30 |
-| Amazon Bedrock (Claude Haiku) | 5万回 × $0.00025/1K tokens | $15 |
-| AWS Lambda | 30万回 × 60秒 × 512MB | $50 |
-| Amazon SQS | 60万メッセージ | $0.30 |
-| Amazon DynamoDB | オンデマンド | $20 |
-| Amazon SNS | 通知 | $1 |
-| CloudWatch | ログ | $5 |
-| **合計** | | **約$121（約18,000円）** |
+| サービス | 使用量 | 月額コスト |
+|----------|--------|------------|
+| API Gateway | 300万リクエスト | $10.50 |
+| Lambda | 300万リクエスト × 500ms × 256MB | $6.25 |
+| DynamoDB (SearchCache) | 10GB + 300万WCU + 300万RCU | $50 |
+| DynamoDB (Bookings) | 5GB + 10万WCU + 50万RCU | $15 |
+| SQS | 50万メッセージ | $0.20 |
+| CloudWatch Logs | 10GB | $5 |
+| X-Ray | 100万トレース | $5 |
+| WAF | 1 WebACL + 300万リクエスト | $8 |
 
-### コスト削減のポイント
+**合計**: 約 **$100/月**（約15,000円）
 
-1. **埋め込みキャッシング**
-   - 求人の埋め込みを事前計算して保存
-   - → Bedrock呼び出し50%削減
+**従来構成との比較**: $3,000 → $100（約97%削減）
 
-2. **バッチ処理の最適化**
-   - 変更のあった求職者のみ処理
-   - 増分マッチング
+### コスト削減のヒント
 
-3. **理由生成の選択的実行**
-   - 高スコアマッチングのみ理由生成
-   - → Claude呼び出し70%削減
-
-4. **Lambda ARM64**
-   - Graviton2プロセッサ使用
-   - → Lambda コスト20%削減
-
-### リソース削除手順
-
-```bash
-# CloudFormation削除
-aws cloudformation delete-stack --stack-name talentbridge-matching
-
-# DynamoDBテーブル（CloudFormation外で作成した場合）
-aws dynamodb delete-table --table-name talentbridge-candidates
-aws dynamodb delete-table --table-name talentbridge-jobs
-aws dynamodb delete-table --table-name talentbridge-matches
-
-# SQS（CloudFormation外）
-aws sqs delete-queue --queue-url <MATCHING_QUEUE_URL>
-aws sqs delete-queue --queue-url <DLQ_URL>
-
-# SNS（CloudFormation外）
-aws sns delete-topic --topic-arn <TOPIC_ARN>
-```
+1. **Provisioned Concurrencyの最適化**: 本当に必要な時間帯のみ設定
+2. **DynamoDB On-demand**: 予測可能なトラフィックならProvisioned Mode
+3. **Lambda メモリ最適化**: Power Tuning で最適なメモリサイズを特定
 
 ---
 
 ## 学習のポイント
 
-### 1. SQS + Lambda の非同期処理パターン
-大量データを効率的に処理する基本パターン。キューによるバッファリング、自動スケーリング、DLQによるエラー処理を組み合わせる。
+### 重要な概念の整理
 
-### 2. 埋め込みベクトルを使ったセマンティック検索
-テキストの意味的類似度を計算する手法。ルールベースでは捕捉できない潜在的なマッチングを発見できる。
+1. **サーバーレスの特性**
+   - 自動スケーリング
+   - 従量課金
+   - コールドスタート
 
-### 3. 複合スコアリング
-複数の指標を組み合わせて総合スコアを算出する設計。ビジネス要件に応じた重み付けが重要。
+2. **DynamoDBキャッシュパターン**
+   - TTLによる自動削除
+   - 一貫性のトレードオフ
+   - パーティションキー設計
 
-### 4. イベント駆動アーキテクチャ
-EventBridge、SQS、SNSを組み合わせた疎結合なシステム設計。スケーラビリティと耐障害性を両立。
+3. **非同期処理のメリット**
+   - レスポンス時間の短縮
+   - 障害の分離
+   - リトライの容易さ
 
-### 5. MLとビジネスロジックの統合
-AI/MLの出力をビジネスロジック（年収マッチ等）と組み合わせて、実用的なシステムを構築する方法。
+### GCPとの比較
+
+| 概念 | AWS | GCP |
+|------|-----|-----|
+| API Gateway | API Gateway | Cloud Endpoints / API Gateway |
+| サーバーレス関数 | Lambda | Cloud Functions |
+| NoSQL DB | DynamoDB | Firestore / Bigtable |
+| メッセージキュー | SQS | Cloud Tasks / Pub/Sub |
+| WAF | WAF | Cloud Armor |
+
+### 次のステップ
+1. 認証・認可の追加（Cognito）
+2. キャッシュ層の追加（CloudFront、ElastiCache）
+3. CI/CD パイプラインの構築

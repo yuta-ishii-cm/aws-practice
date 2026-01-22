@@ -1,4 +1,4 @@
-# 課題36: グローバル展開のマルチリージョン構成
+# 課題36: ヘルスケア企業のセキュリティ監視基盤構築
 
 **難易度: 🟡 中級**
 
@@ -9,75 +9,63 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | グローバルアーキテクチャ・マルチリージョン |
+| カテゴリ | セキュリティ・コンプライアンス |
 | 処理タイプ | リアルタイム |
-| 使用IaC | CDK |
-| 想定所要時間 | 6-7時間 |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. ビジネスシナリオ
 
 ### 企業プロファイル
-- **企業名**: TaskFlow株式会社
-- **業種**: プロジェクト管理SaaS
-- **規模**: 従業員100名、エンジニア30名
-- **現状**: 日本国内ユーザー5万人、海外展開開始
-- **展開計画**: 米国・欧州市場への進出
+- **企業名**: MedSecure株式会社
+- **業種**: 医療データ管理・分析プラットフォーム
+- **規模**: 従業員150名、エンジニア25名
+- **データ規模**: 患者データ100万件、月間API呼び出し5000万回
+- **現状インフラ**: AWS上でマルチアカウント環境を運用
 
 ### 現状の課題
-TaskFlow株式会社は日本市場で成功を収め、米国・欧州への展開を計画しています。
-しかし、現在の東京リージョン単一構成では以下の問題があります：
+MedSecure株式会社は、複数の医療機関から患者データを預かり、AIによる診断支援サービスを提供しています。しかし、以下の問題を抱えています：
 
-```
-現状の問題点:
-┌─────────────────────────────────────────────────────────────────┐
-│                   現行システム構成（東京リージョンのみ）          │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. レイテンシ問題                                               │
-│    - 米国からのアクセス: 200-300ms                              │
-│    - 欧州からのアクセス: 250-350ms                              │
-│    - リアルタイム協調編集に支障                                  │
-│                                                                  │
-│ 2. データレジデンシー要件                                       │
-│    - GDPR（EU）: EUユーザーのデータはEU内保存必須               │
-│    - 州法（米国）: 一部州でデータローカライゼーション要求        │
-│    - 契約要件: 大企業顧客からリージョン指定要求                  │
-│                                                                  │
-│ 3. 可用性リスク                                                 │
-│    - 東京リージョン障害時に全世界でサービス停止                  │
-│    - RPO/RTO が顧客SLA要件を満たさない                          │
-│    - DR サイトが未整備                                          │
-│                                                                  │
-│ 4. スケーラビリティ                                             │
-│    - 単一リージョンでのキャパシティ制限                          │
-│    - ピーク時のリソース競合                                      │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **セキュリティ可視性の欠如**
+   - 複数AWSアカウントのセキュリティ状態が一元管理されていない
+   - 脅威検知が手動で、発見が遅れがち
+   - セキュリティイベントの対応が属人化
+
+2. **コンプライアンス対応の負荷**
+   - HIPAA準拠の証跡管理が煩雑
+   - 監査対応に毎回1ヶ月以上かかる
+   - セキュリティベースラインの維持が困難
+
+3. **インシデント対応の遅延**
+   - 異常検知から対応まで平均4時間
+   - 夜間・休日の対応体制が不十分
+   - 対応手順が標準化されていない
 
 ### ビジネス要件
 ```
 機能要件:
-- 日本・米国・欧州の3リージョン展開
-- リージョン間のデータ同期
-- ユーザーの地理的位置に基づくルーティング
-- グローバルセッション管理
+- マルチアカウントのセキュリティ統合監視
+- 脅威の自動検知と重要度分類
+- セキュリティイベントの自動対応
+- コンプライアンスダッシュボードの構築
 
 非機能要件:
-- 各地域からのレイテンシ: 100ms以下
-- 可用性: 99.99%（グローバル）
-- RPO: 5分、RTO: 15分
-- GDPR/データレジデンシー準拠
+- 脅威検知から通知まで5分以内
+- 重大インシデントの自動隔離（15分以内）
+- 99.9%の監視システム稼働率
+- 監査証跡の13ヶ月保持
 ```
 
 ### 成功指標（KPI）
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 米国レイテンシ | 250ms | 50ms |
-| 欧州レイテンシ | 300ms | 50ms |
-| グローバル可用性 | 99.9% | 99.99% |
-| RPO | 24時間 | 5分 |
-| RTO | 4時間 | 15分 |
+| 平均検知時間（MTTD） | 4時間 | 5分 |
+| 平均対応時間（MTTR） | 8時間 | 30分 |
+| セキュリティ検出カバー率 | 40% | 95% |
+| コンプライアンススコア | 65% | 95% |
+| 自動対応率 | 0% | 80% |
 
 ---
 
@@ -86,46 +74,41 @@ TaskFlow株式会社は日本市場で成功を収め、米国・欧州への展
 ### 本課題で習得するスキル
 
 ```
-1. マルチリージョン設計（理解度：詳細）
-   - Active-Active / Active-Passive 構成
-   - グローバルロードバランシング
-   - データレプリケーション戦略
+1. セキュリティ監視（理解度：詳細）
+   - GuardDutyによる脅威検知の設定
+   - Security Hubによるセキュリティ統合管理
+   - マルチアカウントセキュリティ集約
 
-2. グローバルサービス活用（理解度：実装）
-   - Route 53 ジオロケーション/レイテンシールーティング
-   - CloudFront グローバル配信
-   - Global Accelerator
-   - DynamoDB Global Tables
+2. 自動対応システム（理解度：実装）
+   - EventBridgeによるイベントルーティング
+   - Lambdaによる自動修復アクション
+   - Step Functionsによるワークフロー自動化
 
-3. データレジデンシー対応（理解度：実装）
-   - リージョン別データ分離
-   - GDPR 準拠アーキテクチャ
-   - データ主権の考慮
-
-4. AWS CDK（理解度：実装）
-   - マルチリージョンスタック
-   - クロスリージョン参照
-   - 環境別デプロイ
+3. コンプライアンス管理（理解度：基礎）
+   - AWS Configによる構成評価
+   - カスタムセキュリティ基準の実装
+   - 監査レポートの自動生成
 ```
 
 ### GCPエンジニア向け補足
 ```
 GCP → AWS マッピング:
-- Cloud DNS → Route 53
-- Cloud CDN → CloudFront
-- Global Load Balancer → Global Accelerator / CloudFront
-- Cloud Spanner → DynamoDB Global Tables
-- Cloud Interconnect → Direct Connect
+- Security Command Center → Security Hub
+- Event Threat Detection → GuardDuty
+- Cloud Functions → Lambda
+- Eventarc → EventBridge
+- Organization Policy → AWS Config Rules
 
 主な違い:
-1. AWS Global Accelerator: Anycast IP で最適なエッジへルーティング
-   （GCPのグローバルLBに近いが、TCP/UDP対応）
+1. Security Hub: 複数のセキュリティサービスを統合し、
+   統一されたセキュリティビューを提供（SCCに近いが、
+   より多くのサードパーティ統合が可能）
 
-2. DynamoDB Global Tables: 自動マルチリージョンレプリケーション
-   （Spannerより設定が簡単だが、強整合性は単一リージョン内のみ）
+2. GuardDuty: ML ベースの脅威検知に特化
+   （GCPのEvent Threat Detectionより広範な検知パターン）
 
-3. Route 53: 多様なルーティングポリシー
-   （ジオロケーション、レイテンシー、加重など）
+3. EventBridge: イベント駆動アーキテクチャの中核
+   （Eventarcより柔軟なルーティングとフィルタリング）
 ```
 
 ---
@@ -135,67 +118,67 @@ GCP → AWS マッピング:
 ### メインサービス
 | サービス | 役割 | 使用機能 |
 |----------|------|----------|
-| **Amazon Route 53** | DNSルーティング | ジオロケーション、レイテンシー、ヘルスチェック |
-| **Amazon CloudFront** | CDN・エッジ配信 | グローバル配信、Lambda@Edge |
-| **AWS Global Accelerator** | グローバルネットワーク | 静的IP、最適ルーティング |
-| **Amazon DynamoDB** | グローバルデータベース | Global Tables |
+| **Amazon GuardDuty** | 脅威検知 | ML検知、マルウェア保護、Kubernetes監査 |
+| **AWS Security Hub** | 統合管理 | セキュリティ基準、検出結果集約 |
+| **Amazon EventBridge** | イベント処理 | ルール、パターンマッチング |
+| **AWS Lambda** | 自動対応 | 修復アクション、通知 |
 
 ### サポートサービス
 | サービス | 用途 |
 |----------|------|
-| **Amazon Aurora** | リージョナルRDB（Global Database） |
-| **Amazon ElastiCache** | リージョナルキャッシュ（Global Datastore） |
-| **AWS Certificate Manager** | SSL/TLS証明書 |
-| **Amazon S3** | 静的アセット（Cross-Region Replication） |
-| **AWS Lambda** | エッジ処理（Lambda@Edge） |
+| **AWS Config** | 構成評価、コンプライアンスチェック |
+| **AWS Organizations** | マルチアカウント管理 |
+| **Amazon SNS** | 通知配信 |
+| **AWS Step Functions** | ワークフロー自動化 |
+| **Amazon S3** | 証跡・レポート保存 |
+| **AWS CloudTrail** | API監査ログ |
+| **Amazon CloudWatch** | メトリクス・ログ監視 |
 
 ### アーキテクチャ図
 
 ```mermaid
 architecture-beta
-    group global(cloud)[TaskFlow グローバルアーキテクチャ]
+    group org(cloud)[AWS Organizations]
 
-    group tokyo(cloud)[ap-northeast-1 Tokyo] in global
-    group virginia(cloud)[us-east-1 Virginia] in global
-    group ireland(cloud)[eu-west-1 Ireland] in global
-    group global_data(database)[Global Data Layer] in global
+    group security_acct(server)[Security Account 集約] in org
+    group prod_acct(server)[Production Account] in org
+    group dev_acct(server)[Development Account] in org
+    group stg_acct(server)[Staging Account] in org
 
-    service route53(server)[Route 53 Geolocation + Latency Based] in global
+    service sechub(server)[Security Hub Admin] in security_acct
+    service guardduty_admin(server)[GuardDuty Delegated Admin] in security_acct
+    service config_agg(server)[AWS Config Aggregator] in security_acct
+    service eventbridge(server)[EventBridge Central] in security_acct
+    service lambda_remediate(server)[Lambda Remediate] in security_acct
+    service stepfunctions(server)[Step Functions] in security_acct
+    service sns(server)[SNS Notify] in security_acct
+    service s3_trail(disk)[S3 証跡保存] in security_acct
+    service slack(internet)[Slack PagerDuty] in security_acct
 
-    service cf_tokyo(server)[CloudFront] in tokyo
-    service alb_tokyo(server)[ALB] in tokyo
-    service ecs_tokyo(server)[ECS Fargate API/Web] in tokyo
-    service aurora_tokyo(database)[Aurora Primary] in tokyo
-    service cache_tokyo(database)[ElastiCache Global Store] in tokyo
+    service prod_guardduty(server)[GuardDuty Member] in prod_acct
+    service prod_config(server)[Config Member] in prod_acct
 
-    service cf_virginia(server)[CloudFront] in virginia
-    service alb_virginia(server)[ALB] in virginia
-    service ecs_virginia(server)[ECS Fargate API/Web] in virginia
-    service aurora_virginia(database)[Aurora Replica] in virginia
-    service cache_virginia(database)[ElastiCache Global Store] in virginia
+    service dev_guardduty(server)[GuardDuty Member] in dev_acct
+    service dev_config(server)[Config Member] in dev_acct
 
-    service cf_ireland(server)[CloudFront] in ireland
-    service alb_ireland(server)[ALB] in ireland
-    service ecs_ireland(server)[ECS Fargate API/Web] in ireland
-    service aurora_ireland(database)[Aurora Replica] in ireland
-    service cache_ireland(database)[ElastiCache Global Store] in ireland
+    service stg_guardduty(server)[GuardDuty Member] in stg_acct
+    service stg_config(server)[Config Member] in stg_acct
 
-    service dynamodb_global(database)[DynamoDB Global Tables] in global_data
+    guardduty_admin:L --> R:sechub
+    config_agg:L --> R:sechub
+    sechub:B --> T:eventbridge
+    eventbridge:B --> T:lambda_remediate
+    eventbridge:B --> T:stepfunctions
+    eventbridge:B --> T:sns
+    stepfunctions:B --> T:s3_trail
+    sns:B --> T:slack
 
-    route53:B --> T:cf_tokyo
-    route53:B --> T:cf_virginia
-    route53:B --> T:cf_ireland
-    cf_tokyo:B --> T:alb_tokyo
-    cf_virginia:B --> T:alb_virginia
-    cf_ireland:B --> T:alb_ireland
-    alb_tokyo:B --> T:ecs_tokyo
-    alb_virginia:B --> T:ecs_virginia
-    alb_ireland:B --> T:ecs_ireland
-    ecs_tokyo:B --> T:aurora_tokyo
-    ecs_virginia:B --> T:aurora_virginia
-    ecs_ireland:B --> T:aurora_ireland
-    aurora_tokyo:R --> L:aurora_virginia
-    aurora_virginia:R --> L:aurora_ireland
+    prod_guardduty:T --> B:guardduty_admin
+    prod_config:T --> B:config_agg
+    dev_guardduty:T --> B:guardduty_admin
+    dev_config:T --> B:config_agg
+    stg_guardduty:T --> B:guardduty_admin
+    stg_config:T --> B:config_agg
 ```
 
 ---
@@ -204,430 +187,370 @@ architecture-beta
 
 ### 必要な環境
 ```bash
-# Node.js 18以上
-node --version
-
-# AWS CDK
-npm install -g aws-cdk
-cdk --version  # 2.x
-
 # AWS CLI v2
-aws --version
+aws --version  # 2.x以上
 
-# TypeScript
-npm install -g typescript
-tsc --version
+# Python 3.9以上
+python3 --version
 
-# Docker（コンテナビルド用）
-docker --version
+# Terraform（オプション）
+terraform --version  # 1.5以上
+
+# jq（JSON処理）
+jq --version
 ```
 
 ### AWSアカウント要件
 ```
-- 3リージョンでのリソース作成権限
-- Route 53 ホストゾーン管理権限
-- ACM 証明書作成権限
-- Global Accelerator 作成権限
+- AWS Organizations が有効化されていること
+- Security Account（セキュリティ集約用）が作成済み
+- 複数のメンバーアカウント（本演習では最低2つ）
+- IAM権限：OrganizationsFullAccess, SecurityHubFullAccess,
+  GuardDutyFullAccess, ConfigFullAccess, Lambda管理者
 ```
 
 ### 事前準備スクリプト
 ```bash
 #!/bin/bash
-# setup-multi-region.sh
+# setup-security-baseline.sh
 
-# プロジェクト作成
-mkdir taskflow-global && cd taskflow-global
+# 変数設定
+SECURITY_ACCOUNT_ID="111111111111"  # セキュリティアカウントID
+PRODUCTION_ACCOUNT_ID="222222222222"  # 本番アカウントID
+REGION="ap-northeast-1"
 
-# CDK プロジェクト初期化
-cdk init app --language typescript
+# ディレクトリ構造の作成
+mkdir -p medsecure-security/{terraform,lambda,config-rules,dashboards}
+cd medsecure-security
 
-# 必要なパッケージのインストール
-npm install @aws-cdk/aws-route53 @aws-cdk/aws-route53-targets \
-    @aws-cdk/aws-cloudfront @aws-cdk/aws-cloudfront-origins \
-    @aws-cdk/aws-globalaccelerator @aws-cdk/aws-globalaccelerator-endpoints \
-    @aws-cdk/aws-dynamodb @aws-cdk/aws-elasticache \
-    @aws-cdk/aws-ecs @aws-cdk/aws-ecs-patterns \
-    @aws-cdk/aws-certificatemanager @aws-cdk/aws-ec2
+# 必要なIAMロールの確認
+echo "Checking IAM permissions..."
+aws sts get-caller-identity
 
-# ディレクトリ構造
-cat << 'EOF'
-taskflow-global/
-├── bin/
-│   └── taskflow-global.ts
-├── lib/
-│   ├── stacks/
-│   │   ├── global-stack.ts
-│   │   ├── regional-stack.ts
-│   │   └── database-stack.ts
-│   ├── constructs/
-│   │   ├── vpc-construct.ts
-│   │   ├── ecs-construct.ts
-│   │   └── database-construct.ts
-│   └── config/
-│       └── regions.ts
-├── test/
-├── cdk.json
-├── package.json
-└── tsconfig.json
-EOF
+# Organizations の確認
+echo "Checking Organizations..."
+aws organizations describe-organization
 
-# Bootstrap 全リージョン
-cdk bootstrap aws://ACCOUNT_ID/ap-northeast-1
-cdk bootstrap aws://ACCOUNT_ID/us-east-1
-cdk bootstrap aws://ACCOUNT_ID/eu-west-1
+# 既存のSecurity Hub状態確認
+echo "Checking Security Hub status..."
+aws securityhub describe-hub --region $REGION 2>/dev/null || echo "Security Hub not enabled"
+
+# 既存のGuardDuty状態確認
+echo "Checking GuardDuty status..."
+aws guardduty list-detectors --region $REGION
 ```
 
 ---
 
 ## 6. アーキテクチャ設計
 
-### ルーティング戦略
+### セキュリティ検知フロー設計
 ```yaml
-# routing-strategy.yaml
-routing:
-  primary:
-    type: geolocation
-    rules:
-      - geo: JP
-        region: ap-northeast-1
-      - geo: US
-        region: us-east-1
-      - geo: EU
-        region: eu-west-1
-      - geo: default
-        type: latency_based
-        regions:
-          - ap-northeast-1
-          - us-east-1
-          - eu-west-1
+# security-detection-flow.yaml
+detection_sources:
+  guardduty:
+    enabled_features:
+      - EC2_MALWARE_PROTECTION
+      - S3_DATA_EVENTS
+      - EKS_AUDIT_LOGS
+      - RDS_LOGIN_EVENTS
+      - LAMBDA_NETWORK_LOGS
+    finding_types:
+      critical:
+        - "Trojan:*"
+        - "CryptoCurrency:*"
+        - "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration*"
+      high:
+        - "Recon:*"
+        - "Persistence:*"
+        - "PrivilegeEscalation:*"
+      medium:
+        - "Policy:*"
+        - "Stealth:*"
 
-  failover:
-    type: health_check_based
-    health_check_interval: 30s
-    failure_threshold: 3
-    failover_order:
-      ap-northeast-1:
-        primary: ap-northeast-1
-        secondary: us-east-1
-      us-east-1:
-        primary: us-east-1
-        secondary: eu-west-1
-      eu-west-1:
-        primary: eu-west-1
-        secondary: us-east-1
+  security_hub:
+    standards:
+      - AWS-Foundational-Security-Best-Practices
+      - CIS-AWS-Foundations-Benchmark
+      - HIPAA  # カスタム基準
+    aggregation:
+      - CRITICAL findings → Immediate response
+      - HIGH findings → 1-hour response
+      - MEDIUM findings → 24-hour review
 
-  global_accelerator:
-    enabled: true
-    endpoint_groups:
-      - region: ap-northeast-1
-        weight: 100
-        health_check_path: /health
-      - region: us-east-1
-        weight: 100
-        health_check_path: /health
-      - region: eu-west-1
-        weight: 100
-        health_check_path: /health
+  config:
+    managed_rules:
+      - s3-bucket-public-read-prohibited
+      - ec2-instance-no-public-ip
+      - encrypted-volumes
+      - rds-storage-encrypted
+    custom_rules:
+      - hipaa-phi-encryption-check
+      - patient-data-access-logging
 ```
 
-### データレプリケーション戦略
+### 自動対応マトリックス
 ```yaml
-# data-replication-strategy.yaml
-databases:
-  aurora_global:
-    primary_region: ap-northeast-1
-    replica_regions:
-      - us-east-1
-      - eu-west-1
-    replication_lag_target: 1s
-    failover:
-      automatic: false  # 手動フェイルオーバー推奨
-      rpo: 1s
-      rto: 1m
+# auto-remediation-matrix.yaml
+remediation_actions:
+  # GuardDuty findings
+  "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration":
+    severity: CRITICAL
+    auto_response: true
+    actions:
+      - isolate_instance
+      - revoke_credentials
+      - create_forensic_snapshot
+      - notify_security_team
+    escalation: immediate
 
-  dynamodb_global_tables:
-    tables:
-      - name: sessions
-        regions: [ap-northeast-1, us-east-1, eu-west-1]
-        consistency: eventual  # リージョン間は結果整合性
-      - name: user_preferences
-        regions: [ap-northeast-1, us-east-1, eu-west-1]
-        consistency: eventual
+  "Policy:S3/BucketPublicAccessGranted":
+    severity: HIGH
+    auto_response: true
+    actions:
+      - block_public_access
+      - notify_data_owner
+    escalation: 1_hour
 
-  elasticache_global:
-    primary_region: ap-northeast-1
-    replica_regions:
-      - us-east-1
-      - eu-west-1
-    replication: async
-    failover: automatic
+  "Recon:EC2/PortProbeUnprotectedPort":
+    severity: MEDIUM
+    auto_response: false
+    actions:
+      - log_event
+      - notify_security_team
+    escalation: 24_hours
 
-  s3_replication:
-    rules:
-      - source: taskflow-assets-ap-northeast-1
-        destinations:
-          - taskflow-assets-us-east-1
-          - taskflow-assets-eu-west-1
-        filter: "*"
-        replication_time: 15m
+  # Config compliance
+  "s3-bucket-server-side-encryption-enabled":
+    auto_response: true
+    actions:
+      - enable_default_encryption
+      - notify_bucket_owner
 
-data_residency:
-  eu_users:
-    storage_region: eu-west-1
-    allowed_regions: [eu-west-1]
-    gdpr_compliance: true
-  us_users:
-    storage_region: us-east-1
-    allowed_regions: [us-east-1, ap-northeast-1]
-  jp_users:
-    storage_region: ap-northeast-1
-    allowed_regions: [ap-northeast-1]
+  "ec2-instance-no-public-ip":
+    auto_response: false  # 要確認
+    actions:
+      - create_ticket
+      - notify_account_owner
 ```
 
 ---
 
 ## 8. トラブルシューティング課題
 
-### 課題1: リージョン間レプリケーション遅延
+### 課題1: GuardDuty の検出結果が Security Hub に表示されない
 
 **症状**:
 ```
-東京で更新したデータが米国で参照できない。
-DynamoDB Global Tables のレプリケーションに遅延が発生している。
+GuardDuty で脅威が検出されているが、Security Hub のダッシュボードに
+表示されない。EventBridge ルールもトリガーされていない。
 ```
 
 **調査コマンド**:
 ```bash
-# レプリケーション遅延の確認
-aws cloudwatch get-metric-statistics \
-    --namespace AWS/DynamoDB \
-    --metric-name ReplicationLatency \
-    --dimensions Name=TableName,Value=taskflow-sessions \
-                 Name=ReceivingRegion,Value=us-east-1 \
-    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
-    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
-    --period 60 \
-    --statistics Average Maximum
+# GuardDuty の検出結果確認
+aws guardduty list-findings --detector-id YOUR_DETECTOR_ID
 
-# テーブルの状態確認
-aws dynamodb describe-table --table-name taskflow-sessions --region ap-northeast-1
-aws dynamodb describe-table --table-name taskflow-sessions --region us-east-1
+# Security Hub の製品統合状態確認
+aws securityhub list-enabled-products-for-import
+
+# EventBridge ルールの状態確認
+aws events describe-rule --name guardduty-findings-production
 ```
 
 **原因と解決**:
 <details>
 <summary>解答を見る</summary>
 
-**原因**: 複数の原因が考えられる
-
-**パターン1: 書き込みスループットの不足**
-```bash
-# 書き込みキャパシティの確認
-aws dynamodb describe-table --table-name taskflow-sessions \
-    --query 'Table.ProvisionedThroughput'
-
-# オンデマンドに変更
-aws dynamodb update-table \
-    --table-name taskflow-sessions \
-    --billing-mode PAY_PER_REQUEST
-```
-
-**パターン2: 大量書き込みによるバースト**
-```typescript
-// アプリケーション側での対策
-// 書き込みの分散とバッチ処理
-
-import { DynamoDBClient, BatchWriteItemCommand } from '@aws-sdk/client-dynamodb';
-
-async function batchWriteWithRetry(items: any[], maxRetries = 3) {
-  const client = new DynamoDBClient({});
-  let unprocessedItems = items;
-  let retries = 0;
-
-  while (unprocessedItems.length > 0 && retries < maxRetries) {
-    const result = await client.send(new BatchWriteItemCommand({
-      RequestItems: {
-        'taskflow-sessions': unprocessedItems.map(item => ({
-          PutRequest: { Item: item }
-        }))
-      }
-    }));
-
-    unprocessedItems = result.UnprocessedItems?.['taskflow-sessions'] || [];
-
-    if (unprocessedItems.length > 0) {
-      // 指数バックオフ
-      await new Promise(resolve =>
-        setTimeout(resolve, Math.pow(2, retries) * 100)
-      );
-      retries++;
-    }
-  }
-}
-```
-
-**パターン3: ネットワーク問題**
-```bash
-# リージョン間の接続確認
-# VPC ピアリングやTransit Gatewayの状態確認
-aws ec2 describe-vpc-peering-connections
-aws ec2 describe-transit-gateway-attachments
-```
-</details>
-
-### 課題2: フェイルオーバーが機能しない
-
-**症状**:
-```
-東京リージョンのALBがダウンしているのに、
-Route 53 がトラフィックを他のリージョンに振り分けない。
-```
-
-**調査手順**:
-```bash
-# ヘルスチェックの状態確認
-aws route53 list-health-checks
-aws route53 get-health-check-status --health-check-id HC_ID
-
-# DNS レコードの確認
-aws route53 list-resource-record-sets \
-    --hosted-zone-id ZONE_ID \
-    --query "ResourceRecordSets[?Name=='api.taskflow.example.com.']"
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: ヘルスチェックの設定不備
+**原因**: Security Hub と GuardDuty の製品統合が有効化されていない
 
 **解決手順**:
-```typescript
-// CDK でのヘルスチェック設定
-import * as route53 from 'aws-cdk-lib/aws-route53';
+```bash
+# 1. Security Hub で GuardDuty 統合を有効化
+aws securityhub enable-import-findings-for-product \
+    --product-arn "arn:aws:securityhub:ap-northeast-1::product/aws/guardduty"
 
-// ヘルスチェックの作成
-const healthCheck = new route53.CfnHealthCheck(this, 'AlbHealthCheck', {
-  healthCheckConfig: {
-    type: 'HTTPS',
-    fullyQualifiedDomainName: albDnsName,
-    port: 443,
-    resourcePath: '/health',
-    requestInterval: 10,  // 10秒間隔
-    failureThreshold: 2,  // 2回失敗でUnhealthy
-    enableSni: true,
-  },
-  healthCheckTags: [{
-    key: 'Name',
-    value: `taskflow-${region}-health`,
-  }],
-});
+# 2. 統合が有効になったことを確認
+aws securityhub list-enabled-products-for-import
 
-// フェイルオーバーレコードの設定
-new route53.CfnRecordSet(this, 'ApiRecordFailover', {
-  hostedZoneId: hostedZone.hostedZoneId,
-  name: `api.${DOMAIN_NAME}`,
-  type: 'A',
-  setIdentifier: `failover-${region}`,
-  failover: isPrimary ? 'PRIMARY' : 'SECONDARY',
-  healthCheckId: healthCheck.attrHealthCheckId,
-  aliasTarget: {
-    dnsName: albDnsName,
-    hostedZoneId: albHostedZoneId,
-    evaluateTargetHealth: true,
-  },
-});
+# 3. GuardDuty の Finding を手動で Security Hub にプッシュ（テスト）
+aws securityhub batch-import-findings --findings '[{
+    "SchemaVersion": "2018-10-08",
+    "Id": "test-finding-001",
+    "ProductArn": "arn:aws:securityhub:ap-northeast-1::product/aws/guardduty",
+    "GeneratorId": "test-generator",
+    "AwsAccountId": "123456789012",
+    "Types": ["Software and Configuration Checks/Vulnerabilities"],
+    "CreatedAt": "2024-01-15T00:00:00.000Z",
+    "UpdatedAt": "2024-01-15T00:00:00.000Z",
+    "Severity": {"Label": "HIGH"},
+    "Title": "Test Finding",
+    "Description": "Test finding for integration verification",
+    "Resources": [{"Type": "AwsAccount", "Id": "AWS::::Account:123456789012"}]
+}]'
 ```
 
 **追加確認事項**:
-- ヘルスチェックの `evaluateTargetHealth` が true か
-- ALB のターゲットグループのヘルスチェックが正常か
-- セキュリティグループで Route 53 ヘルスチェッカーからのアクセスを許可しているか
+- 両サービスが同じリージョンで有効化されているか
+- IAM 権限が適切に設定されているか
+- Organizations を使用している場合、Delegated Admin が正しく設定されているか
 </details>
 
-### 課題3: GDPR データレジデンシー違反
+### 課題2: Lambda 自動修復が実行されない
 
 **症状**:
 ```
-EU ユーザーのデータが US リージョンに保存されてしまう。
-GDPR 違反の可能性がある。
+CRITICAL な GuardDuty finding が検出されたが、
+Step Functions ワークフローが開始されず、自動修復が実行されない。
+Lambda 関数の CloudWatch Logs にもエントリがない。
+```
+
+**調査コマンド**:
+```bash
+# EventBridge ルールの確認
+aws events list-rules --name-prefix "guardduty"
+
+# Lambda の呼び出し状況確認
+aws lambda get-function --function-name security-event-router-production
+
+# EventBridge のイベント履歴確認（CloudTrail）
+aws cloudtrail lookup-events \
+    --lookup-attributes AttributeKey=EventName,AttributeValue=PutEvents
 ```
 
 **原因と解決**:
 <details>
 <summary>解答を見る</summary>
 
-**原因**: アプリケーション側でのリージョン判定・ルーティングが不適切
+**原因**: EventBridge ルールの Lambda 呼び出し権限が不足している
 
-**解決策**:
-```typescript
-// Lambda@Edge でのリージョン判定強化
-exports.handler = async (event) => {
-  const request = event.Records[0].cf.request;
-  const headers = request.headers;
-  const countryCode = headers['cloudfront-viewer-country']?.[0]?.value;
+**解決手順**:
+```bash
+# 1. EventBridge ルールのターゲット確認
+aws events list-targets-by-rule --rule guardduty-findings-production
 
-  // EU 諸国のリスト（GDPR 対象）
-  const EU_COUNTRIES = [
-    'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
-    'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
-    'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'GB' // UK は Brexit 後も GDPR 類似法
-  ];
+# 2. Lambda のリソースベースポリシー確認
+aws lambda get-policy --function-name security-event-router-production
 
-  if (EU_COUNTRIES.includes(countryCode)) {
-    // EU ユーザーは必ず EU リージョンへ
-    request.headers['x-data-residency'] = [{ value: 'eu-west-1' }];
-    request.headers['x-gdpr-required'] = [{ value: 'true' }];
+# 3. Lambda 呼び出し権限を追加
+aws lambda add-permission \
+    --function-name security-event-router-production \
+    --statement-id EventBridgeInvoke \
+    --action lambda:InvokeFunction \
+    --principal events.amazonaws.com \
+    --source-arn arn:aws:events:ap-northeast-1:123456789012:rule/guardduty-findings-production
 
-    // EU 以外のオリジンへのリクエストをブロック
-    const targetOrigin = request.origin?.custom?.domainName || '';
-    if (!targetOrigin.includes('eu-west-1') && !targetOrigin.includes('api-eu')) {
-      return {
-        status: '403',
-        statusDescription: 'Forbidden',
-        body: JSON.stringify({
-          error: 'Data residency violation',
-          message: 'EU user data must be processed in EU region'
-        }),
-        headers: {
-          'content-type': [{ value: 'application/json' }]
-        }
-      };
-    }
-  }
+# 4. テストイベントを送信して確認
+aws events put-events --entries '[{
+    "Source": "aws.guardduty",
+    "DetailType": "GuardDuty Finding",
+    "Detail": "{\"severity\": 8.0, \"type\": \"UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration\", \"title\": \"Test Critical Finding\", \"accountId\": \"123456789012\"}"
+}]'
 
-  return request;
-};
+# 5. Lambda ログを確認
+aws logs tail /aws/lambda/security-event-router-production --follow
+```
 
-// アプリケーション側での追加チェック
-class DataResidencyMiddleware {
-  async handle(req: Request, res: Response, next: NextFunction) {
-    const dataResidency = req.headers['x-data-residency'];
-    const currentRegion = process.env.AWS_REGION;
+**追加確認事項**:
+- EventBridge ルールの State が ENABLED になっているか
+- イベントパターンが正しくマッチしているか
+- Lambda 関数のタイムアウト設定は十分か
+</details>
 
-    if (dataResidency && dataResidency !== currentRegion) {
-      // 正しいリージョンへリダイレクト
-      const correctEndpoint = REGION_ENDPOINTS[dataResidency];
-      return res.redirect(307, `https://${correctEndpoint}${req.originalUrl}`);
-    }
+### 課題3: クロスアカウント修復が失敗する
 
-    next();
-  }
+**症状**:
+```
+メンバーアカウントで検出されたセキュリティイベントに対して、
+セキュリティアカウントからの自動修復が "AccessDenied" で失敗する。
+```
+
+**エラーログ**:
+```json
+{
+    "errorType": "ClientError",
+    "errorMessage": "An error occurred (AccessDenied) when calling the AssumeRole operation: User: arn:aws:sts::111111111111:assumed-role/security-auto-remediation-role-production/security-auto-remediation-production is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::222222222222:role/SecurityRemediationRole"
 }
 ```
 
-**DynamoDB でのデータ分離**:
-```typescript
-// EU ユーザー専用テーブルを EU リージョンのみに作成
-const euUserDataTable = new dynamodb.Table(this, 'EUUserData', {
-  tableName: 'taskflow-eu-user-data',
-  partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-  // レプリケーションなし（EU リージョンのみ）
-  // replicationRegions: [], // 意図的に空
-  encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
-  encryptionKey: euKmsKey,
-});
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: メンバーアカウントの SecurityRemediationRole の信頼ポリシーが
+セキュリティアカウントからのロール引き受けを許可していない
+
+**解決手順**:
+```bash
+# メンバーアカウントで実行
+
+# 1. 信頼ポリシーを確認
+aws iam get-role --role-name SecurityRemediationRole
+
+# 2. 正しい信頼ポリシーを設定
+cat > trust-policy.json << 'EOF'
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::111111111111:role/security-auto-remediation-role-production"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "sts:ExternalId": "MedSecureSecurityRemediation"
+                }
+            }
+        }
+    ]
+}
+EOF
+
+aws iam update-assume-role-policy \
+    --role-name SecurityRemediationRole \
+    --policy-document file://trust-policy.json
+
+# 3. ロールに必要な権限を付与
+cat > remediation-policy.json << 'EOF'
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:ModifyInstanceAttribute",
+                "ec2:StopInstances",
+                "ec2:CreateSnapshot",
+                "ec2:CreateTags",
+                "s3:PutBucketPublicAccessBlock"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+EOF
+
+aws iam put-role-policy \
+    --role-name SecurityRemediationRole \
+    --policy-name RemediationActions \
+    --policy-document file://remediation-policy.json
+
+# 4. Lambda コードを更新して ExternalId を使用
+# assume_role 呼び出しに ExternalId を追加
+```
+
+**Lambda コード修正**:
+```python
+def assume_role_in_account(account_id):
+    response = sts_client.assume_role(
+        RoleArn=f'arn:aws:iam::{account_id}:role/SecurityRemediationRole',
+        RoleSessionName='SecurityAutoRemediation',
+        ExternalId='MedSecureSecurityRemediation'  # 追加
+    )
+    return response['Credentials']
 ```
 </details>
 
@@ -635,204 +558,187 @@ const euUserDataTable = new dynamodb.Table(this, 'EUUserData', {
 
 ## 9. 設計課題
 
-### 設計課題: Active-Active から Active-Passive への切り替え戦略
+### 設計課題: マルチリージョン・マルチアカウントのセキュリティ集約アーキテクチャ
 
 **シナリオ**:
-TaskFlow社はコスト削減のため、一部の時間帯で Active-Passive 構成に切り替えることを検討しています。以下の要件を満たす設計を行ってください。
+MedSecure社は事業拡大に伴い、以下の構成でAWSを運用することになりました：
 
-**要件**:
+- **アカウント構成**:
+  - Production Account（東京）
+  - Production Account（バージニア北部）※ DR用
+  - Development Account（東京）
+  - Staging Account（東京）
+  - Security Account（中央管理）
+
+- **要件**:
+  1. 全アカウント・全リージョンのセキュリティイベントを一元管理
+  2. 検出から通知まで5分以内
+  3. HIPAA、SOC2 準拠の監査証跡
+  4. コスト効率の良い設計
+
+**設計すべき項目**:
 ```
-1. 通常時（日本時間 8:00-22:00）
-   - Active-Active（全リージョン稼働）
-   - ジオロケーションルーティング
+1. セキュリティサービスの集約構成
+   - GuardDuty のマルチアカウント・マルチリージョン集約方法
+   - Security Hub のリージョン間アグリゲーション設計
+   - CloudTrail のマルチアカウントログ集約
 
-2. 夜間（日本時間 22:00-8:00）
-   - Active-Passive（東京のみ稼働）
-   - 米国・欧州はスタンバイ
-   - コスト50%削減目標
+2. イベント処理アーキテクチャ
+   - EventBridge によるクロスアカウント・クロスリージョンイベント転送
+   - 中央での処理と分散処理のバランス
+   - 障害時のフェイルオーバー設計
 
-3. 切り替え要件
-   - 自動切り替え（EventBridge Scheduler）
-   - 切り替え時間: 5分以内
-   - データ整合性の維持
+3. コンプライアンス対応
+   - 監査ログの保持と暗号化
+   - アクセス制御と証跡
+   - レポート自動生成
 
-4. 緊急時
-   - 手動で即座にActive-Active復帰可能
-   - 復帰時間: 2分以内
+4. コスト最適化
+   - ログ保持期間の階層化
+   - リージョン間データ転送の最小化
 ```
+
+**期待する成果物**:
+- アーキテクチャ図（マルチアカウント・マルチリージョン）
+- サービス設定のベストプラクティス
+- 推定月額コスト
+- 実装の優先順位
 
 <details>
 <summary>設計例を見る</summary>
 
-### Active-Active ↔ Active-Passive 切り替えアーキテクチャ
+### マルチリージョン・マルチアカウント セキュリティアーキテクチャ
 
-```typescript
-// lib/constructs/traffic-scheduler.ts
-import * as cdk from 'aws-cdk-lib';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as events from 'aws-cdk-lib/aws-events';
-import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import { Construct } from 'constructs';
+```mermaid
+architecture-beta
+    group org(cloud)[AWS Organizations]
 
-export class TrafficSchedulerConstruct extends Construct {
-  constructor(scope: Construct, id: string) {
-    super(scope, id);
+    group sec_account(server)[Security Account us-east-1 Aggregation Hub] in org
+    service sec_hub(server)[Security Hub Aggregation Region] in sec_account
+    service guard_duty(server)[GuardDuty Delegated Admin] in sec_account
+    service cloud_trail(server)[CloudTrail Organization Trail] in sec_account
+    service event_bridge(server)[EventBridge Central Bus] in sec_account
+    service lambda(server)[Lambda Process] in sec_account
+    service step_fn(server)[Step Functions] in sec_account
+    service sns(internet)[SNS Topics] in sec_account
+    service s3_logs(disk)[S3 Central Security Logs CloudTrail GuardDuty Config VPC Flow] in sec_account
 
-    // トラフィック制御 Lambda
-    const trafficController = new lambda.Function(this, 'TrafficController', {
-      runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(`
-import boto3
-import json
-import os
+    group tokyo(server)[ap-northeast-1 Tokyo] in org
+    service prod_tokyo(server)[Production Account GuardDuty Security Hub Config CloudTrail] in tokyo
+    service dev_tokyo(server)[Development Account GuardDuty Security Hub] in tokyo
+    service stag_tokyo(server)[Staging Account GuardDuty Security Hub] in tokyo
 
-route53 = boto3.client('route53')
-ecs = boto3.client('ecs')
-autoscaling = boto3.client('application-autoscaling')
+    group virginia(server)[us-east-1 Virginia] in org
+    service prod_dr(server)[Production DR Account GuardDuty Security Hub Config CloudTrail] in virginia
 
-HOSTED_ZONE_ID = os.environ['HOSTED_ZONE_ID']
-DOMAIN_NAME = os.environ['DOMAIN_NAME']
+    service aggregation(server)[Security Hub Aggregation Region us-east-1] in org
 
-REGIONS = {
-    'ap-northeast-1': {'cluster': 'taskflow-ap-northeast-1', 'service': 'api'},
-    'us-east-1': {'cluster': 'taskflow-us-east-1', 'service': 'api'},
-    'eu-west-1': {'cluster': 'taskflow-eu-west-1', 'service': 'api'},
-}
-
-def handler(event, context):
-    mode = event.get('mode', 'active-active')
-
-    if mode == 'active-passive':
-        return switch_to_active_passive()
-    elif mode == 'active-active':
-        return switch_to_active_active()
-    elif mode == 'emergency-active':
-        return emergency_activate_all()
-
-def switch_to_active_passive():
-    """夜間モード: 東京のみ Active"""
-
-    # 1. Route 53 を東京のみに変更
-    route53.change_resource_record_sets(
-        HostedZoneId=HOSTED_ZONE_ID,
-        ChangeBatch={
-            'Changes': [
-                {
-                    'Action': 'UPSERT',
-                    'ResourceRecordSet': {
-                        'Name': f'api.{DOMAIN_NAME}',
-                        'Type': 'A',
-                        'AliasTarget': {
-                            'HostedZoneId': 'Z14GRHDCWA56QT',
-                            'DNSName': 'taskflow-alb-ap-northeast-1.example.com',
-                            'EvaluateTargetHealth': True
-                        }
-                    }
-                }
-            ]
-        }
-    )
-
-    # 2. 米国・欧州の ECS タスク数を最小に
-    for region in ['us-east-1', 'eu-west-1']:
-        regional_ecs = boto3.client('ecs', region_name=region)
-        regional_ecs.update_service(
-            cluster=REGIONS[region]['cluster'],
-            service=REGIONS[region]['service'],
-            desiredCount=0  # タスクを0に
-        )
-
-    return {'status': 'switched to active-passive'}
-
-def switch_to_active_active():
-    """通常モード: 全リージョン Active"""
-
-    # 1. 米国・欧州の ECS タスクを起動
-    for region in ['us-east-1', 'eu-west-1']:
-        regional_ecs = boto3.client('ecs', region_name=region)
-        regional_ecs.update_service(
-            cluster=REGIONS[region]['cluster'],
-            service=REGIONS[region]['service'],
-            desiredCount=2  # 通常のタスク数
-        )
-
-    # 2. タスクの起動を待機
-    import time
-    time.sleep(120)  # 2分待機
-
-    # 3. Route 53 をジオロケーションルーティングに変更
-    # (省略: 複数レコードの設定)
-
-    return {'status': 'switched to active-active'}
-
-def emergency_activate_all():
-    """緊急時: 即座に全リージョン Active"""
-
-    # 並列でタスク起動
-    import concurrent.futures
-
-    def activate_region(region):
-        regional_ecs = boto3.client('ecs', region_name=region)
-        regional_ecs.update_service(
-            cluster=REGIONS[region]['cluster'],
-            service=REGIONS[region]['service'],
-            desiredCount=3,  # 緊急時は多めに
-            forceNewDeployment=True
-        )
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(activate_region, ['us-east-1', 'eu-west-1'])
-
-    return {'status': 'emergency activation initiated'}
-      `),
-      environment: {
-        HOSTED_ZONE_ID: 'Z1234567890',
-        DOMAIN_NAME: 'taskflow.example.com',
-      },
-      timeout: cdk.Duration.minutes(5),
-    });
-
-    // IAM 権限
-    trafficController.addToRolePolicy(new iam.PolicyStatement({
-      actions: [
-        'route53:ChangeResourceRecordSets',
-        'ecs:UpdateService',
-        'ecs:DescribeServices',
-      ],
-      resources: ['*'],
-    }));
-
-    // スケジュール: 夜間モードへ（日本時間 22:00 = UTC 13:00）
-    new events.Rule(this, 'NightModeRule', {
-      schedule: events.Schedule.cron({ hour: '13', minute: '0' }),
-      targets: [new targets.LambdaFunction(trafficController, {
-        event: events.RuleTargetInput.fromObject({ mode: 'active-passive' }),
-      })],
-    });
-
-    // スケジュール: 通常モードへ（日本時間 8:00 = UTC 23:00前日）
-    new events.Rule(this, 'DayModeRule', {
-      schedule: events.Schedule.cron({ hour: '23', minute: '0' }),
-      targets: [new targets.LambdaFunction(trafficController, {
-        event: events.RuleTargetInput.fromObject({ mode: 'active-active' }),
-      })],
-    });
-  }
-}
+    sec_hub:B --> T:event_bridge
+    guard_duty:B --> T:event_bridge
+    cloud_trail:B --> T:event_bridge
+    event_bridge:B --> T:lambda
+    event_bridge:B --> T:step_fn
+    event_bridge:B --> T:sns
+    cloud_trail:R --> L:s3_logs
+    prod_tokyo:B --> T:aggregation
+    dev_tokyo:B --> T:aggregation
+    stag_tokyo:B --> T:aggregation
+    prod_dr:B --> T:aggregation
 ```
 
-### コスト削減効果
+### サービス設定のベストプラクティス
 
-| 項目 | Active-Active | Active-Passive | 削減率 |
-|------|--------------|----------------|--------|
-| ECS Fargate | $3,000/月 | $1,500/月 | 50% |
-| ALB | $600/月 | $300/月 | 50% |
-| NAT Gateway | $300/月 | $150/月 | 50% |
-| **合計** | $3,900/月 | $1,950/月 | **50%** |
+```yaml
+# 1. Security Hub 設定
+security_hub:
+  aggregation_region: us-east-1
+  linked_regions:
+    - ap-northeast-1
+  auto_enable_controls: true
+  standards:
+    - AWS-Foundational-Security-Best-Practices
+    - CIS-AWS-Foundations-Benchmark
+  finding_aggregator:
+    region_linking_mode: ALL_REGIONS
 
-※ 夜間（8時間）のみ Active-Passive の場合の概算
+# 2. GuardDuty 設定
+guardduty:
+  delegated_admin: security-account-id
+  auto_enable_members: true
+  auto_enable_organization_members: ALL
+  publishing_frequency: FIFTEEN_MINUTES
+  features:
+    - S3_DATA_EVENTS
+    - EKS_AUDIT_LOGS
+    - EBS_MALWARE_PROTECTION
+    - RDS_LOGIN_EVENTS
+    - LAMBDA_NETWORK_LOGS
+
+# 3. CloudTrail 設定
+cloudtrail:
+  organization_trail: true
+  multi_region: true
+  log_file_validation: true
+  kms_encryption: true
+  s3_bucket: central-security-logs
+  cloudwatch_logs: true
+  data_events:
+    - S3
+    - Lambda
+
+# 4. EventBridge 設定
+eventbridge:
+  cross_account_policy: allow-from-org
+  archive:
+    enabled: true
+    retention_days: 90
+  rules:
+    - pattern: guardduty-findings
+      targets: [lambda, sns]
+    - pattern: securityhub-findings
+      targets: [lambda, step-functions]
+```
+
+### 推定月額コスト
+
+| サービス | 構成 | 月額コスト |
+|----------|------|-----------|
+| GuardDuty | 4アカウント × 2リージョン | $150-300 |
+| Security Hub | 4アカウント × 2リージョン | $50-100 |
+| CloudTrail | Organization Trail | $50-100 |
+| EventBridge | イベント処理 | $20-50 |
+| Lambda | 修復・通知 | $10-30 |
+| S3 | ログ保存（1TB/月） | $30-50 |
+| Step Functions | ワークフロー | $10-20 |
+| **合計** | | **$320-650** |
+
+### 実装の優先順位
+
+```
+Phase 1（Week 1-2）: 基盤構築
+├── Organizations 設定確認
+├── Security Hub Aggregation Region 設定
+├── GuardDuty Delegated Admin 設定
+└── CloudTrail Organization Trail 設定
+
+Phase 2（Week 3-4）: 検知・通知
+├── EventBridge ルール設定
+├── SNS トピック・サブスクリプション設定
+├── Lambda 通知関数デプロイ
+└── 基本的なアラート動作確認
+
+Phase 3（Week 5-6）: 自動修復
+├── Step Functions ワークフロー構築
+├── 自動修復 Lambda 関数デプロイ
+├── クロスアカウント IAM ロール設定
+└── 修復シナリオテスト
+
+Phase 4（Week 7-8）: コンプライアンス・最適化
+├── Config ルール（カスタム含む）設定
+├── 監査レポート自動生成
+├── ダッシュボード構築
+└── コスト最適化レビュー
+```
 
 </details>
 
@@ -840,27 +746,73 @@ def emergency_activate_all():
 
 ## 10. 発展課題
 
-### 発展課題1: Global Accelerator の導入（難易度：中級）
+### 発展課題1: SIEM 統合（難易度：上級）
 
 **課題内容**:
-Route 53 のジオロケーションルーティングに加えて、
-AWS Global Accelerator を導入し、より高速で安定した接続を実現してください。
-
-### 発展課題2: マルチリージョン CI/CD（難易度：上級）
-
-**課題内容**:
-3リージョン同時デプロイの CI/CD パイプラインを構築してください。
+セキュリティイベントを外部 SIEM（Splunk または Elastic SIEM）に連携し、
+より高度な相関分析を実現してください。
 
 **要件**:
-- Blue/Green デプロイ
-- リージョン間のカナリアリリース
-- 自動ロールバック
+- リアルタイムでのイベント転送
+- カスタムフィールドマッピング
+- 双方向の連携（SIEM からの修復トリガー）
 
-### 発展課題3: Chaos Engineering（難易度：上級）
+```python
+# ヒント: Kinesis Data Firehose を使用した SIEM 連携
+def create_firehose_to_splunk():
+    """
+    Security Hub findings を Splunk HEC に送信する
+    Kinesis Data Firehose の設定
+    """
+    firehose_config = {
+        'DeliveryStreamName': 'security-findings-to-splunk',
+        'DeliveryStreamType': 'DirectPut',
+        'SplunkDestinationConfiguration': {
+            'HECEndpoint': 'https://splunk-hec.medsecure.com:8088',
+            'HECEndpointType': 'Raw',
+            'HECToken': '{{resolve:secretsmanager:splunk-hec-token}}',
+            'HECAcknowledgmentTimeoutInSeconds': 180,
+            'RetryOptions': {
+                'DurationInSeconds': 60
+            },
+            'S3BackupMode': 'FailedEventsOnly',
+            'ProcessingConfiguration': {
+                'Enabled': True,
+                'Processors': [{
+                    'Type': 'Lambda',
+                    'Parameters': [{
+                        'ParameterName': 'LambdaArn',
+                        'ParameterValue': 'arn:aws:lambda:...:transform-for-splunk'
+                    }]
+                }]
+            }
+        }
+    }
+    return firehose_config
+```
+
+### 発展課題2: 脅威インテリジェンス統合（難易度：上級）
 
 **課題内容**:
-AWS Fault Injection Simulator を使用して、
-リージョン障害シナリオのテストを実施してください。
+サードパーティの脅威インテリジェンスフィード（例：AlienVault OTX）を
+GuardDuty のカスタム脅威リストとして統合し、業界特有の脅威を検出してください。
+
+**要件**:
+- 脅威インテリジェンスフィードの自動取得
+- GuardDuty 脅威リストの自動更新
+- ヘルスケア業界特有の IoC（Indicators of Compromise）の監視
+
+### 発展課題3: セキュリティダッシュボード構築（難易度：中級）
+
+**課題内容**:
+Amazon Managed Grafana を使用して、経営層向けのセキュリティダッシュボードを
+構築してください。
+
+**要件**:
+- リアルタイムの脅威可視化
+- トレンド分析（過去30日間）
+- コンプライアンススコアの表示
+- 自動 PDF レポート生成
 
 ---
 
@@ -870,53 +822,97 @@ AWS Fault Injection Simulator を使用して、
 
 ```
 本課題で学んだこと:
-□ マルチリージョンアーキテクチャの設計パターン
-□ Route 53 のルーティングポリシー
-□ DynamoDB Global Tables
-□ Aurora Global Database
-□ データレジデンシー・GDPR 対応
-□ AWS CDK でのマルチリージョンデプロイ
+□ GuardDuty による ML ベースの脅威検知
+□ Security Hub によるセキュリティ統合管理
+□ EventBridge を使ったイベント駆動セキュリティ
+□ Lambda/Step Functions による自動修復
+□ HIPAA 準拠のセキュリティ要件
+□ マルチアカウント・マルチリージョンセキュリティ
+
+GCP との主な違い:
+- Security Hub は SCC よりサードパーティ統合が豊富
+- GuardDuty は専用の ML モデルで検知精度が高い
+- EventBridge はより柔軟なイベントルーティングが可能
+- Organizations との統合が深い
 ```
 
 ### GCP経験者向けポイント
 
 | 観点 | GCP | AWS | 移行時の注意 |
 |------|-----|-----|-------------|
-| グローバルLB | Global HTTP(S) LB | CloudFront + ALB | AWS は CDN とLB が分離 |
-| DNS | Cloud DNS | Route 53 | ルーティングポリシーが豊富 |
-| グローバルDB | Spanner | DynamoDB Global Tables | 整合性モデルが異なる |
-| リージョン間接続 | VPC Peering | Transit Gateway | AWS は Transit Gateway 推奨 |
+| 統合セキュリティ | Security Command Center | Security Hub | 検出結果のスキーマが異なる |
+| 脅威検知 | Event Threat Detection | GuardDuty | ML モデルの検知パターンが異なる |
+| イベント処理 | Eventarc | EventBridge | イベントパターンの記法が異なる |
+| ポリシー管理 | Organization Policy | AWS Config | ルール定義方法が異なる |
+| ログ集約 | Cloud Logging | CloudWatch + CloudTrail | ログの構造と検索方法が異なる |
+
+### 推奨される次のステップ
+
+```
+1. AWS Certified Security - Specialty の学習
+   - より深いセキュリティサービスの理解
+   - ベストプラクティスの習得
+
+2. Incident Response Playbook の作成
+   - 組織固有のシナリオ対応手順
+   - 自動化可能な範囲の拡大
+
+3. Chaos Engineering for Security
+   - GameDay の実施
+   - セキュリティ対応訓練
+
+4. 関連課題への挑戦
+   - 課題25: セキュアネットワーク基盤
+   - 課題26: DDoS対策とエッジセキュリティ
+```
 
 ---
 
 ## 12. 推定コストと注意事項
 
-### 本課題の推定コスト（3リージョン構成）
+### 本課題の推定コスト
 
-| サービス | 構成 | 月額コスト |
-|----------|------|-----------|
-| Route 53 | ホストゾーン + クエリ | $50 |
-| CloudFront | 100GB転送 | $100 |
-| ALB (x3) | 各リージョン | $100 |
-| ECS Fargate (x3) | 各2タスク | $300 |
-| Aurora Global | Primary + 2 Replica | $600 |
-| DynamoDB Global | 3リージョン | $100 |
-| **合計** | | **$1,250/月** |
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| GuardDuty | 1アカウント、基本検出 | $5-10 |
+| Security Hub | 基本機能 | $3-5 |
+| Lambda | 100回実行 | < $1 |
+| Step Functions | 50回実行 | < $1 |
+| EventBridge | 1000イベント | < $1 |
+| DynamoDB | オンデマンド | $1-2 |
+| S3 | 1GB | < $1 |
+| **合計** | | **$10-20** |
+
+### コスト最適化のヒント
+
+```
+1. GuardDuty の最適化
+   - S3 保護は必要なバケットのみ有効化
+   - 検出結果のエクスポート頻度を調整
+
+2. Security Hub の最適化
+   - 不要なセキュリティ基準を無効化
+   - 自動修復で解決済みの検出結果をアーカイブ
+
+3. ログ保存の最適化
+   - S3 ライフサイクルポリシーで Glacier に移行
+   - CloudWatch Logs の保持期間を適切に設定
+```
 
 ### 注意事項
 
 ```
-⚠️ データ転送コスト
-- リージョン間のデータ転送は課金対象
-- レプリケーション量を監視
+⚠️ セキュリティサービスの有効化
+- GuardDuty、Security Hub は有効化すると即座に課金開始
+- テスト後は必ず無効化するか、コストを監視
 
-⚠️ Global Tables の制限
-- 書き込み競合は Last Writer Wins
-- 同一アイテムの同時更新に注意
+⚠️ 自動修復のテスト
+- 本番環境では十分なテスト後に有効化
+- 誤検知による影響を最小化する設計を
 
-⚠️ Aurora Global Database
-- フェイルオーバーは手動推奨
-- 昇格後のリージョン再構成が必要
+⚠️ IAM 権限
+- 自動修復用のロールには最小権限を付与
+- クロスアカウントアクセスには ExternalId を使用
 ```
 
 ---

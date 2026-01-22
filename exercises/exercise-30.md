@@ -1,158 +1,146 @@
-# 課題30: PayEasy Step Functionsワークフロー - 決済処理オーケストレーション
+# 課題30: DynamoDB実践設計 - シングルテーブル設計とGSI最適化
 
 **難易度: 🟡 中級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | サーバーレス / ワークフロー |
-| 処理タイプ | 非同期 |
-| 使用IaC | CDK |
+| カテゴリ | データベース / NoSQL設計 |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## シナリオ
 
-### 企業プロファイル: PayEasy株式会社
+### 企業プロファイル: 〇〇株式会社
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     PayEasy株式会社                              │
-│                    決済代行サービス                              │
+│                    〇〇株式会社                                   │
+│                  総合ECプラットフォーム                           │
 ├─────────────────────────────────────────────────────────────────┤
-│  設立: 2019年    従業員: 80名    本社: 東京                      │
-│  事業: EC事業者向け決済代行、サブスクリプション決済             │
-│  取引額: 月間50億円    加盟店: 2000社    API: 1日500万リクエスト │
+│  設立: 2018年    従業員: 120名    本社: 東京                     │
+│  事業: BtoC総合EC（家電・ファッション・食品・日用品）             │
+│  年商: 50億円    月間PV: 500万    会員数: 80万人                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【決済処理の現状】                                              │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                                                              ││
-│  │    ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐    ││
-│  │    │認証 │───►│与信 │───►│決済 │───►│通知 │───►│記録 │    ││
-│  │    └─────┘    └─────┘    └─────┘    └─────┘    └─────┘    ││
-│  │       │          │          │          │          │        ││
-│  │       ▼          ▼          ▼          ▼          ▼        ││
-│  │    [複雑な条件分岐とリトライ処理がコード内に散在]            ││
-│  │                                                              ││
-│  └────────────────────────────────────────────────────────────┘│
+│  【現在のデータ規模】                                            │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐            │
+│  │   商品数     │ │   注文数     │ │  ユーザー数   │            │
+│  │  10万 SKU   │ │  10万件/月  │ │   80万人     │            │
+│  │ (4カテゴリ) │ │ (ピーク3倍) │ │ (MAU 20万)  │            │
+│  └──────────────┘ └──────────────┘ └──────────────┘            │
 │                                                                  │
 │  【現在の課題】                                                  │
 │  ┌────────────────────────────────────────────────────────────┐│
-│  │  ・決済フローが複雑化し、コードの可読性が低下               ││
-│  │  ・エラー発生時の状態把握が困難                             ││
-│  │  ・リトライ・補償処理のロジックが複雑                       ││
-│  │  ・処理時間の長い決済でLambdaタイムアウト発生               ││
-│  │  ・監査対応のための処理追跡が困難                           ││
+│  │  MySQL (RDS r5.xlarge)                                      ││
+│  │  ・応答時間: 平均500ms（ピーク時2秒超）                     ││
+│  │  ・スケーリング: 垂直スケール限界                           ││
+│  │  ・コスト: 月額30万円（読み取りリプリカ含む）               ││
+│  │  ・JOIN多用でクエリ複雑化                                   ││
 │  └────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【目指す姿】                                                    │
+│  【移行目標】                                                    │
 │  ┌────────────────────────────────────────────────────────────┐│
-│  │                   Step Functions                             ││
-│  │  ┌─────────────────────────────────────────────────────┐    ││
-│  │  │  ┌────┐   ┌────┐   ┌────┐   ┌────┐   ┌────┐       │    ││
-│  │  │  │認証│──►│与信│──►│決済│──►│通知│──►│完了│       │    ││
-│  │  │  └────┘   └──┬─┘   └──┬─┘   └────┘   └────┘       │    ││
-│  │  │              │        │                            │    ││
-│  │  │         ┌────▼────┐  ┌▼───────────┐               │    ││
-│  │  │         │与信失敗 │  │決済失敗    │               │    ││
-│  │  │         │→拒否通知│  │→ロールバック│               │    ││
-│  │  │         └─────────┘  └────────────┘               │    ││
-│  │  └─────────────────────────────────────────────────────┘    ││
-│  │                                                              ││
-│  │  ・視覚的なワークフロー管理                                 ││
-│  │  ・組み込みのエラーハンドリング                             ││
-│  │  ・実行履歴の自動記録                                       ││
-│  │  ・長時間処理のサポート（最大1年）                          ││
+│  │  DynamoDB (On-Demand + DAX)                                 ││
+│  │  ・応答時間: 50ms以下（ピーク時も安定）                     ││
+│  │  ・スケーリング: 自動水平スケール                           ││
+│  │  ・コスト: 月額15万円（50%削減目標）                        ││
+│  │  ・シングルテーブル設計でシンプル化                         ││
 │  └────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 決済フロー要件
+### 現在のRDBスキーマ（移行元）
 
-#### クレジットカード決済フロー
-
-```mermaid
-flowchart TB
-    subgraph step1[1. 決済リクエスト受付]
-        req[リクエスト検証]
-        dup[重複チェック - べき等性]
-    end
-
-    subgraph step2[2. カード認証 - 3Dセキュア]
-        judge[3DS必要判定]
-        auth_req[認証リクエスト送信]
-        auth_wait[認証結果待機 - コールバック]
-    end
-
-    subgraph step3[3. 与信確保]
-        card_api[カード会社API呼び出し]
-        credit_check[与信枠確認]
-        credit_num[与信番号取得]
-    end
-
-    subgraph step4[4. 決済実行]
-        settle[売上確定処理]
-        issue[決済番号発行]
-    end
-
-    subgraph step5[5. 後処理]
-        merchant[加盟店への通知]
-        buyer[購入者への通知]
-        record[取引記録保存]
-    end
-
-    step1 --> step2 --> step3 --> step4 --> step5
 ```
-
-#### エラーパターンと処理
-
-| エラー種別 | 処理方針 | リトライ |
-|-----------|---------|---------|
-| カード認証失敗 | 拒否通知→終了 | なし |
-| 与信失敗 | 拒否通知→終了 | なし |
-| 与信タイムアウト | 再試行 | 3回まで |
-| 決済失敗 | 与信取消→拒否通知 | なし |
-| 決済タイムアウト | 状態確認→判断 | 確認3回 |
-| 通知失敗 | キュー→再送 | 5回まで |
-| システムエラー | アラート→手動対応 | 要確認 |
+┌─────────────────────────────────────────────────────────────────┐
+│                    現在のMySQL スキーマ                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
+│  │   users     │     │   orders    │     │ order_items │       │
+│  ├─────────────┤     ├─────────────┤     ├─────────────┤       │
+│  │ user_id PK  │◄────│ user_id FK  │     │ order_id FK │───────│
+│  │ email       │     │ order_id PK │◄────│ product_id  │       │
+│  │ name        │     │ status      │     │ quantity    │       │
+│  │ created_at  │     │ total       │     │ price       │       │
+│  │ tier        │     │ created_at  │     │ item_id PK  │       │
+│  └─────────────┘     └─────────────┘     └─────────────┘       │
+│         │                                       │                │
+│         │            ┌─────────────┐            │                │
+│         │            │  products   │            │                │
+│         │            ├─────────────┤            │                │
+│         └───────────►│ product_id  │◄───────────┘                │
+│   (お気に入り)       │ name        │                             │
+│                      │ category    │                             │
+│                      │ price       │                             │
+│                      │ stock       │                             │
+│                      │ created_at  │                             │
+│                      └─────────────┘                             │
+│                                                                  │
+│  【問題となるクエリ例】                                          │
+│  ・ユーザーの注文履歴 + 商品詳細: 3テーブルJOIN                  │
+│  ・カテゴリ別売上ランキング: 集計 + ソート                       │
+│  ・在庫アラート: フルテーブルスキャン                            │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### ビジネス要件と KPI
 
-#### パフォーマンス目標
-
-| 指標 | 現状 | 目標 | 改善 |
-|-----|------|------|------|
-| 決済完了時間 | 8秒 | 3秒 | 62%↓ |
-| 決済成功率 | 97% | 99% | 2%↑ |
-| エラー検知時間 | 30分 | 1分 | 96%↓ |
-| 障害復旧時間 | 2時間 | 15分 | 87%↓ |
-
-#### 運用目標
-
-| 指標 | 現状 | 目標 | 改善 |
-|-----|------|------|------|
-| コード行数 | 5000行 | 2000行 | 60%↓ |
-| デプロイ時間 | 30分 | 5分 | 83%↓ |
-| 監査対応工数 | 20時間/月 | 2時間/月 | 90%↓ |
-| 新機能追加工数 | 2週間 | 3日 | 78%↓ |
-
-#### 処理量
-
-- 1日あたり決済件数: 50万件
-- ピーク時: 1000件/秒
-- 平均決済金額: 5,000円
-- 3Dセキュア対象: 30%
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    移行プロジェクト KPI                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【パフォーマンス目標】                                          │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  指標              │ 現状        │ 目標        │ 改善率    ││
+│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
+│  │  商品詳細取得      │ 150ms       │ < 10ms      │ 93%↓     ││
+│  │  注文履歴取得      │ 500ms       │ < 50ms      │ 90%↓     ││
+│  │  カート操作        │ 200ms       │ < 20ms      │ 90%↓     ││
+│  │  検索・一覧        │ 800ms       │ < 100ms     │ 87%↓     ││
+│  │  ピーク時P99       │ 3000ms      │ < 200ms     │ 93%↓     ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【コスト目標】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  項目              │ 現状        │ 目標        │ 削減額    ││
+│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
+│  │  データベース      │ ¥300,000    │ ¥150,000    │ ¥150,000  ││
+│  │  キャッシュ        │ ¥50,000     │ DAX込み     │ ¥50,000   ││
+│  │  運用工数          │ 20h/月      │ 5h/月       │ 15h削減   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【アクセスパターン分析】                                        │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  パターン                  │ 頻度/日    │ 優先度          ││
+│  ├────────────────────────────┼────────────┼─────────────────┤│
+│  │  商品詳細を商品IDで取得    │ 500,000    │ ★★★★★          ││
+│  │  ユーザーの注文履歴取得    │ 100,000    │ ★★★★★          ││
+│  │  注文の詳細取得            │ 50,000     │ ★★★★☆          ││
+│  │  カテゴリ別商品一覧        │ 200,000    │ ★★★★★          ││
+│  │  ユーザー情報取得          │ 300,000    │ ★★★★★          ││
+│  │  在庫数確認・更新          │ 100,000    │ ★★★★☆          ││
+│  │  売上ランキング            │ 10,000     │ ★★★☆☆          ││
+│  │  商品検索（名前）          │ 80,000     │ ★★★☆☆          ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. 学習目標
+## 達成目標
 
 ### 習得スキル
 
@@ -164,42 +152,42 @@ flowchart TB
 │  【主要スキル】                                                  │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. Step Functions 基礎                                      ││
-│  │     ├── Amazon States Language (ASL) 構文                    ││
-│  │     ├── Standard vs Express ワークフロー                     ││
-│  │     ├── 各種ステート（Task, Choice, Parallel, Map等）        ││
-│  │     └── 入出力処理（InputPath, OutputPath, ResultPath）      ││
+│  │  1. DynamoDB シングルテーブル設計                           ││
+│  │     ├── アクセスパターン分析手法                            ││
+│  │     ├── PK/SK設計パターン                                   ││
+│  │     ├── エンティティの多重化                                ││
+│  │     └── Overloaded GSI設計                                  ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  2. エラーハンドリング                                       ││
-│  │     ├── Retry設定（指数バックオフ）                          ││
-│  │     ├── Catch設定（エラー分岐）                              ││
-│  │     ├── 補償トランザクション（Saga パターン）                ││
-│  │     └── タイムアウト設定                                     ││
+│  │  2. GSI（グローバルセカンダリインデックス）最適化           ││
+│  │     ├── GSI Overloading                                     ││
+│  │     ├── Sparse Index                                        ││
+│  │     ├── GSI射影の最適化                                     ││
+│  │     └── GSIとLSIの使い分け                                  ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  3. 高度なパターン                                           ││
-│  │     ├── コールバックパターン（waitForTaskToken）             ││
-│  │     ├── 並列処理（Parallel, Map）                            ││
-│  │     ├── 動的並列処理（Distributed Map）                      ││
-│  │     └── ネストされたワークフロー                             ││
+│  │  3. DynamoDB パフォーマンス最適化                           ││
+│  │     ├── DAX（DynamoDB Accelerator）                         ││
+│  │     ├── パーティション設計                                  ││
+│  │     ├── ホットパーティション対策                            ││
+│  │     └── バッチ操作の活用                                    ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  4. CDKによるStep Functions構築                              ││
-│  │     ├── StepFunctions Constructs                             ││
-│  │     ├── Lambda統合                                           ││
-│  │     ├── 他AWSサービス統合                                    ││
-│  │     └── テスト戦略                                           ││
+│  │  4. CloudFormationによるDynamoDB構築                        ││
+│  │     ├── テーブル・GSI定義                                   ││
+│  │     ├── Auto Scaling設定                                    ││
+│  │     ├── ストリーム・TTL設定                                 ││
+│  │     └── バックアップ・PITR設定                              ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【副次スキル】                                                  │
-│  ・イベント駆動アーキテクチャ                                    │
-│  ・CloudWatch Logs Insights でのデバッグ                        │
-│  ・X-Ray による分散トレーシング                                 │
-│  ・コスト最適化                                                  │
+│  ・RDBからNoSQLへの思考転換                                      │
+│  ・データ移行戦略（DMS活用）                                     │
+│  ・コスト最適化（On-Demand vs Provisioned）                      │
+│  ・監視・アラート設計                                            │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -208,14 +196,14 @@ flowchart TB
 
 | AWS サービス | GCP 対応サービス | 主な違い |
 |-------------|-----------------|---------|
-| Step Functions | Cloud Workflows | Step FunctionsはASL、WorkflowsはYAML |
-| Step Functions Express | Cloud Run Jobs | 短時間実行の高スループット |
-| EventBridge | Eventarc | イベントルーティング |
-| X-Ray | Cloud Trace | 分散トレーシング |
+| DynamoDB | Cloud Bigtable / Firestore | DynamoDBはフルマネージド、Bigtableは大規模分析向け |
+| DynamoDB Streams | Firestore Listeners | イベント駆動アーキテクチャ |
+| DAX | Memorystore | DAXはDynamoDB専用、透過的キャッシュ |
+| DynamoDB Global Tables | Firestore Multi-region | グローバルレプリケーション |
 
 ---
 
-## 4. 使用するAWSサービス
+## 学習するAWSサービス
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -226,22 +214,20 @@ flowchart TB
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │  サービス          │ 用途                    │ 重要度      ││
 │  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  Step Functions    │ ワークフロー管理        │ ★★★★★      ││
-│  │  Lambda            │ 各処理ステップ実行      │ ★★★★★      ││
-│  │  API Gateway       │ 決済API受付             │ ★★★★☆      ││
-│  │  DynamoDB          │ 取引データ保存          │ ★★★★☆      ││
-│  │  CDK               │ インフラ定義            │ ★★★★★      ││
+│  │  DynamoDB          │ メインデータベース      │ ★★★★★      ││
+│  │  DAX               │ インメモリキャッシュ    │ ★★★★☆      ││
+│  │  DynamoDB Streams  │ 変更データキャプチャ    │ ★★★★☆      ││
+│  │  CloudFormation    │ インフラ定義            │ ★★★★★      ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【支援サービス】                                                │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │  サービス          │ 用途                    │ 重要度      ││
 │  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  SQS               │ 非同期通知キュー        │ ★★★☆☆      ││
-│  │  SNS               │ 通知配信                │ ★★★☆☆      ││
-│  │  Secrets Manager   │ 認証情報管理            │ ★★★★☆      ││
+│  │  Lambda            │ ストリーム処理          │ ★★★☆☆      ││
 │  │  CloudWatch        │ 監視・アラート          │ ★★★★☆      ││
-│  │  X-Ray             │ 分散トレーシング        │ ★★★☆☆      ││
+│  │  DMS               │ データ移行              │ ★★★☆☆      ││
+│  │  S3                │ バックアップ保存        │ ★★★☆☆      ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -249,25 +235,25 @@ flowchart TB
 
 ---
 
-## 5. 前提条件と事前準備
+## 前提条件
 
 ### 必要な環境
 
 ```bash
-# Node.js バージョン確認
-node --version
-# v18.x 以上
-
-# AWS CDK バージョン確認
-cdk --version
-# 2.x 以上
-
 # AWS CLI バージョン確認
 aws --version
 # aws-cli/2.x.x 以上
 
-# TypeScript
-npm list typescript
+# Python環境（boto3用）
+python3 --version
+# Python 3.9以上
+
+# Node.js（Lambda関数用）
+node --version
+# v18.x 以上
+
+# NoSQL Workbench（推奨）
+# https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/workbench.html
 ```
 
 ### AWS環境の準備
@@ -275,23 +261,12 @@ npm list typescript
 ```bash
 # 環境変数設定
 export AWS_REGION=ap-northeast-1
-export PROJECT_NAME=payeasy
+export PROJECT_NAME=megamart
 export ENVIRONMENT=dev
 
-# プロジェクトディレクトリ作成
-mkdir -p ~/payeasy-stepfunctions
-cd ~/payeasy-stepfunctions
-
-# CDKプロジェクト初期化
-cdk init app --language typescript
-
-# 必要なパッケージインストール
-npm install @aws-cdk/aws-stepfunctions @aws-cdk/aws-stepfunctions-tasks \
-            @aws-cdk/aws-lambda @aws-cdk/aws-lambda-nodejs \
-            @aws-cdk/aws-dynamodb @aws-cdk/aws-apigateway \
-            @aws-cdk/aws-sqs @aws-cdk/aws-sns @aws-cdk/aws-sns-subscriptions \
-            @aws-cdk/aws-secretsmanager @aws-cdk/aws-logs \
-            esbuild
+# 作業ディレクトリ作成
+mkdir -p ~/megamart-dynamodb/{cfn,scripts,data,lambda}
+cd ~/megamart-dynamodb
 ```
 
 ### IAMポリシー（必要な権限）
@@ -303,18 +278,15 @@ npm install @aws-cdk/aws-stepfunctions @aws-cdk/aws-stepfunctions-tasks \
     {
       "Effect": "Allow",
       "Action": [
-        "states:*",
-        "lambda:*",
         "dynamodb:*",
-        "apigateway:*",
-        "sqs:*",
-        "sns:*",
-        "secretsmanager:*",
-        "logs:*",
-        "xray:*",
+        "dax:*",
+        "application-autoscaling:*",
+        "cloudwatch:*",
+        "lambda:*",
+        "iam:PassRole",
+        "iam:CreateServiceLinkedRole",
         "cloudformation:*",
-        "iam:*",
-        "s3:*"
+        "logs:*"
       ],
       "Resource": "*"
     }
@@ -324,397 +296,623 @@ npm install @aws-cdk/aws-stepfunctions @aws-cdk/aws-stepfunctions-tasks \
 
 ---
 
-## 6. アーキテクチャ設計
+## トラブルシューティング課題
 
-### 決済ワークフロー全体像
+### 課題1: ホットパーティション問題
 
-```mermaid
-flowchart TB
-    subgraph Client["EC加盟店"]
-        MerchantAPI["EC加盟店 API"]
-    end
-
-    subgraph AWS["AWS Cloud"]
-        APIGW["API Gateway REST"]
-
-        subgraph StepFunctions["Step Functions: PaymentWorkflow"]
-            Validate["ValidateRequest<br/>リクエスト検証・重複チェック"]
-            Check3DS{"Check3DSRequired<br/>Choice"}
-            Request3DS["Request3DS<br/>コールバック待機"]
-            Authorize["AuthorizePayment<br/>与信確保"]
-            Capture["CapturePayment<br/>売上確定"]
-            Notify["SendNotifications<br/>Parallel: 加盟店/購入者通知"]
-            Save["SaveTransaction<br/>取引記録保存"]
-        end
-    end
-
-    MerchantAPI --> APIGW
-    APIGW --> Validate
-    Validate --> Check3DS
-    Check3DS -->|3DS必要| Request3DS
-    Check3DS -->|3DS不要| Authorize
-    Request3DS --> Authorize
-    Authorize -->|成功| Capture
-    Capture --> Notify
-    Notify --> Save
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              トラブルシューティング課題 1                        │
+│                ホットパーティション問題                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【状況】                                                        │
+│  セール開始後、特定商品のアクセスが集中し、                      │
+│  スロットリングエラーが大量発生している。                        │
+│                                                                  │
+│  【エラーログ】                                                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  "1つのテーブルで全エンティティを管理"                      ││
+│  │  "アクセスパターンに基づいてキーを設計"                     ││
+│  │  "JOINをプリコンピュートで置き換え"                         ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【テーブル構造】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Table: megamart-main                                       ││
+│  │  ├── Partition Key (PK): String                             ││
+│  │  ├── Sort Key (SK): String                                  ││
+│  │  ├── GSI1PK / GSI1SK: Overloaded GSI                        ││
+│  │  ├── GSI2PK / GSI2SK: Category Index                        ││
+│  │  └── GSI3PK / GSI3SK: Status Index                          ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【エンティティとキー設計】                                      │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ Entity    │ PK              │ SK                    │ GSI1 │ │
+│  ├───────────┼─────────────────┼───────────────────────┼──────┤ │
+│  │ User      │ USER#<userId>   │ PROFILE               │ EMAIL│ │
+│  │ Product   │ PROD#<prodId>   │ INFO                  │ CAT  │ │
+│  │ Order     │ USER#<userId>   │ ORDER#<orderId>       │ DATE │ │
+│  │ OrderItem │ ORDER#<orderId> │ ITEM#<itemId>         │ -    │ │
+│  │ Cart      │ USER#<userId>   │ CART#<prodId>         │ -    │ │
+│  │ Inventory │ PROD#<prodId>   │ INVENTORY             │ LOW  │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**エラー処理フロー:**
-- 各ステップで Catch → ErrorHandler → 補償処理/通知
-- 与信失敗 → 拒否通知
-- 決済失敗 → 与信取消 → 拒否通知
-- 通知失敗 → SQS → リトライ
+### アクセスパターンとキー設計
 
-### ステートマシン詳細設計
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   アクセスパターン詳細設計                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【パターン1】ユーザー情報取得                                   │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Query: PK = "USER#123" AND SK = "PROFILE"                  ││
+│  │  Response time: < 5ms (GetItem)                             ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【パターン2】ユーザーの全注文履歴                               │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Query: PK = "USER#123" AND SK begins_with "ORDER#"         ││
+│  │  Sort: SK DESC (新しい順)                                   ││
+│  │  Response time: < 20ms                                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【パターン3】注文詳細（アイテム含む）                           │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Query: PK = "ORDER#456" AND SK begins_with "ITEM#"         ││
+│  │  + GetItem: PK = "ORDER#456" SK = "INFO"                    ││
+│  │  Response time: < 15ms (BatchGetItem)                       ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【パターン4】カテゴリ別商品一覧                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  GSI2 Query: GSI2PK = "CAT#Electronics" AND GSI2SK < price  ││
+│  │  Sort: Price ASC/DESC                                       ││
+│  │  Response time: < 30ms                                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【パターン5】ステータス別注文（管理画面）                       │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  GSI3 Query: GSI3PK = "STATUS#PENDING"                      ││
+│  │  Sparse Index: statusがPENDINGの注文のみ                    ││
+│  │  Response time: < 25ms                                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【パターン6】低在庫アラート                                     │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  GSI1 Query: GSI1PK = "LOW_STOCK" AND GSI1SK < threshold    ││
+│  │  Sparse Index: 在庫が閾値以下のみ                           ││
+│  │  Response time: < 20ms                                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-#### ステート一覧
+### 全体アーキテクチャ
 
-| ステート名 | タイプ | 説明 |
-|-----------|--------|------|
-| ValidateRequest | Task | 入力検証・重複チェック |
-| Check3DSRequired | Choice | 3DS認証要否判定 |
-| Request3DS | Task | 3DS認証リクエスト |
-| Wait3DSCallback | Task | コールバック待機 |
-| Validate3DSResult | Choice | 3DS結果判定 |
-| AuthorizePayment | Task | 与信確保 |
-| CheckAuthResult | Choice | 与信結果判定 |
-| CapturePayment | Task | 売上確定 |
-| SendNotifications | Parallel | 通知送信（並列） |
-| SaveTransaction | Task | 取引記録保存 |
-| PaymentSuccess | Succeed | 正常終了 |
-| HandleAuthFailure | Task | 与信失敗処理 |
-| HandleCaptureFailure | Task | 決済失敗→与信取消 |
-| HandleError | Task | 汎用エラー処理 |
-| PaymentFailed | Fail | 異常終了 |
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
-#### エラーハンドリング戦略
+    group api_layer(server)[API Layer] in aws
+    group data_layer(database)[Data Layer] in aws
+    group stream_layer(server)[Stream Processing] in aws
 
-**リトライ対象:**
-- States.TaskFailed (一時的な失敗)
-- States.Timeout (タイムアウト)
-- Lambda.ServiceException (サービスエラー)
+    service client(internet)[Client Web/App]
 
-**リトライ設定:**
-- MaxAttempts: 3
-- IntervalSeconds: 1
-- BackoffRate: 2.0
-- MaxDelaySeconds: 10
+    service apigw(server)[API Gateway] in api_layer
+    service lambda(server)[Lambda Functions] in api_layer
 
-**Catch対象:**
-- AuthorizationError → HandleAuthFailure
-- CaptureError → HandleCaptureFailure
-- States.ALL → HandleError
+    service dax(database)[DAX Cluster Cache] in data_layer
+    service dynamodb(database)[DynamoDB Table] in data_layer
+    service streams(database)[DynamoDB Streams] in data_layer
+
+    service stream_proc(server)[Stream Processor Lambda] in stream_layer
+    service agg_lambda(server)[Aggregation Lambda] in stream_layer
+    service opensearch(database)[OpenSearch] in stream_layer
+    service s3backup(disk)[S3 Backup PITR] in stream_layer
+
+    client:R --> L:apigw
+    apigw:B --> T:lambda
+    lambda:B --> T:dax
+    lambda:B --> T:dynamodb
+    dynamodb:B --> T:streams
+    streams:B --> T:stream_proc
+    stream_proc:R --> L:agg_lambda
+    stream_proc:R --> L:opensearch
+    stream_proc:R --> L:s3backup
+```
 
 ---
 
-## 8. トラブルシューティング演習
+## トラブルシューティング課題
 
-### 演習8-1: タイムアウト問題
+### 課題1: ホットパーティション問題
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              トラブルシューティング演習 8-1                      │
-│                  タイムアウト問題                                │
+│                ホットパーティション問題                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【状況】                                                        │
-│  3DS認証で外部サービスからのコールバックが                       │
-│  タイムアウトになり、決済が失敗するケースが増加している。        │
+│  セール開始後、特定商品のアクセスが集中し、                      │
+│  スロットリングエラーが大量発生している。                        │
 │                                                                  │
-│  【エラー】                                                      │
+│  【エラーログ】                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  States.Timeout: Task timed out after 600 seconds           ││
-│  │  State: Request3DS                                          ││
-│  │  ExecutionArn: arn:aws:states:...:execution:xxx             ││
+│  │  ProvisionedThroughputExceededException:                    ││
+│  │  The level of configured provisioned throughput for the     ││
+│  │  table was exceeded.                                        ││
+│  │                                                              ││
+│  │  Error Count: 500/min                                       ││
+│  │  Affected Keys: PROD#P0001, PROD#P0002, PROD#P0003          ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【課題】                                                        │
-│  1. タイムアウトの原因を調査してください                         │
-│  2. 適切なタイムアウト設定を検討してください                     │
-│  3. タイムアウト時のユーザー体験を改善してください               │
+│  1. 原因を特定してください                                       │
+│  2. 短期的な対処を実施してください                               │
+│  3. 長期的な改善策を提案してください                             │
 │                                                                  │
 │  【ヒント】                                                      │
-│  - CloudWatch Logs Insights                                     │
-│  - Step Functions 実行履歴                                      │
-│  - Heartbeat機能                                                │
+│  - CloudWatchメトリクス: ConsumedReadCapacityUnits              │
+│  - Contributor Insights                                         │
+│  - Write Sharding パターン                                      │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **解決策例**
 
-```typescript
-// ハートビートを使用した改善版
-const request3DSWithHeartbeat = new tasks.LambdaInvoke(this, 'Request3DS', {
-  lambdaFunction: lambdas.request3DS,
-  integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-  payload: sfn.TaskInput.fromObject({
-    'paymentId.$': '$.paymentId',
-    'taskToken.$': '$$.Task.Token',
-  }),
-  // タイムアウト設定
-  taskTimeout: sfn.Timeout.duration(cdk.Duration.minutes(10)),
-  // ハートビート：30秒ごとに生存確認
-  heartbeat: cdk.Duration.seconds(30),
-  resultPath: '$.threeDSResult',
-});
+```python
+# 1. 原因調査スクリプト
+import boto3
 
-// Lambda側でハートビートを送信
-// lambda/request-3ds/index.ts
-import { SFNClient, SendTaskHeartbeatCommand } from '@aws-sdk/client-sfn';
+cloudwatch = boto3.client('cloudwatch')
 
-const sfnClient = new SFNClient({});
+# Contributor Insights を有効化して確認
+dynamodb = boto3.client('dynamodb')
+dynamodb.update_contributor_insights(
+    TableName='megamart-main-dev',
+    ContributorInsightsAction='ENABLE'
+)
 
-async function sendHeartbeat(taskToken: string): Promise<void> {
-  await sfnClient.send(new SendTaskHeartbeatCommand({ taskToken }));
-}
+# ホットキーを特定
+response = dynamodb.describe_contributor_insights(
+    TableName='megamart-main-dev'
+)
 
-// 外部サービス待機中に定期的にハートビートを送信
-const heartbeatInterval = setInterval(async () => {
-  try {
-    await sendHeartbeat(taskToken);
-    console.log('Heartbeat sent successfully');
-  } catch (error) {
-    console.error('Failed to send heartbeat:', error);
-    clearInterval(heartbeatInterval);
-  }
-}, 25000); // 30秒のハートビートタイムアウトより短く
+# 2. 短期対処: On-Demandモードへ切り替え（または容量増加）
+dynamodb.update_table(
+    TableName='megamart-main-dev',
+    BillingMode='PAY_PER_REQUEST'
+)
+
+# 3. 長期対策: Write Shardingパターン実装
+import random
+
+def get_sharded_pk(product_id: str, shard_count: int = 10) -> str:
+    """商品IDにシャードサフィックスを追加"""
+    shard = random.randint(0, shard_count - 1)
+    return f'PROD#{product_id}#SHARD{shard}'
+
+def get_product_with_sharding(product_id: str, shard_count: int = 10):
+    """全シャードから商品情報を取得"""
+    table = boto3.resource('dynamodb').Table('megamart-main-dev')
+
+    # 全シャードに対してBatchGetItem
+    keys = [
+        {'PK': f'PROD#{product_id}#SHARD{i}', 'SK': 'VIEW_COUNT'}
+        for i in range(shard_count)
+    ]
+
+    response = table.meta.client.batch_get_item(
+        RequestItems={
+            'megamart-main-dev': {
+                'Keys': keys
+            }
+        }
+    )
+
+    # 集計
+    total_views = sum(
+        item.get('viewCount', 0)
+        for item in response['Responses'].get('megamart-main-dev', [])
+    )
+    return total_views
 ```
 
-### 演習8-2: 補償トランザクション失敗
+### 演習8-2: GSIのスロットリング
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              トラブルシューティング演習 8-2                      │
-│               補償トランザクション失敗                           │
+│                  GSIスロットリング                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【状況】                                                        │
-│  決済（売上確定）が失敗し、与信取消（補償）も失敗した。          │
-│  結果として与信枠が確保されたままの状態になっている。            │
+│  カテゴリ別商品一覧（GSI2）へのクエリが遅延している。            │
+│  メインテーブルは正常だが、GSIのみスロットリング発生。           │
 │                                                                  │
-│  【エラーログ】                                                  │
+│  【CloudWatchメトリクス】                                        │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  CapturePayment: Failed - Network timeout                   ││
-│  │  RollbackAuthorization: Failed - Service unavailable        ││
-│  │                                                              ││
-│  │  Payment Status: UNKNOWN                                     ││
-│  │  Authorization Status: ACTIVE (should be VOIDED)            ││
+│  │  Table ConsumedRCU: 1000 (正常)                             ││
+│  │  GSI2 ConsumedRCU: 5000 (限界超過)                          ││
+│  │  GSI2 ThrottledRequests: 200/min                            ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【課題】                                                        │
-│  1. 二重障害パターンへの対策を設計してください                   │
-│  2. 未解決トランザクションの検出・解決方法を実装してください     │
-│  3. 運用対応フローを策定してください                             │
+│  1. GSIスロットリングの原因を説明してください                    │
+│  2. Projectionの最適化を検討してください                         │
+│  3. クエリパターンの見直しを提案してください                     │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **解決策例**
 
-```typescript
-// 補償トランザクションの堅牢化
-const rollbackWithRetry = new sfn.Parallel(this, 'RobustRollback', {
-  resultPath: '$.rollbackResult',
-})
-.branch(
-  // メイン：即座にロールバック試行
-  new tasks.LambdaInvoke(this, 'ImmediateRollback', {
-    lambdaFunction: lambdas.rollbackAuthorization,
-  })
-  .addRetry({
-    errors: ['States.ALL'],
-    interval: cdk.Duration.seconds(5),
-    maxAttempts: 5,
-    backoffRate: 2,
-  })
-)
-.addCatch(
-  // フォールバック：SQSに保存して後で処理
-  new sfn.Chain(this, 'RollbackFallback')
-    .next(new tasks.SqsSendMessage(this, 'QueueFailedRollback', {
-      queue: rollbackDLQ,
-      messageBody: sfn.TaskInput.fromObject({
-        'paymentId.$': '$.paymentId',
-        'authorizationCode.$': '$.authorizationCode',
-        'error.$': '$.error',
-        'timestamp.$': '$$.State.EnteredTime',
-      }),
-    }))
-    .next(new tasks.SnsPublish(this, 'AlertRollbackFailure', {
-      topic: alertTopic,
-      message: sfn.TaskInput.fromObject({
-        'alert': 'CRITICAL: Rollback failed',
-        'paymentId.$': '$.paymentId',
-        'requiresManualIntervention': true,
-      }),
-    })),
-  { errors: ['States.ALL'] }
-);
+```python
+# 1. GSIの現状確認
+import boto3
 
-// 未解決トランザクション検出用のスケジュール実行
-// EventBridge -> Step Functions
-const reconciliationWorkflow = new sfn.StateMachine(this, 'ReconciliationWorkflow', {
-  definitionBody: sfn.DefinitionBody.fromChainable(
-    new tasks.LambdaInvoke(this, 'FindStaleAuthorizations', {
-      lambdaFunction: findStaleAuthLambda,
-    })
-    .next(new sfn.Map(this, 'ProcessEachStale', {
-      itemsPath: '$.staleAuthorizations',
-      maxConcurrency: 5,
-    })
-    .itemProcessor(
-      new tasks.LambdaInvoke(this, 'ResolveStaleAuth', {
-        lambdaFunction: resolveStaleAuthLambda,
-      })
-    ))
-  ),
-});
+dynamodb = boto3.client('dynamodb')
+
+response = dynamodb.describe_table(TableName='megamart-main-dev')
+for gsi in response['Table']['GlobalSecondaryIndexes']:
+    if gsi['IndexName'] == 'GSI2':
+        print(f"Projection Type: {gsi['Projection']['ProjectionType']}")
+        print(f"Non-Key Attributes: {gsi['Projection'].get('NonKeyAttributes', [])}")
+
+# 2. Projectionの最適化 - KEYS_ONLYまたは必要最小限のINCLUDE
+# 現在のPROJECT ALLを変更する場合、GSIの再作成が必要
+
+# CloudFormation更新例
+"""
+GlobalSecondaryIndexes:
+  - IndexName: GSI2
+    KeySchema:
+      - AttributeName: GSI2PK
+        KeyType: HASH
+      - AttributeName: GSI2SK
+        KeyType: RANGE
+    Projection:
+      ProjectionType: INCLUDE
+      NonKeyAttributes:
+        - name      # 商品名のみ
+        - price     # 価格のみ
+        # imageUrl, description などは除外
+"""
+
+# 3. クエリパターン最適化 - ページネーション
+def get_products_paginated(category: str, page_size: int = 20,
+                           last_key: dict = None):
+    """ページネーション対応のカテゴリ検索"""
+    table = boto3.resource('dynamodb').Table('megamart-main-dev')
+
+    query_params = {
+        'IndexName': 'GSI2',
+        'KeyConditionExpression': 'GSI2PK = :cat',
+        'ExpressionAttributeValues': {':cat': f'CAT#{category}'},
+        'Limit': page_size,
+        'ProjectionExpression': 'productId, #name, price',  # 必要な属性のみ
+        'ExpressionAttributeNames': {'#name': 'name'}
+    }
+
+    if last_key:
+        query_params['ExclusiveStartKey'] = last_key
+
+    response = table.query(**query_params)
+
+    return {
+        'items': response['Items'],
+        'lastKey': response.get('LastEvaluatedKey'),
+        'hasMore': 'LastEvaluatedKey' in response
+    }
 ```
 
-### 演習8-3: 高負荷時のスロットリング
+### 演習8-3: トランザクション競合
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              トラブルシューティング演習 8-3                      │
-│                 高負荷時スロットリング                           │
+│                 トランザクション競合                             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【状況】                                                        │
-│  セール期間中にAPI呼び出しが急増し、                             │
-│  Step Functionsのスロットリングが発生している。                  │
+│  人気商品の注文処理で、在庫更新のトランザクションが              │
+│  頻繁にキャンセルされている。                                    │
 │                                                                  │
-│  【メトリクス】                                                  │
+│  【エラーログ】                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ExecutionsStarted: 10,000/sec (limit: 2,000)               ││
-│  │  ThrottledEvents: 8,000                                     ││
-│  │  API Gateway 429 errors: 急増                               ││
+│  │  TransactionCanceledException:                               ││
+│  │  Transaction cancelled, please refer to the cancellation    ││
+│  │  reasons for specific reasons.                               ││
+│  │                                                              ││
+│  │  CancellationReasons:                                        ││
+│  │  - Code: TransactionConflict                                 ││
+│  │    Item: PROD#P0001/INVENTORY                                ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【課題】                                                        │
-│  1. スロットリングの原因を特定してください                       │
-│  2. Standard vs Express ワークフローの使い分けを検討             │
-│  3. バッファリング戦略を実装してください                         │
+│  1. トランザクション競合の原因を説明してください                 │
+│  2. リトライ戦略を実装してください                               │
+│  3. 楽観的ロックパターンを検討してください                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+**解決策例**
+
+```python
+import boto3
+import time
+import random
+from botocore.exceptions import ClientError
+
+class TransactionHelper:
+    """トランザクション競合対策ヘルパー"""
+
+    def __init__(self, table_name: str):
+        self.client = boto3.client('dynamodb')
+        self.table_name = table_name
+
+    def execute_with_retry(self, transact_items: list,
+                           max_retries: int = 5,
+                           base_delay: float = 0.1) -> dict:
+        """指数バックオフ付きリトライ"""
+        for attempt in range(max_retries):
+            try:
+                response = self.client.transact_write_items(
+                    TransactItems=transact_items
+                )
+                return response
+            except ClientError as e:
+                error_code = e.response['Error']['Code']
+
+                if error_code == 'TransactionCanceledException':
+                    reasons = e.response.get('CancellationReasons', [])
+
+                    # 競合以外のエラーは再スロー
+                    if not any(r.get('Code') == 'TransactionConflict' for r in reasons):
+                        raise
+
+                    # 最後の試行なら例外をスロー
+                    if attempt == max_retries - 1:
+                        raise
+
+                    # 指数バックオフ + ジッター
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                    print(f"Transaction conflict, retrying in {delay:.3f}s...")
+                    time.sleep(delay)
+                else:
+                    raise
+
+    def update_with_optimistic_lock(self, pk: str, sk: str,
+                                     update_expr: str,
+                                     expr_values: dict) -> dict:
+        """楽観的ロック（バージョン番号）パターン"""
+        table = boto3.resource('dynamodb').Table(self.table_name)
+
+        # 現在のバージョンを取得
+        current = table.get_item(Key={'PK': pk, 'SK': sk})
+        current_version = current.get('Item', {}).get('version', 0)
+
+        # バージョンチェック付き更新
+        try:
+            response = table.update_item(
+                Key={'PK': pk, 'SK': sk},
+                UpdateExpression=update_expr + ', version = :new_version',
+                ConditionExpression='version = :current_version',
+                ExpressionAttributeValues={
+                    **expr_values,
+                    ':current_version': current_version,
+                    ':new_version': current_version + 1
+                },
+                ReturnValues='ALL_NEW'
+            )
+            return response['Attributes']
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                raise ValueError("Optimistic lock failed - item was modified")
+            raise
+
+# 使用例
+helper = TransactionHelper('megamart-main-dev')
+
+# 在庫更新をリトライ付きで実行
+transact_items = [
+    {
+        'Update': {
+            'TableName': 'megamart-main-dev',
+            'Key': {
+                'PK': {'S': 'PROD#P0001'},
+                'SK': {'S': 'INVENTORY'}
+            },
+            'UpdateExpression': 'SET stock = stock - :qty',
+            'ConditionExpression': 'stock >= :qty',
+            'ExpressionAttributeValues': {
+                ':qty': {'N': '1'}
+            }
+        }
+    }
+]
+
+result = helper.execute_with_retry(transact_items)
+```
+
 ---
 
-## 9. 設計課題
+## 設計課題
 
-### 設計課題9-1: サブスクリプション決済ワークフロー
+### 設計課題9-1: マルチテナント対応設計
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      設計課題 9-1                                │
-│              サブスクリプション決済ワークフロー                  │
+│                 マルチテナント対応設計                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【課題】                                                        │
-│  月額課金のサブスクリプション決済を自動化するワークフローを      │
-│  設計してください。                                              │
+│  MegaMartがマーケットプレイス機能を追加し、                      │
+│  複数の出店者（テナント）をサポートする必要がある。              │
 │                                                                  │
 │  【要件】                                                        │
-│  ・毎月指定日に自動課金                                          │
-│  ・決済失敗時は3回までリトライ（1日、3日、7日後）                │
-│  ・3回失敗でサブスクリプション一時停止                           │
-│  ・顧客への事前通知・失敗通知                                    │
-│  ・管理者への日次レポート                                        │
+│  ・各テナントは自分のデータのみアクセス可能                      │
+│  ・テナント間でデータは完全に分離                                │
+│  ・テナントごとの利用量を把握したい                              │
+│  ・テナント数は最大1000社を想定                                  │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. ワークフロー設計図（ASL形式）                                │
-│  2. リトライ戦略の詳細設計                                       │
-│  3. 通知テンプレート                                             │
+│  1. テナント分離のキー設計                                       │
+│  2. アクセス制御の実装方針                                       │
+│  3. 利用量計測の仕組み                                           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 設計課題9-2: マルチテナント決済基盤
+**設計例**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                マルチテナント設計パターン                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【パターン1: テナントプレフィックス方式】                       │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  PK                        │ SK                             ││
+│  ├────────────────────────────┼────────────────────────────────┤│
+│  │  TENANT#T001#PROD#P0001    │ INFO                           ││
+│  │  TENANT#T001#USER#U0001    │ PROFILE                        ││
+│  │  TENANT#T001#USER#U0001    │ ORDER#O0001                    ││
+│  │  TENANT#T002#PROD#P0001    │ INFO                           ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  利点: シンプル、完全分離                                        │
+│  欠点: クロステナントクエリ不可                                  │
+│                                                                  │
+│  【パターン2: テナント専用GSI方式】                              │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  PK              │ SK            │ tenantId │ GSI1PK        ││
+│  ├──────────────────┼───────────────┼──────────┼───────────────┤│
+│  │  PROD#P0001      │ INFO          │ T001     │ T001#PROD     ││
+│  │  USER#U0001      │ PROFILE       │ T001     │ T001#USER     ││
+│  │  USER#U0002      │ PROFILE       │ T002     │ T002#USER     ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  利点: 柔軟なクエリ、プラットフォーム管理機能可能               │
+│  欠点: アクセス制御をアプリで実装必要                           │
+│                                                                  │
+│  【アクセス制御実装】                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  class TenantAwareDB:                                       ││
+│  │      def __init__(self, tenant_id: str):                    ││
+│  │          self.tenant_id = tenant_id                         ││
+│  │                                                              ││
+│  │      def get_item(self, pk, sk):                            ││
+│  │          # テナントプレフィックスを自動付与                 ││
+│  │          prefixed_pk = f"TENANT#{self.tenant_id}#{pk}"      ││
+│  │          return self.table.get_item(Key={...})              ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【利用量計測】                                                  │
+│  ・DynamoDB Streams → Lambda → 集計テーブル                     │
+│  ・CloudWatch メトリクスフィルター（tenantIdディメンション）    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 設計課題9-2: 検索機能の拡張
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      設計課題 9-2                                │
-│                マルチテナント決済基盤                            │
+│                   検索機能の拡張                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【課題】                                                        │
-│  複数の加盟店（テナント）がそれぞれ独自のワークフローを          │
-│  設定できる決済基盤を設計してください。                          │
+│  商品の全文検索、ファセット検索、あいまい検索を実現したい。      │
+│  DynamoDB単体では実現困難な検索要件への対応が必要。              │
 │                                                                  │
 │  【要件】                                                        │
-│  ・テナントごとに異なる決済フロー（3DS有無、審査有無等）         │
-│  ・テナントごとのAPI制限（レートリミット）                       │
-│  ・テナント間のデータ分離                                        │
-│  ・共通コンポーネントの再利用                                    │
+│  ・商品名、説明文での全文検索                                    │
+│  ・価格帯、カテゴリ、評価でのファセット検索                      │
+│  ・タイプミスを許容するあいまい検索                              │
+│  ・検索結果のランキング（人気順、関連度順）                      │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. マルチテナントアーキテクチャ図                               │
-│  2. テナント設定管理の設計                                       │
-│  3. 動的ワークフロー生成の仕組み                                 │
+│  1. OpenSearch連携アーキテクチャ                                 │
+│  2. データ同期パイプライン設計                                   │
+│  3. 検索APIの設計                                                │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
-### 発展課題10-1: Express Workflowへの移行
+### 発展課題10-1: グローバルテーブル設計
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      発展課題 10-1                               │
-│               Express Workflowへの移行                           │
+│                グローバルテーブル設計                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【シナリオ】                                                    │
-│  決済処理の大部分（3DS不要の小額決済）を                         │
-│  Express Workflowに移行してコスト削減したい。                    │
+│  MegaMartがアジア太平洋地域（日本、シンガポール、シドニー）に    │
+│  展開することになった。各リージョンでの低レイテンシアクセスと    │
+│  データ整合性を両立する設計が必要。                              │
 │                                                                  │
 │  【技術要件】                                                    │
-│  ・Standard/Expressの使い分け判断                                │
-│  ・Express Workflow用の設計変更                                  │
-│  ・同期実行APIの設計                                             │
-│  ・ログ・監視の設計                                              │
+│  ・各リージョンで50ms以下の応答時間                              │
+│  ・リージョン障害時の自動フェイルオーバー                        │
+│  ・在庫データの整合性保証                                        │
+│  ・コスト効率の良い設計                                          │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. Standard/Express振り分けロジック                             │
-│  2. Express Workflow用CDKコード                                  │
-│  3. コスト比較分析                                               │
+│  1. グローバルテーブルのCloudFormation                           │
+│  2. コンフリクト解決戦略                                         │
+│  3. リージョン間レプリケーション監視                             │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 発展課題10-2: 分散トレーシングの実装
+### 発展課題10-2: コスト最適化分析
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      発展課題 10-2                               │
-│                分散トレーシングの実装                            │
+│                   コスト最適化分析                               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【シナリオ】                                                    │
-│  決済処理全体のレイテンシボトルネックを特定し、                  │
-│  パフォーマンスを改善したい。                                    │
+│  現在On-Demandモードで運用しているが、月額コストが予想を超えた。 │
+│  Provisionedモード + Auto Scalingへの移行を検討中。              │
 │                                                                  │
-│  【技術要件】                                                    │
-│  ・X-Rayによるエンドツーエンドトレーシング                       │
-│  ・カスタムサブセグメントの追加                                  │
-│  ・サービスマップの構築                                          │
-│  ・パフォーマンス分析ダッシュボード                              │
+│  【現状データ】                                                  │
+│  ・月間読み取りリクエスト: 1億回                                 │
+│  ・月間書き込みリクエスト: 2000万回                              │
+│  ・ピーク時間帯: 12:00-14:00, 20:00-23:00                        │
+│  ・ピーク時は平常時の3倍のトラフィック                           │
+│  ・現在のコスト: 月額約20万円                                    │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. X-Ray設定のCDKコード                                         │
-│  2. カスタムアノテーション設計                                   │
-│  3. パフォーマンス分析レポート                                   │
+│  1. コスト分析レポート                                           │
+│  2. 最適な課金モードの提案                                       │
+│  3. Reserved Capacityの検討                                      │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 11. 学習のまとめ
+## 学習のポイント
 
 ### 学習チェックリスト
 
@@ -723,77 +921,65 @@ const reconciliationWorkflow = new sfn.StateMachine(this, 'ReconciliationWorkflo
 │                     学習チェックリスト                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【Step Functions基礎】                                          │
-│  □ Standard/Expressワークフローの違いを説明できる               │
-│  □ ASL（Amazon States Language）を読み書きできる                │
-│  □ 各種ステートタイプの使い分けができる                         │
-│  □ 入出力処理（Path系）を理解した                               │
+│  【基礎知識】                                                    │
+│  □ DynamoDBのキー設計原則を説明できる                           │
+│  □ シングルテーブル設計のメリット・デメリットを理解した         │
+│  □ GSI/LSIの使い分けを説明できる                                │
+│  □ パーティションの概念を理解した                               │
 │                                                                  │
-│  【エラーハンドリング】                                          │
-│  □ Retry設定を適切に設計できる                                  │
-│  □ Catch設定でエラー分岐を実装できる                            │
-│  □ 補償トランザクション（Saga）を設計できる                     │
-│  □ タイムアウト戦略を説明できる                                 │
+│  【実践スキル】                                                  │
+│  □ アクセスパターン分析からキー設計ができる                     │
+│  □ CloudFormationでDynamoDBを構築できる                         │
+│  □ boto3でCRUD操作を実装できる                                  │
+│  □ トランザクションを適切に使用できる                           │
 │                                                                  │
-│  【高度なパターン】                                              │
-│  □ コールバックパターン（waitForTaskToken）を実装できる         │
-│  □ Parallel/Mapステートを使い分けられる                         │
-│  □ ネストされたワークフローを設計できる                         │
-│  □ 動的並列処理を実装できる                                     │
-│                                                                  │
-│  【CDK実装】                                                     │
-│  □ CDKでStep Functionsを構築できる                              │
-│  □ Lambda統合を実装できる                                       │
-│  □ API Gateway統合を実装できる                                  │
-│  □ テスト戦略を確立した                                         │
+│  【最適化】                                                      │
+│  □ DAXの導入判断と設定ができる                                  │
+│  □ ホットパーティション対策を説明できる                         │
+│  □ GSI射影の最適化ができる                                      │
+│  □ コスト最適化の観点で設計できる                               │
 │                                                                  │
 │  【運用】                                                        │
-│  □ CloudWatch Logsでデバッグできる                              │
-│  □ 実行履歴を分析できる                                         │
-│  □ アラートを設定できる                                         │
-│  □ コスト最適化の観点で設計できる                               │
+│  □ DynamoDB Streamsを活用できる                                 │
+│  □ CloudWatchで監視設定ができる                                 │
+│  □ バックアップ・リストア手順を理解した                         │
+│  □ トラブルシューティングの手順を確立した                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Step Functions ベストプラクティス
+### RDBとDynamoDBの思考転換
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│              Step Functions ベストプラクティス                   │
+│                RDB → DynamoDB 思考転換ガイド                     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【設計原則】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. 単一責任の原則                                          ││
-│  │     - 各ステートは1つの責務のみ                             ││
-│  │     - Lambdaは小さく保つ                                    ││
-│  │                                                              ││
-│  │  2. 冪等性の確保                                            ││
-│  │     - 同じ入力で同じ結果                                    ││
-│  │     - リトライ安全な設計                                    ││
-│  │                                                              ││
-│  │  3. 失敗を前提とした設計                                    ││
-│  │     - すべてのタスクにCatch設定                             ││
-│  │     - 適切なリトライ戦略                                    ││
-│  │     - 補償トランザクションの準備                            ││
-│  └─────────────────────────────────────────────────────────────┘│
+│  【RDB的思考】              【DynamoDB的思考】                   │
+│  ────────────────────────────────────────────────────           │
+│  エンティティごとに        → 1つのテーブルに                    │
+│  テーブルを作成              全エンティティを格納                │
 │                                                                  │
-│  【アンチパターン】                                              │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ✗ 長時間実行のLambda（15分以上の処理）                     ││
-│  │  ✗ 大きなペイロード（256KB超）                              ││
-│  │  ✗ リトライなしのタスク                                     ││
-│  │  ✗ 無限ループの可能性があるChoice                           ││
-│  │  ✗ Catch なしのワークフロー                                 ││
-│  └─────────────────────────────────────────────────────────────┘│
+│  正規化して冗長性排除      → 非正規化してアクセス最適化          │
+│                                                                  │
+│  JOINで関連データ取得      → 事前計算・重複保存                  │
+│                                                                  │
+│  スキーマ先行設計          → アクセスパターン先行設計            │
+│                                                                  │
+│  インデックス後付け        → GSI/LSI事前設計必須                 │
+│                                                                  │
+│  トランザクション多用      → トランザクション最小限              │
+│                              （単一アイテム操作推奨）            │
+│                                                                  │
+│  SQLで柔軟なクエリ         → 限定されたクエリパターン            │
+│                              （Query/Scan/GetItem）              │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 12. コスト見積もり
+## 想定コストと削減方法
 
 ### 想定コスト（月額）
 
@@ -802,40 +988,45 @@ const reconciliationWorkflow = new sfn.StateMachine(this, 'ReconciliationWorkflo
 │                      コスト見積もり                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【開発環境】                                                    │
+│  【On-Demandモード（開発環境）】                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │  項目                    │ 数量            │ 月額（USD）    ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Step Functions Standard │ 1,000実行       │ $0.025         ││
-│  │  Lambda                  │ 10,000呼出      │ $0.002         ││
-│  │  API Gateway             │ 1,000リクエスト │ $0.004         ││
-│  │  DynamoDB                │ On-Demand       │ $1.00          ││
-│  │  CloudWatch Logs         │ 1GB             │ $0.50          ││
+│  │  読み取りリクエスト      │ 100万回         │ $0.25          ││
+│  │  書き込みリクエスト      │ 50万回          │ $0.63          ││
+│  │  ストレージ              │ 1GB             │ $0.25          ││
+│  │  DynamoDB Streams        │ 100万回         │ $0.02          ││
+│  │  バックアップ            │ 1GB             │ $0.10          ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $2          ││
+│  │  小計                    │                 │ 約 $1.25       ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【本番環境想定（50万決済/日）】                                 │
+│  【本番環境想定（On-Demand）】                                   │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │  項目                    │ 数量            │ 月額（USD）    ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Step Functions Standard │ 15M状態遷移     │ $375           ││
-│  │  Lambda                  │ 100M呼出        │ $200           ││
-│  │  API Gateway             │ 15Mリクエスト   │ $53            ││
-│  │  DynamoDB                │ On-Demand       │ $150           ││
-│  │  SQS                     │ 10M メッセージ  │ $4             ││
-│  │  CloudWatch Logs         │ 100GB           │ $50            ││
-│  │  X-Ray                   │ トレース        │ $25            ││
+│  │  読み取りリクエスト      │ 1億回           │ $25.00         ││
+│  │  書き込みリクエスト      │ 2000万回        │ $25.00         ││
+│  │  ストレージ              │ 50GB            │ $12.50         ││
+│  │  GSI（3個）              │ 各50GB          │ $37.50         ││
+│  │  DynamoDB Streams        │ 2000万回        │ $0.40          ││
+│  │  DAX（2ノード t3.small） │ 730時間×2       │ $58.40         ││
+│  │  バックアップ（PITR）    │ 100GB           │ $20.00         ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $857        ││
-│  │                          │                 │ (約 ¥128,000)  ││
+│  │  小計                    │                 │ 約 $180        ││
+│  │                          │                 │ (約 ¥27,000)   ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【コスト最適化のポイント】                                      │
-│  ・小額決済はExpress Workflow（1/10のコスト）                    │
-│  ・Lambda ARM64アーキテクチャ（20%削減）                         │
-│  ・CloudWatch Logs保持期間の最適化                               │
-│  ・不要なトレースの削減                                          │
+│  【コスト削減のポイント】                                        │
+│  ・Reserved Capacity: 年間契約で最大76%削減                      │
+│  ・TTLによる自動削除: 不要データの自動クリーンアップ             │
+│  ・GSI射影最適化: KEYS_ONLYまたは必要最小限のINCLUDE            │
+│  ・適切なDAXサイズ選定: キャッシュヒット率の監視                 │
+│                                                                  │
+│  【無料利用枠（AWS Free Tier）】                                 │
+│  ・25GBストレージ                                                │
+│  ・25 WCU / 25 RCU（Provisioned）                                │
+│  ・2億リクエスト/月（DynamoDB Streams）                          │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -845,25 +1036,23 @@ const reconciliationWorkflow = new sfn.StateMachine(this, 'ReconciliationWorkflo
 ## リソースのクリーンアップ
 
 ```bash
-# CDKスタック削除
-cdk destroy PayEasyStack-dev
+# 1. CloudFormationスタック削除
+aws cloudformation delete-stack --stack-name megamart-monitoring-dev
+aws cloudformation delete-stack --stack-name megamart-stream-processor-dev
+aws cloudformation delete-stack --stack-name megamart-dax-dev
+aws cloudformation delete-stack --stack-name megamart-dynamodb-dev
 
-# 確認
-aws cloudformation list-stacks \
-  --query "StackSummaries[?StackName=='PayEasyStack-dev'].StackStatus"
+# 2. 削除完了を待機
+aws cloudformation wait stack-delete-complete --stack-name megamart-dynamodb-dev
 
-# 手動で残ったリソースがないか確認
-aws stepfunctions list-state-machines \
-  --query "stateMachines[?contains(name, 'payeasy')]"
-
-aws lambda list-functions \
-  --query "Functions[?contains(FunctionName, 'payeasy')]"
+# 3. 作業ディレクトリのクリーンアップ
+rm -rf ~/megamart-dynamodb
 
 echo "Cleanup completed!"
 ```
 
 ---
 
-**次の課題**: [課題35: ShopNow Chaos Engineering](exercise-35.md)
+**次の課題**: [課題34: PayEasy Step Functionsワークフロー](exercise-34.md)
 
-**前の課題**: [課題33: MegaMart DynamoDB実践設計](exercise-33.md)
+**前の課題**: [課題32: TaskFlow マルチリージョン構成](exercise-32.md)

@@ -1,4 +1,4 @@
-# 課題26: モバイルアプリのリアルタイム分析基盤構築
+# 課題26: リーガルパートナーズ法律事務所の契約書レビュー支援システム構築
 
 **難易度: 🟡 中級**
 
@@ -9,771 +9,478 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | データ基盤 |
-| 処理タイプ | ストリーミング |
-| 使用IaC | CloudFormation |
-| 想定所要時間 | 5-6時間 |
+| カテゴリ | AI / ドキュメント処理 / リーガルテック |
+| 処理タイプ | バッチ / 非同期 |
+| 使用IaC | CDK (TypeScript) |
+| 所要時間 | 8〜10時間 |
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
-### 企業プロファイル
+### 企業プロフィール
+
+**リーガルパートナーズ法律事務所**は、企業法務を専門とする中堅法律事務所です。
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | ConnectNow株式会社 |
-| **業種** | ソーシャルアプリ（位置情報共有SNS） |
-| **従業員数** | 120名（エンジニア40名） |
-| **DAU** | 50万人 |
-| **月間イベント数** | 10億イベント |
-| **ピーク時スループット** | 10,000イベント/秒 |
+| 業種 | 法律事務所（企業法務特化） |
+| 設立 | 2005年 |
+| 弁護士数 | 20名（パートナー5名、アソシエイト15名） |
+| パラリーガル | 8名 |
+| 事務スタッフ | 7名 |
+| 年間売上 | 8億円 |
+| 主要クライアント | IT企業、製造業、スタートアップ |
+| 主な業務 | 契約書レビュー、M&A、知財、労務 |
 
 ### 現状の課題
 
-```
-ConnectNow株式会社は急成長する位置情報共有SNSを運営しています。
-リアルタイムデータ分析において以下の課題を抱えています：
+契約書レビュー業務が事務所の主要な収益源ですが、増加する案件数に対応しきれず、若手弁護士の残業が常態化しています。また、レビュー品質にばらつきがあり、重要条項の見落としリスクが懸念されています。
 
-1. 分析の遅延
-   - バッチ処理で翌日にならないとデータが見られない
-   - 異常検知が手遅れになることがある
-   - キャンペーン効果をリアルタイムで把握できない
+### 数値で示された問題
 
-2. ユーザー体験の最適化困難
-   - アプリクラッシュの検知が遅い
-   - ユーザー離脱ポイントが特定できない
-   - A/Bテストの結果確認に時間がかかる
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 月間レビュー件数 | 200件 | 350件対応可能に |
+| 平均レビュー時間 | 3時間/件 | 1.5時間/件 |
+| アソシエイト残業 | 月60時間/人 | 月30時間/人以下 |
+| 重要条項見落とし | 年5件程度発生 | ゼロ |
+| クライアント待機時間 | 平均5営業日 | 2営業日以内 |
+| 定型契約書比率 | 65% | - |
 
-3. 運用負荷
-   - ログ検索に時間がかかる
-   - 障害時の原因特定が困難
-   - カスタムダッシュボード作成に工数がかかる
+### レビュー対象の契約書内訳
 
-4. スケーラビリティの限界
-   - ピーク時にログ取りこぼしが発生
-   - イベント種類の追加が困難
-   - ストレージコストが増大
-```
+| 契約書タイプ | 月間件数 | 平均ページ数 | 複雑度 |
+|--------------|----------|--------------|--------|
+| 秘密保持契約（NDA） | 50件 | 5ページ | 低 |
+| 業務委託契約 | 45件 | 15ページ | 中 |
+| ソフトウェアライセンス | 35件 | 20ページ | 中〜高 |
+| 売買基本契約 | 30件 | 25ページ | 中 |
+| 共同開発契約 | 20件 | 30ページ | 高 |
+| その他（賃貸借、雇用等） | 20件 | 10ページ | 低〜中 |
 
-### ビジネス目標
+### 解決したいこと
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| データ反映遅延 | 24時間 | 1分以内 |
-| 異常検知時間 | 数時間後 | 1分以内 |
-| ログ検索時間 | 10分以上 | 10秒以内 |
-| ピーク対応 | 5,000イベント/秒 | 50,000イベント/秒 |
-| 運用工数 | 月40時間 | 月10時間 |
+1. 契約書の自動OCR・テキスト抽出（PDF/スキャン画像対応）
+2. 重要条項（免責、損害賠償、契約解除、秘密保持等）の自動抽出・ハイライト
+3. 自社標準ひな形との差分検出
+4. リスク条項の自動検出とリスクレベル評価
+5. レビューレポートの自動生成
+6. 過去の類似契約書・レビューコメントの検索
 
----
+### 成功指標（KPI）
 
-## 3. 達成目標（ゴール）
-
-### 主要な学習成果
-
-```
-この課題を完了すると、以下ができるようになります：
-
-1. Amazon Kinesisによるストリーム処理
-   - Kinesis Data Streamsでのリアルタイムデータ取り込み
-   - Kinesis Data Firehoseでのデータ配信
-   - シャード管理とスケーリング
-
-2. AWS Lambdaによるストリーム処理
-   - Kinesisトリガーでのリアルタイム処理
-   - データ変換と集計
-   - エラーハンドリングとリトライ
-
-3. Amazon OpenSearch Serviceによる検索・可視化
-   - リアルタイムダッシュボード構築
-   - ログ検索とフィルタリング
-   - アラート設定
-
-4. リアルタイム分析パイプライン
-   - イベント駆動アーキテクチャ
-   - 異常検知の自動化
-   - メトリクス集計
-```
-
-### 合格基準
-
-| 項目 | 基準 |
-|------|------|
-| データ取り込み | Kinesisで1万イベント/秒を処理できること |
-| リアルタイム性 | イベント発生から1分以内にダッシュボードに反映 |
-| 検索 | OpenSearchで10秒以内にログ検索できること |
-| アラート | 異常パターン検知時に自動通知されること |
-| 可視化 | リアルタイムダッシュボードが動作すること |
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| レビュー時間短縮率 | - | 50%以上 | 3ヶ月後 |
+| 重要条項抽出精度 | - | 95%以上 | 2ヶ月後 |
+| リスク検出精度 | - | 90%以上 | 3ヶ月後 |
+| クライアント待機時間 | 5営業日 | 2営業日以内 | 3ヶ月後 |
+| 見落とし件数 | 5件/年 | 0件 | 6ヶ月後 |
 
 ---
 
-## 4. 使用するAWSサービス
+## 達成目標
 
-### コア技術スタック
+この演習で習得できるスキル：
 
-```yaml
-データ取り込み:
-  - Amazon Kinesis Data Streams: リアルタイムストリーミング
-  - Amazon Kinesis Data Firehose: S3/OpenSearchへの配信
-  - Amazon Kinesis Data Analytics: ストリームSQL処理
+### 技術的な学習ポイント
 
-処理・変換:
-  - AWS Lambda: イベント駆動処理
-  - Amazon EventBridge: イベントルーティング
+1. **Amazon Textractの実践活用**
+   - PDF/画像からのテキスト抽出
+   - テーブル・フォーム認識
+   - AnalyzeDocument API
 
-検索・可視化:
-  - Amazon OpenSearch Service: ログ検索・ダッシュボード
-  - Amazon CloudWatch: メトリクス・アラーム
+2. **Amazon Comprehendの活用**
+   - エンティティ認識（日付、組織名、金額）
+   - カスタム分類（契約条項分類）
 
-ストレージ:
-  - Amazon S3: 長期保存
-  - Amazon DynamoDB: リアルタイム集計結果
+3. **Amazon Bedrockによる高度な分析**
+   - 契約書解析のプロンプトエンジニアリング
+   - リスク評価ロジック
+   - レビューレポート生成
 
-通知:
-  - Amazon SNS: アラート通知
-  - AWS Chatbot: Slack連携
-```
+4. **AWS CDK（TypeScript）によるインフラ構築**
+   - スタック設計と分割
+   - L2 Constructの活用
+   - 環境変数管理
+
+5. **Step Functionsによるワークフロー管理**
+   - 複数処理の連携
+   - エラーハンドリング
+   - 並列処理
+
+### 実務で活かせる知識
+
+- ドキュメント処理パイプラインの設計
+- 法務業務におけるAI活用パターン
+- CDKによるモダンなIaC実践
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| ストリーミング取り込み | Kinesis Data Streams | Pub/Sub |
-| ストリーム処理 | Kinesis Data Analytics | Dataflow |
-| 配信 | Kinesis Firehose | Pub/Sub → BigQuery |
-| ログ検索 | OpenSearch | Cloud Logging |
-| ダッシュボード | OpenSearch Dashboards | Looker Studio |
+| OCR/ドキュメント処理 | Amazon Textract | Document AI |
+| NLP | Amazon Comprehend | Natural Language API |
+| 生成AI | Bedrock (Claude 3) | Vertex AI (Gemini) |
+| ワークフロー | Step Functions | Cloud Workflows |
+| IaC | CDK | Deployment Manager / Terraform |
 
 ---
 
-## 5. 前提条件
+## 使用するAWSサービス
 
-### 技術要件
+### メインサービス
 
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
-python --version       # 3.9+
-jq --version           # 1.6+
+| サービス | 役割 | 選定理由 |
+|----------|------|----------|
+| Amazon Textract | PDF/画像からテキスト抽出 | 高精度OCR、テーブル認識対応 |
+| Amazon Comprehend | エンティティ認識、分類 | 日本語対応、カスタム分類可能 |
+| Amazon Bedrock | 契約書分析、リスク評価、レポート生成 | Claude 3の高度な推論能力 |
+| AWS Step Functions | ワークフローオーケストレーション | 複数処理の連携、可視化 |
+| Amazon S3 | 契約書ファイル保存 | 大容量、バージョニング |
+| Amazon DynamoDB | メタデータ・分析結果保存 | 柔軟なスキーマ、高速 |
+| Amazon OpenSearch Service | 過去契約書・コメント検索 | 全文検索、日本語対応 |
 
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+### 補助サービス
 
-### 事前準備
-
-```bash
-# イベントスキーマ定義
-# ConnectNowアプリから送信されるイベント
-
-{
-  "event_id": "uuid",
-  "event_type": "page_view | button_click | location_share | message_send | ...",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "user_id": "user_xxx",
-  "session_id": "session_xxx",
-  "device": {
-    "type": "ios | android",
-    "os_version": "17.0",
-    "app_version": "3.2.1",
-    "device_model": "iPhone 15"
-  },
-  "location": {
-    "latitude": 35.6812,
-    "longitude": 139.7671,
-    "accuracy": 10.5
-  },
-  "properties": {
-    "page_name": "home",
-    "button_id": "share_location",
-    ...
-  }
-}
-```
+| サービス | 役割 |
+|----------|------|
+| AWS Lambda | 各処理ステップの実行 |
+| Amazon SQS | 非同期処理キュー |
+| Amazon SNS | 処理完了・レビュー依頼通知 |
+| Amazon CloudWatch | 監視・ログ・アラート |
+| AWS Secrets Manager | API キー管理 |
 
 ---
 
-## 6. アーキテクチャ図
+## 前提条件
 
-### 全体構成
+### 必要な事前知識
 
-```mermaid
-architecture-beta
-    group clients(cloud)[Mobile Apps / Web]
-    group aws(cloud)[AWS Cloud]
-    group streaming(server)[Streaming Layer] in aws
-    group processing(server)[Processing Layer] in aws
-    group storage(database)[Storage Layer] in aws
-    group monitoring(server)[Monitoring] in aws
+- AWSの基本サービス（S3, Lambda, DynamoDB）
+- TypeScript基礎（型定義、async/await）
+- Node.js環境でのnpm/yarn操作
+- Step Functionsの基本概念
+- 契約書の基本構造（条項、別紙等）
 
-    service ios(internet)[iOS App] in clients
-    service android(internet)[Android App] in clients
-    service web(internet)[Web App] in clients
+### 準備するもの
 
-    service apigw(server)[API Gateway POST /events] in aws
-    service kinesis(server)[Kinesis Data Streams 4 shards] in streaming
+1. **AWSアカウント**
+   - Bedrockのモデルアクセス有効化（Claude 3 Sonnet）
+   - 適切なIAM権限（AdministratorAccess推奨、学習時）
 
-    service lambda_rt(server)[Lambda Real-time Processing] in processing
-    service kda(server)[Kinesis Data Analytics] in processing
-    service firehose_s3(server)[Firehose S3 Archive] in processing
+2. **開発環境**
+   - Node.js 18.x以上
+   - AWS CDK CLI v2（`npm install -g aws-cdk`）
+   - AWS CLI v2（設定済み）
+   - TypeScript（`npm install -g typescript`）
+   - VS Code + AWS Toolkit拡張
 
-    service firehose_os(server)[Firehose OpenSearch] in storage
-    service dynamodb(database)[DynamoDB Real-time KPIs] in storage
-    service s3(disk)[S3 Data Lake] in storage
-    service opensearch(database)[OpenSearch Service] in storage
+3. **テストデータ**
+   - サンプル契約書PDF（3-5件）
+   - 自社標準ひな形（テスト用に作成）
 
-    service cloudwatch(server)[CloudWatch Alarms] in monitoring
-    service sns(server)[SNS Notifications] in monitoring
+### CDK初期設定
 
-    ios:B --> T:apigw
-    android:B --> T:apigw
-    web:B --> T:apigw
-    apigw:B --> T:kinesis
-    kinesis:B --> T:lambda_rt
-    kinesis:B --> T:kda
-    kinesis:B --> T:firehose_s3
-    lambda_rt:B --> T:firehose_os
-    kda:B --> T:dynamodb
-    firehose_s3:B --> T:s3
-    firehose_os:B --> T:opensearch
-    opensearch:R --> L:cloudwatch
-    opensearch:R --> L:sns
-```
+```bash
+# CDK CLIインストール
+npm install -g aws-cdk
 
-**Kinesis Data Streams 設定:**
-- Stream: connectnow-events-stream (4 shards)
-- Partition Key: user_id (均等分散)
-- Retention: 24 hours
+# バージョン確認
+cdk --version
 
-**OpenSearch Service 設定:**
-- Domain: connectnow-analytics
-- Nodes: 3 × r6g.large.search (Multi-AZ)
-- Index Lifecycle: 7日後にdelete
+# プロジェクト作成
+mkdir legal-contract-review && cd legal-contract-review
+cdk init app --language typescript
 
-**OpenSearch Dashboards:**
-- Real-time Metrics Dashboard
-- User Journey Analysis
-- Error Tracking Dashboard
-
-### データフロー
-
-```
-1. イベント送信（ミリ秒）
-   Mobile App → API Gateway → Lambda → Kinesis Data Streams
-
-2. リアルタイム処理（秒単位）
-   Kinesis → Lambda → OpenSearch/DynamoDB
-   - イベント変換・エンリッチメント
-   - リアルタイムカウンター更新
-   - 異常検知
-
-3. 集計処理（分単位）
-   Kinesis → Kinesis Data Analytics
-   - 1分間のウィンドウ集計
-   - DAU/MAU計算
-   - ファネル分析
-
-4. アーカイブ（5分単位）
-   Kinesis → Firehose → S3
-   - Parquet形式で保存
-   - パーティショニング
-   - 長期保存
+# 必要な依存関係追加
+npm install @aws-cdk/aws-lambda-python-alpha
 ```
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## アーキテクチャ概要
 
-### Challenge 1: Kinesisのスループット制限エラー
-
-```
-問題:
-ピーク時にProvisionedThroughputExceededExceptionが頻発。
-イベントの取りこぼしが発生している。
-
-エラーログ:
-ProvisionedThroughputExceededException: Rate exceeded for shard shardId-000000000001
-
-メトリクス:
-- WriteProvisionedThroughputExceeded: 100+/分
-- IncomingRecords: 15,000/秒
-- シャード数: 4
-
-調査項目:
-1. シャードあたりのスループット
-2. パーティションキーの分散
-3. スケーリング設定
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. シャードあたりの制限確認
-# 書き込み: 1MB/秒 または 1,000レコード/秒
-# 読み取り: 2MB/秒 または 5回/秒
-
-# 2. パーティションキーの分散状況確認
-aws kinesis describe-stream --stream-name connectnow-events \
-    --query "StreamDescription.Shards[*].HashKeyRange"
-
-# 3. シャード数を増やす（Provisionedモードの場合）
-aws kinesis update-shard-count \
-    --stream-name connectnow-events \
-    --target-shard-count 8 \
-    --scaling-type UNIFORM_SCALING
-
-# 4. On-Demandモードに変更（推奨）
-aws kinesis update-stream-mode \
-    --stream-arn arn:aws:kinesis:ap-northeast-1:xxx:stream/connectnow-events \
-    --stream-mode-details StreamMode=ON_DEMAND
-
-# 5. プロデューサー側でリトライ実装
-# Exponential backoff + jitterを使用
-
-# 6. パーティションキーの改善
-# user_idだけでなく、ランダムサフィックスを追加
-partition_key = f"{user_id}-{random.randint(0, 9)}"
-```
-</details>
-
-### Challenge 2: OpenSearchへの配信遅延
+### システム全体構成
 
 ```
-問題:
-Firehoseからの配信が遅延し、ダッシュボードに5分以上遅れてデータが反映される。
-
-CloudWatch メトリクス:
-- DeliveryToOpenSearch.Success: 低下
-- DeliveryToOpenSearch.DataFreshness: 300秒以上
-
-OpenSearchログ:
-- BulkRejected エラー多発
-
-調査項目:
-1. OpenSearchのインデックス設定
-2. Firehoseのバッファ設定
-3. OpenSearchのリソース状況
+[弁護士/パラリーガル]
+        ↓ アップロード
+[S3: 入力バケット]
+        ↓ S3イベント
+[Step Functions: ContractReviewWorkflow]
+        │
+        ├─[1] Lambda: ExtractText
+        │     └── Textract: PDF→テキスト変換
+        │
+        ├─[2] Lambda: AnalyzeEntities
+        │     └── Comprehend: エンティティ抽出
+        │
+        ├─[3] Lambda: ClassifyClauses
+        │     └── Bedrock: 条項分類・リスク評価
+        │
+        ├─[4] Lambda: CompareTemplate
+        │     └── Bedrock: ひな形との差分検出
+        │
+        └─[5] Lambda: GenerateReport
+              └── Bedrock: レビューレポート生成
+        │
+        ↓
+[DynamoDB: 分析結果保存]
+[S3: レポート出力]
+[OpenSearch: 検索インデックス]
+        ↓
+[SNS: 完了通知]
+        ↓
+[弁護士にメール通知]
 ```
 
-<details>
-<summary>解決のヒント</summary>
+### 処理フロー詳細
 
-```bash
-# 1. OpenSearchクラスターのメトリクス確認
-aws cloudwatch get-metric-data \
-    --metric-data-queries '[
-        {"Id":"cpu","MetricStat":{"Metric":{"Namespace":"AWS/ES","MetricName":"CPUUtilization","Dimensions":[{"Name":"DomainName","Value":"connectnow-analytics"}]},"Period":300,"Stat":"Average"}},
-        {"Id":"jvm","MetricStat":{"Metric":{"Namespace":"AWS/ES","MetricName":"JVMMemoryPressure","Dimensions":[{"Name":"DomainName","Value":"connectnow-analytics"}]},"Period":300,"Stat":"Average"}}
-    ]' \
-    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
-    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-# 2. インデックス設定の最適化
-curl -XPUT "https://${OPENSEARCH_ENDPOINT}/events-*/_settings" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "index": {
-            "refresh_interval": "30s",
-            "number_of_replicas": 0
-        }
-    }'
-
-# 3. Firehoseバッファ設定の調整
-aws firehose update-destination \
-    --delivery-stream-name connectnow-to-opensearch \
-    --current-delivery-stream-version-id xxx \
-    --destination-id xxx \
-    --amazon-opensearch-destination-update '{
-        "BufferingHints": {
-            "IntervalInSeconds": 60,
-            "SizeInMBs": 5
-        }
-    }'
-
-# 4. OpenSearchのスケールアップ
-aws opensearch update-domain-config \
-    --domain-name connectnow-analytics \
-    --cluster-config '{
-        "InstanceType": "r6g.xlarge.search",
-        "InstanceCount": 5
-    }'
-```
-</details>
-
-### Challenge 3: Lambda関数のコンカレンシー制限
-
-```
-問題:
-Kinesisからのイベント処理Lambdaがスロットリングされている。
-IteratorAgeが増加し続けている。
-
-CloudWatch メトリクス:
-- Throttles: 1000+/分
-- ConcurrentExecutions: 1000（アカウント制限）
-- IteratorAgeMilliseconds: 増加中
-
-調査項目:
-1. Lambda関数の実行時間
-2. コンカレンシー設定
-3. バッチサイズ
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. 現在のコンカレンシー状況確認
-aws lambda get-account-settings
-
-# 2. 予約済みコンカレンシーを設定
-aws lambda put-function-concurrency \
-    --function-name connectnow-stream-processor \
-    --reserved-concurrent-executions 500
-
-# 3. イベントソースマッピングの最適化
-aws lambda update-event-source-mapping \
-    --uuid xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
-    --batch-size 500 \
-    --parallelization-factor 10 \
-    --maximum-batching-window-in-seconds 5
-
-# 4. Lambda関数の最適化
-# - メモリ増加で実行時間短縮
-aws lambda update-function-configuration \
-    --function-name connectnow-stream-processor \
-    --memory-size 1024 \
-    --timeout 300
-
-# 5. コンカレンシー上限緩和申請
-# AWS サポートに上限緩和リクエスト
-
-# 6. 複数のコンシューマーに分散
-# Kinesis Enhanced Fan-Out を使用
-aws kinesis register-stream-consumer \
-    --stream-arn arn:aws:kinesis:...:stream/connectnow-events \
-    --consumer-name processor-1
-```
-</details>
+1. **ドキュメントアップロード**: 弁護士がS3に契約書PDFをアップロード
+2. **テキスト抽出**: TextractでOCR処理、テーブル・フォーム認識
+3. **エンティティ認識**: Comprehendで日付、金額、組織名を抽出
+4. **条項分類**: Bedrockで各条項を分類（免責、損害賠償、解除等）
+5. **リスク評価**: Bedrockでリスク条項を検出・評価
+6. **差分検出**: 標準ひな形との違いを特定
+7. **レポート生成**: 分析結果をレビューレポートとして出力
+8. **通知**: 担当弁護士にメール通知
 
 ---
 
-## 9. 設計考慮ポイント
+## トラブルシューティング課題
 
-### ストリーミングアーキテクチャの選択
+### 問題1: Textractのジョブが失敗
 
-```yaml
-Kinesis Data Streams:
-  特徴:
-    - リアルタイム（ミリ秒レイテンシ）
-    - 順序保証（シャード内）
-    - 複数コンシューマー対応
-  ユースケース:
-    - リアルタイム処理
-    - 複雑なルーティング
-    - カスタム処理ロジック
-
-Kinesis Data Firehose:
-  特徴:
-    - フルマネージド配信
-    - バッファリングで最適化
-    - 変換処理統合
-  ユースケース:
-    - S3/OpenSearch/Redshiftへの配信
-    - シンプルなETL
-    - 運用負荷軽減優先
-
-Amazon MSK (Kafka):
-  特徴:
-    - オープンソース互換
-    - より高いスループット
-    - 柔軟なパーティショニング
-  ユースケース:
-    - 既存Kafkaからの移行
-    - 複雑なイベント処理
-    - マルチリージョン
-
-選択指針:
-- 小〜中規模、AWS統合重視 → Kinesis
-- 大規模、Kafka経験あり → MSK
-- 配信のみ、運用軽減 → Firehose直接
+**症状:**
+```
+Textract job failed: Unable to process the document
+Step Functions実行がExtractTextステップで失敗
 ```
 
-### スケーリング戦略
+**ヒント:**
+1. PDFファイルが破損していないか確認
+2. PDFのページ数制限（3000ページ）を超えていないか
+3. PDFのファイルサイズ制限（500MB）を超えていないか
+4. S3へのアクセス権限があるか
 
-```
-Kinesis Data Streams:
-┌─────────────────────────────────────────────────────┐
-│ Provisioned Mode:                                   │
-│   - シャード数を手動管理                           │
-│   - 1シャード = 1MB/s書込, 2MB/s読込              │
-│   - コスト予測が容易                               │
-│                                                     │
-│ On-Demand Mode:                                     │
-│   - 自動スケーリング（4MB/sまで対応）             │
-│   - 使用量ベース課金                               │
-│   - 予測困難なワークロードに最適                   │
-└─────────────────────────────────────────────────────┘
-
-Lambda コンシューマー:
-┌─────────────────────────────────────────────────────┐
-│ パラメータチューニング:                            │
-│   - BatchSize: 100-10000（大きいほど効率的）       │
-│   - ParallelizationFactor: 1-10（シャードあたり）  │
-│   - MaximumBatchingWindowInSeconds: 0-300秒        │
-│                                                     │
-│ Enhanced Fan-Out:                                   │
-│   - 専用スループット（2MB/s/コンシューマー）       │
-│   - Push型配信（低レイテンシ）                     │
-│   - コンシューマー数に依存しないスケール           │
-└─────────────────────────────────────────────────────┘
-```
-
----
-
-## 10. 発展課題
-
-### 上級チャレンジ1: リアルタイム異常検知 ML
-
+**解決方法:**
 ```python
-# Amazon Kinesis Data Analytics + Random Cut Forest
-# 異常検知のためのSQL
+# Lambdaにバリデーション追加
+def validate_document(bucket, key):
+    response = s3.head_object(Bucket=bucket, Key=key)
+    size_mb = response['ContentLength'] / (1024 * 1024)
 
--- 入力ストリームの集計
-CREATE OR REPLACE STREAM "AGGREGATED_STREAM" (
-    "timestamp" TIMESTAMP,
-    "event_count" INTEGER,
-    "error_count" INTEGER,
-    "unique_users" INTEGER
-);
+    if size_mb > 500:
+        raise ValueError(f"File too large: {size_mb}MB (max 500MB)")
 
-CREATE OR REPLACE PUMP "AGGREGATE_PUMP" AS
-    INSERT INTO "AGGREGATED_STREAM"
-    SELECT STREAM
-        FLOOR(ROWTIME TO MINUTE),
-        COUNT(*),
-        SUM(CASE WHEN "event_type" = 'error' THEN 1 ELSE 0 END),
-        COUNT(DISTINCT "user_id")
-    FROM "SOURCE_SQL_STREAM"
-    GROUP BY FLOOR(ROWTIME TO MINUTE);
-
--- Random Cut Forest による異常検知
-CREATE OR REPLACE STREAM "ANOMALY_STREAM" (
-    "timestamp" TIMESTAMP,
-    "event_count" INTEGER,
-    "error_count" INTEGER,
-    "anomaly_score" DOUBLE
-);
-
-CREATE OR REPLACE PUMP "ANOMALY_PUMP" AS
-    INSERT INTO "ANOMALY_STREAM"
-    SELECT STREAM
-        "timestamp",
-        "event_count",
-        "error_count",
-        ANOMALY_SCORE
-    FROM TABLE(
-        RANDOM_CUT_FOREST(
-            CURSOR(SELECT STREAM * FROM "AGGREGATED_STREAM"),
-            100,  -- numberOfTrees
-            256,  -- subSampleSize
-            100000,  -- timeDecay
-            1  -- shingleSize
-        )
-    )
-    WHERE ANOMALY_SCORE > 2.0;  -- 異常スコアしきい値
+    if not key.lower().endswith('.pdf'):
+        raise ValueError(f"Unsupported file type: {key}")
 ```
 
-### 上級チャレンジ2: リアルタイムレコメンデーション
+### 問題2: Bedrockのレスポンスが不完全
 
+**症状:**
+```
+JSONパースエラーが発生
+レスポンスが途中で切れている
+```
+
+**ヒント:**
+1. max_tokensの設定を確認
+2. 入力テキストが長すぎないか
+3. プロンプトが明確か
+
+**解決方法:**
 ```python
-# Lambda + DynamoDB でリアルタイムレコメンデーション
+# max_tokens増加
+body = json.dumps({
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 8192,  # 4096から増加
+    "messages": [...]
+})
 
-import boto3
-from collections import Counter
-
-dynamodb = boto3.resource('dynamodb')
-user_events_table = dynamodb.Table('user-recent-events')
-recommendations_table = dynamodb.Table('user-recommendations')
-
-def process_event_for_recommendation(event_data):
-    """イベントに基づいてリアルタイムレコメンデーションを更新"""
-    user_id = event_data['user_id']
-    event_type = event_data['event_type']
-
-    if event_type == 'content_view':
-        content_id = event_data['properties']['content_id']
-        content_category = event_data['properties']['category']
-
-        # 最近のビュー履歴を更新
-        user_events_table.update_item(
-            Key={'user_id': user_id},
-            UpdateExpression='SET recent_views = list_append(if_not_exists(recent_views, :empty), :content)',
-            ExpressionAttributeValues={
-                ':content': [{'content_id': content_id, 'category': content_category}],
-                ':empty': []
-            }
-        )
-
-        # カテゴリ別興味スコアを更新
-        user_events_table.update_item(
-            Key={'user_id': user_id},
-            UpdateExpression='ADD category_scores.#cat :inc',
-            ExpressionAttributeNames={'#cat': content_category},
-            ExpressionAttributeValues={':inc': 1}
-        )
-
-        # リアルタイムレコメンデーション生成
-        generate_recommendations(user_id)
-
-
-def generate_recommendations(user_id):
-    """ユーザーの行動履歴に基づいてレコメンデーションを生成"""
-    # ユーザーの興味カテゴリを取得
-    response = user_events_table.get_item(Key={'user_id': user_id})
-    user_data = response.get('Item', {})
-    category_scores = user_data.get('category_scores', {})
-
-    if not category_scores:
-        return
-
-    # 上位カテゴリを特定
-    top_categories = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-
-    # 各カテゴリの人気コンテンツを取得（別テーブルから）
-    recommendations = []
-    for category, score in top_categories:
-        popular_content = get_popular_content(category)
-        recommendations.extend(popular_content[:5])
-
-    # レコメンデーションを保存
-    recommendations_table.put_item(
-        Item={
-            'user_id': user_id,
-            'recommendations': recommendations[:10],
-            'updated_at': datetime.utcnow().isoformat()
-        }
-    )
+# 入力テキストの切り詰め
+full_text = full_text[:25000]  # Claude 3の入力制限に合わせる
 ```
 
-### 上級チャレンジ3: マルチリージョンストリーミング
+### 問題3: Step Functions実行タイムアウト
 
-```yaml
-# グローバル配信アーキテクチャ
+**症状:**
+```
+States.Timeout エラー
+特定のステップで30分以上かかる
+```
 
-Region: ap-northeast-1 (Tokyo)
-  Kinesis Stream: connectnow-events-tokyo
-  Consumers:
-    - OpenSearch (Tokyo)
-    - S3 Archive
-    - Cross-Region Replication → us-east-1
+**ヒント:**
+1. 各Lambdaのタイムアウト設定を確認
+2. Textractの処理時間が長いPDFかどうか
+3. Step Functionsのタイムアウト設定
 
-Region: us-east-1 (Virginia)
-  Kinesis Stream: connectnow-events-virginia
-  Consumers:
-    - OpenSearch (Virginia)
-    - Aggregated Stream → Tokyo (メトリクス統合)
+**解決方法:**
+```typescript
+// CDKでタイムアウト延長
+const stateMachine = new sfn.StateMachine(this, 'ContractReviewWorkflow', {
+  timeout: cdk.Duration.hours(1),  // 30分から1時間に延長
+  // ...
+});
 
-# Lambda クロスリージョンレプリケーション
-def replicate_to_region(event, target_region, target_stream):
-    kinesis = boto3.client('kinesis', region_name=target_region)
-
-    records = []
-    for record in event['Records']:
-        records.append({
-            'Data': base64.b64decode(record['kinesis']['data']),
-            'PartitionKey': record['kinesis']['partitionKey']
-        })
-
-    kinesis.put_records(StreamName=target_stream, Records=records)
+// Lambda個別のタイムアウトも延長
+const extractTextFn = new lambda.Function(this, 'ExtractTextFunction', {
+  timeout: cdk.Duration.minutes(10),  // 5分から10分に
+  // ...
+});
 ```
 
 ---
 
-## 11. コスト見積もり
+## 設計の考察ポイント
 
-### 月額コスト概算
+### 1. なぜStep Functionsで処理を分割したのか？
 
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| Kinesis Data Streams | On-Demand 10M records/day | $35 |
-| Kinesis Firehose | 1TB配信/月 | $35 |
-| Lambda | 100M invocations | $20 |
-| OpenSearch | 3 × r6g.large + 100GB | $450 |
-| DynamoDB | 10M writes/month | $15 |
-| CloudWatch | ログ10GB + メトリクス | $30 |
-| S3 | 500GB アーカイブ | $12 |
-| **合計** | | **約 $597/月** |
+**考察ポイント:**
+- 単一Lambdaで全処理を行う場合の問題（タイムアウト、デバッグ困難）
+- 処理の可視化とモニタリング
+- 部分的な再実行の容易さ
+- 各ステップの独立したスケーリング
 
-### スケール時の見積もり
+### 2. CDKを選択した理由は？
 
-```
-DAU 500万人（10倍）の場合:
+**考察ポイント:**
+- TypeScriptによる型安全性
+- プログラマブルなインフラ定義
+- CloudFormationとの比較
+- Terraformとの比較（チームのスキルセット）
 
-- Kinesis: 約 $350/月（On-Demand自動スケール）
-- Lambda: 約 $200/月
-- OpenSearch: 約 $1,200/月（スケールアップ必要）
-- DynamoDB: 約 $150/月
-- その他: 約 $100/月
+### 3. 契約書の機密性にどう対応するか？
 
-合計: 約 $2,000/月
+**考察ポイント:**
+- S3の暗号化（SSE-S3 vs SSE-KMS）
+- VPCエンドポイントの利用
+- アクセスログの監査
+- データ保持期間とライフサイクル
+
+### 4. AIの判断をどこまで信頼するか？
+
+**考察ポイント:**
+- AIはあくまで支援ツール
+- 最終判断は弁護士が行う設計
+- 信頼度スコアの活用
+- フォールバック（人間へのエスカレーション）
+
+### 5. 本番環境でのスケーラビリティは？
+
+**考察ポイント:**
+- Lambda同時実行制限
+- Textractのスロットリング
+- Bedrockのレート制限
+- SQSによるバッファリングの必要性
+
+---
+
+## 発展課題（オプション）
+
+### 1. OpenSearchによる類似契約検索
+- 過去の契約書をベクトル化して保存
+- 類似契約書の検索機能
+- 過去のレビューコメント参照
+
+### 2. カスタムComprehend分類器
+- 契約条項に特化した分類モデル
+- 自社の過去データで学習
+- 精度の継続的改善
+
+### 3. Webフロントエンド構築
+- React + Amplifyでのダッシュボード
+- 分析結果の可視化
+- 承認ワークフローの実装
+
+### 4. 多言語対応
+- 英文契約書の処理
+- Amazon Translateとの連携
+- 言語自動検出
+
+### 5. バージョン管理と差分追跡
+- 契約書改訂版の差分表示
+- 変更履歴の追跡
+- 承認ワークフローとの連携
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（月間200件処理想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| Amazon Textract | 200件 × 20ページ = 4,000ページ | $6 |
+| Amazon Comprehend | 200件 × 50KBテキスト = 10MB | $2 |
+| Amazon Bedrock | 200件 × 4回呼び出し × 約5000トークン | $40 |
+| AWS Lambda | 200件 × 5関数 × 平均60秒 | $5 |
+| AWS Step Functions | 200件 × 7ステート遷移 | $0.04 |
+| Amazon S3 | 50GB保存 + リクエスト | $2 |
+| Amazon DynamoDB | オンデマンド | $2 |
+| Amazon SNS | 200件通知 | $0.01 |
+| CloudWatch | ログ・メトリクス | $5 |
+| **合計** | | **約$62（約9,300円）** |
+
+### コスト削減のポイント
+
+1. **Bedrockモデルの最適化**
+   - 簡単な分類はClaude 3 Haikuで
+   - 複雑な分析のみSonnet使用
+   - → 最大40%削減
+
+2. **Textractの使い分け**
+   - テキストPDFはDetectDocumentText（安価）
+   - スキャンPDFのみAnalyzeDocument
+   - → 最大50%削減
+
+3. **キャッシング**
+   - 同じテンプレートとの比較結果をキャッシュ
+   - 類似契約のパターンマッチング
+
+4. **バッチ処理**
+   - 夜間バッチで処理
+   - Spot Instanceの活用（ECS移行時）
+
+### リソース削除手順
+
+```bash
+# CDKで全削除
+cdk destroy -c environment=dev
+
+# S3バケットが残る場合
+INPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`InputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
+OUTPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`OutputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
+
+if [ -n "$INPUT_BUCKET" ]; then
+  aws s3 rm s3://${INPUT_BUCKET} --recursive
+fi
+if [ -n "$OUTPUT_BUCKET" ]; then
+  aws s3 rm s3://${OUTPUT_BUCKET} --recursive
+fi
+
+# 再度destroy
+cdk destroy -c environment=dev --force
 ```
 
 ---
 
-## 12. 学習のポイント
+## 学習のポイント
 
-### 今回学んだこと
+### 1. ドキュメント処理パイプラインの設計
+Textract（OCR）→ Comprehend（NLP）→ Bedrock（生成AI）の組み合わせは、ドキュメント処理の典型的なパターン。各サービスの得意分野を理解して使い分ける。
 
-```
-1. Kinesisストリーミング
-   □ Data Streamsでのリアルタイムデータ取り込み
-   □ シャード管理とスケーリング
-   □ Firehoseでの自動配信
+### 2. AWS CDKの実践
+TypeScriptでインフラを定義することで、型チェック、コード補完、ユニットテストが可能になる。CloudFormationの直接記述と比べて生産性が大幅に向上する。
 
-2. Lambda ストリーム処理
-   □ Kinesisトリガーの設定
-   □ バッチ処理とエラーハンドリング
-   □ DynamoDBとの連携
+### 3. Step Functionsによるワークフロー管理
+複数のLambdaを連携させる場合、Step Functionsを使うことで処理の可視化、エラーハンドリング、再実行が容易になる。
 
-3. OpenSearch Service
-   □ インデックス設計とマッピング
-   □ ダッシュボード作成
-   □ アラート設定
+### 4. 法務AIの設計原則
+AIは「支援ツール」として位置づけ、最終判断は専門家（弁護士）が行う設計にする。これは法務に限らず、専門性が求められる領域でのAI活用の基本原則。
 
-4. リアルタイム分析パターン
-   □ ウィンドウ集計
-   □ 異常検知
-   □ イベント駆動アーキテクチャ
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (Kinesis + OpenSearch) | GCP (Pub/Sub + BigQuery) |
-|------|---------------------------|--------------------------|
-| リアルタイム性 | ミリ秒〜秒 | 秒〜分 |
-| クエリ | OpenSearch (Elasticsearch) | BigQuery SQL |
-| 可視化 | OpenSearch Dashboards | Looker Studio |
-| 運用複雑さ | 中〜高 | 低〜中 |
-| コスト | 使用量ベース | ストレージ+クエリ |
-
-### 次のステップ
-
-```
-1. 発展学習:
-   - Amazon MSK でのKafka運用
-   - Amazon Managed Grafana での可視化
-   - AWS Glue Streaming ETL
-
-2. 実務応用:
-   - A/Bテスト分析基盤
-   - カスタマージャーニー分析
-   - 不正検知システム
-
-3. 認定資格:
-   - AWS Certified Data Analytics - Specialty
-   - AWS Certified Solutions Architect - Professional
-```
+### 5. セキュリティと機密性への配慮
+契約書は機密情報を含むため、暗号化、アクセス制御、監査ログを最初から設計に組み込む。特に法律事務所では守秘義務が重要。

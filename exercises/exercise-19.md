@@ -1,4 +1,4 @@
-# 課題19: StreamNow株式会社の動画エンコーディングパイプライン構築
+# 課題19: 配車サービスの統合監視基盤構築
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,452 +9,1014 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | バッチ処理 / メディア / コンテンツ配信 |
-| 処理タイプ | バッチ / イベント駆動 |
+| カテゴリ | オブザーバビリティ・監視 |
+| 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
-| 所要時間 | 5〜6時間 |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
-## シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロフィール
-
-**StreamNow株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | 動画配信（OTT） |
-| 設立 | 2019年 |
-| 従業員数 | 80名 |
-| 月間アクティブユーザー | 50万人 |
-| 有料会員数 | 30万人 |
-| 月商 | 3億円 |
-| コンテンツ数 | 2,000本 |
-| 月間新規コンテンツ | 500本 |
-| 対応デバイス | Web、iOS、Android、Smart TV、Fire TV |
+### 企業プロファイル
+- **企業名**: RideShare株式会社
+- **業種**: モビリティ・配車サービス
+- **規模**: 従業員200名、エンジニア40名
+- **サービス規模**: 月間配車100万件、15個のマイクロサービス
+- **現状インフラ**: AWS上でEKS + マイクロサービスアーキテクチャ
 
 ### 現状の課題
+RideShare株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
 
-コンテンツ制作会社から納品されるマスター動画（4K ProRes形式）を、各デバイス向けに手動でエンコードしています。エンコード作業がボトルネックとなり、コンテンツの配信開始が遅延しています。
+1. **障害検知の遅延**
+   - ユーザーからの問い合わせで障害に気づくことが多い
+   - どのサービスが原因か特定に時間がかかる
+   - 夜間・休日の検知が特に遅い
 
-### 数値で示された問題
+2. **トラブルシュートの困難さ**
+   - 分散トレーシングがなく、リクエストの流れが追えない
+   - ログが各サービスに分散し、相関分析ができない
+   - パフォーマンス問題のボトルネック特定が困難
 
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 月間エンコード動画数 | 500本 | 変わらず |
-| 1本あたりエンコード時間 | 4時間 | 30分以内 |
-| エンコード担当者 | 2名専任 | 0名（自動化） |
-| 配信開始リードタイム | 48時間 | 4時間以内 |
-| エンコードエラー率 | 5% | 1%以下 |
-| 出力フォーマット数 | 8種類 | 12種類以上 |
+3. **監視の属人化**
+   - 各チームが独自の監視ツールを使用
+   - アラートルールが統一されていない
+   - SLI/SLO が定義されていない
 
-### 現状のエンコードワークフロー
-
+### ビジネス要件
 ```
-1. 制作会社からマスター動画をHDD/クラウドで受領
-2. 担当者がローカルPCにダウンロード（30分〜1時間）
-3. Adobe Media Encoderで各フォーマットにエンコード（2〜3時間）
-4. 目視で品質チェック（30分）
-5. CDNにアップロード（30分）
-6. メタデータ登録
-→ 合計: 4〜5時間/本
+機能要件:
+- 全マイクロサービスのメトリクス統合監視
+- 分散トレーシングによるリクエスト追跡
+- 統合ログ管理と検索
+- SLI/SLO ダッシュボードの構築
+
+非機能要件:
+- 障害検知から通知まで1分以内
+- メトリクス保持期間：15ヶ月
+- ログ検索レスポンス：5秒以内
+- ダッシュボードリフレッシュ：10秒間隔
 ```
-
-### 必要な出力フォーマット
-
-| プロファイル | 解像度 | ビットレート | 対象デバイス |
-|--------------|--------|--------------|--------------|
-| 4K UHD | 3840×2160 | 15Mbps | 4K TV |
-| 1080p High | 1920×1080 | 8Mbps | Smart TV, PC |
-| 1080p | 1920×1080 | 5Mbps | PC, Tablet |
-| 720p | 1280×720 | 3Mbps | Mobile WiFi |
-| 480p | 854×480 | 1.5Mbps | Mobile 4G |
-| 360p | 640×360 | 0.8Mbps | Mobile 3G |
-| Audio Only | - | 128kbps | バックグラウンド再生 |
-
-+ HLS/DASH 両対応
-
-### 解決したいこと
-
-1. マスター動画アップロード後の自動エンコード
-2. 複数フォーマットへの並列エンコード
-3. 配信開始リードタイムの大幅短縮
-4. エンコード品質の一貫性確保
-5. 自動品質チェック・エラー通知
 
 ### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| エンコード時間/本 | 4時間 | 30分以内 | 1ヶ月後 |
-| 配信リードタイム | 48時間 | 4時間以内 | 1ヶ月後 |
-| 自動化率 | 0% | 95%以上 | 2ヶ月後 |
-| エンコードエラー率 | 5% | 1%以下 | 1ヶ月後 |
-| 人的工数 | 160時間/月 | 10時間/月 | 2ヶ月後 |
-
----
-
-## 達成目標
-
-この演習で習得できるスキル：
-
-### 技術的な学習ポイント
-
-1. **AWS Elemental MediaConvertの実践活用**
-   - ジョブテンプレートの設計
-   - 出力グループ（HLS, DASH）の設定
-   - カスタムプリセット作成
-
-2. **AWS Batchによる大規模バッチ処理**
-   - コンピューティング環境の設計
-   - ジョブ定義とジョブキュー
-   - スポットインスタンス活用
-
-3. **S3イベント駆動アーキテクチャ**
-   - S3 → Lambda → MediaConvert
-   - Step Functionsによるワークフロー
-
-4. **CloudFrontによるコンテンツ配信**
-   - HLS/DASH配信設定
-   - キャッシュ戦略
-
-### 実務で活かせる知識
-
-- 動画配信プラットフォームの構築
-- メディア処理パイプラインの設計
-- コスト最適化（スポットインスタンス）
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| 動画変換 | MediaConvert | Transcoder API |
-| バッチ処理 | AWS Batch | Cloud Run Jobs / Batch |
-| CDN | CloudFront | Cloud CDN |
-| ストレージ | S3 | Cloud Storage |
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 平均検知時間（MTTD） | 30分 | 1分 |
+| 平均復旧時間（MTTR） | 2時間 | 15分 |
+| 障害原因特定時間 | 45分 | 5分 |
+| SLO 達成率 | 測定なし | 99.9% |
+| アラート精度（真陽性率） | 40% | 90% |
 
 ---
 
-## 使用するAWSサービス
+## 3. 学習目標
+
+### 本課題で習得するスキル
+
+```
+1. メトリクス監視（理解度：詳細）
+   - CloudWatch メトリクス・アラーム設定
+   - Amazon Managed Prometheus（AMP）
+   - カスタムメトリクスの設計
+
+2. 分散トレーシング（理解度：実装）
+   - AWS X-Ray によるトレース収集
+   - サービスマップの活用
+   - パフォーマンス分析
+
+3. 統合ダッシュボード（理解度：実装）
+   - Amazon Managed Grafana（AMG）
+   - CloudWatch ダッシュボード
+   - SLI/SLO 可視化
+
+4. ログ管理（理解度：基礎）
+   - CloudWatch Logs Insights
+   - ログの構造化と相関付け
+```
+
+### GCPエンジニア向け補足
+```
+GCP → AWS マッピング:
+- Cloud Monitoring → CloudWatch
+- Cloud Trace → X-Ray
+- Cloud Logging → CloudWatch Logs
+- Google Cloud Managed Prometheus → Amazon Managed Prometheus
+- (Grafana Cloud) → Amazon Managed Grafana
+
+主な違い:
+1. CloudWatch: メトリクス・ログ・トレースの統合サービス
+   （GCPは3つの別サービス）
+
+2. X-Ray: AWS サービスとの深い統合
+   （Lambda, API Gateway, ECS などの自動計装）
+
+3. AMP/AMG: オープンソース互換のマネージドサービス
+   （既存の Prometheus/Grafana 資産を活用可能）
+
+4. Container Insights: EKS/ECS の包括的な監視
+   （GKE のモニタリングに相当）
+```
+
+---
+
+## 4. 使用するAWSサービス
 
 ### メインサービス
-
-| サービス | 役割 | 選定理由 |
+| サービス | 役割 | 使用機能 |
 |----------|------|----------|
-| AWS Elemental MediaConvert | 動画エンコード | 高品質、多フォーマット対応 |
-| AWS Batch | 大規模並列処理（前処理用） | スポット対応、コスト効率 |
-| Amazon S3 | 入力/出力ストレージ | 大容量、イベント通知 |
-| AWS Lambda | オーケストレーション | イベント駆動 |
-| AWS Step Functions | ワークフロー管理 | 可視化、エラー処理 |
-| Amazon CloudFront | コンテンツ配信 | グローバル配信 |
+| **Amazon CloudWatch** | メトリクス・ログ監視 | Metrics, Alarms, Logs Insights, Container Insights |
+| **AWS X-Ray** | 分散トレーシング | トレース収集、サービスマップ、分析 |
+| **Amazon Managed Grafana** | ダッシュボード | 可視化、アラート、データソース統合 |
+| **Amazon Managed Prometheus** | メトリクス収集 | Prometheus互換メトリクス |
 
-### 補助サービス
-
-| サービス | 役割 |
+### サポートサービス
+| サービス | 用途 |
 |----------|------|
-| Amazon DynamoDB | ジョブ状態管理 |
-| Amazon SNS | 完了/エラー通知 |
-| Amazon CloudWatch | 監視・ログ |
-| AWS Secrets Manager | APIキー管理 |
+| **Amazon EKS** | マイクロサービス実行基盤 |
+| **AWS Distro for OpenTelemetry** | テレメトリ収集 |
+| **Amazon SNS** | アラート通知 |
+| **AWS Lambda** | アラートアクション |
+| **Amazon S3** | ログアーカイブ |
+
+### アーキテクチャ図
+```mermaid
+flowchart TB
+    subgraph RideShare["RideShare 統合監視基盤"]
+        subgraph EKS["Amazon EKS Cluster"]
+            subgraph Services["Microservices"]
+                Rider["Rider<br/>Service"]
+                Driver["Driver<br/>Service"]
+                Matching["Matching<br/>Service"]
+                Payment["Payment<br/>Service"]
+                Pricing["Pricing<br/>Service"]
+            end
+            subgraph ADOT["AWS Distro for OpenTelemetry"]
+                TracesCol["Traces<br/>Collector"]
+                MetricsCol["Metrics<br/>Collector"]
+                LogsCol["Logs<br/>Collector"]
+            end
+        end
+
+        subgraph Storage["データ保存層"]
+            subgraph XRay["AWS X-Ray"]
+                ServiceMap["Service Map"]
+                Traces["Traces"]
+            end
+            subgraph AMP["Amazon Managed<br/>Prometheus"]
+                TSDB["Time Series DB"]
+            end
+            subgraph CWLogs["CloudWatch Logs"]
+                LogsInsights["Logs Insights"]
+            end
+        end
+
+        subgraph Grafana["Amazon Managed Grafana"]
+            SLISLO["SLI/SLO<br/>Dashboard"]
+            ServiceHealth["Service<br/>Health"]
+            InfraDash["Infrastructure<br/>Dashboard"]
+            AlertRules["Alert Rules<br/>P99 Latency > 500ms → PagerDuty<br/>Error Rate > 1% → Slack"]
+        end
+
+        subgraph Notifications["Notifications"]
+            PagerDuty["PagerDuty"]
+            Slack["Slack"]
+            Email["Email"]
+        end
+    end
+
+    Services --> ADOT
+    TracesCol --> XRay
+    MetricsCol --> AMP
+    LogsCol --> CWLogs
+    XRay --> Grafana
+    AMP --> Grafana
+    CWLogs --> Grafana
+    Grafana --> Notifications
+```
 
 ---
 
-## 前提条件
+## 5. 前提条件と事前準備
 
-### 必要な事前知識
-
-- AWSの基本操作（S3, Lambda）
-- 動画フォーマットの基本（コーデック、コンテナ）
-- HLS/DASHの基本概念
-
-### 準備するもの
-
-1. **AWSアカウント**
-   - MediaConvertへのアクセス権限
-   - 適切なIAM権限
-
-2. **開発環境**
-   - AWS CLI v2
-   - Python 3.9以上
-
-3. **テストデータ**
-   - サンプル動画ファイル（MP4, 1分程度）
-
----
-
-## アーキテクチャ概要
-
-### システム全体構成
-
-```
-[制作会社]
-    ↓ マスター動画アップロード
-[S3: 入力バケット]
-    ↓ S3イベント
-[Lambda: トリガー]
-    ↓
-[Step Functions: エンコードワークフロー]
-    ├── [MediaConvert: 動画エンコード]
-    │     ├── HLS出力（7プロファイル）
-    │     └── DASH出力（7プロファイル）
-    │
-    ├── [Lambda: サムネイル生成]
-    │
-    └── [Lambda: メタデータ更新]
-            ↓
-[S3: 出力バケット]
-    ↓
-[CloudFront: CDN配信]
-    ↓
-[視聴者]
-
-[DynamoDB: ジョブ状態管理]
-[SNS: 完了/エラー通知]
-```
-
-### エンコードフロー
-
-1. **アップロード**: 制作会社がS3にマスター動画をアップロード
-2. **トリガー**: S3イベントでLambdaが起動
-3. **ワークフロー**: Step Functionsで処理開始
-4. **エンコード**: MediaConvertで複数フォーマットに変換
-5. **後処理**: サムネイル生成、メタデータ登録
-6. **通知**: 完了通知を送信
-7. **配信**: CloudFront経由で配信開始
-
----
-
-## トラブルシューティング課題
-
-### 問題1: MediaConvertジョブがエラー終了
-
-**症状:**
-```
-MediaConvert job status: ERROR
-"Unable to open input file"
-```
-
-**ヒント:**
-1. 入力ファイルのS3パスが正しいか確認
-2. MediaConvertロールのS3権限を確認
-3. 入力ファイルが破損していないか確認
-
-**解決方法:**
+### 必要な環境
 ```bash
-# IAMロールのポリシー確認
-aws iam list-attached-role-policies --role-name StreamNowMediaConvertRole
+# AWS CLI v2
+aws --version  # 2.x以上
 
-# S3アクセステスト
-aws s3 ls s3://streamnow-master-${ACCOUNT_ID}/uploads/
+# kubectl
+kubectl version --client
 
-# MediaConvert用の追加ポリシー
-aws iam attach-role-policy \
-  --role-name StreamNowMediaConvertRole \
-  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+# Helm
+helm version  # 3.x以上
+
+# eksctl
+eksctl version
+
+# jq
+jq --version
 ```
 
-### 問題2: HLSマニフェストが正しく生成されない
-
-**症状:**
+### AWSアカウント要件
 ```
-index.m3u8が存在しない
-プレイヤーで再生できない
+- EKS クラスターが作成済み、または作成可能
+- IAM 権限：EKS管理、CloudWatch管理、Prometheus管理、Grafana管理
+- SSO/IAM Identity Center（Grafana認証用、オプション）
 ```
 
-**ヒント:**
-1. OutputGroupSettingsのDestinationを確認
-2. HlsGroupSettingsの設定を確認
-3. 出力ファイル一覧を確認
+### 事前準備スクリプト
+```bash
+#!/bin/bash
+# setup-observability-baseline.sh
 
-**解決方法:**
+# 変数設定
+CLUSTER_NAME="rideshare-cluster"
+REGION="ap-northeast-1"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# ディレクトリ構造の作成
+mkdir -p rideshare-observability/{kubernetes,grafana,alerting,sample-app}
+cd rideshare-observability
+
+# EKS クラスターの確認（存在しない場合は作成）
+echo "=== Checking EKS Cluster ==="
+if ! eksctl get cluster --name $CLUSTER_NAME --region $REGION 2>/dev/null; then
+    echo "Creating EKS cluster..."
+    cat > cluster-config.yaml << EOF
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${CLUSTER_NAME}
+  region: ${REGION}
+
+managedNodeGroups:
+  - name: ng-1
+    instanceType: t3.medium
+    desiredCapacity: 3
+    minSize: 2
+    maxSize: 5
+    iam:
+      withAddonPolicies:
+        cloudWatch: true
+        xRay: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
+iam:
+  withOIDC: true
+EOF
+    eksctl create cluster -f cluster-config.yaml
+fi
+
+# kubeconfig の更新
+aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
+
+# 現在のコンテキスト確認
+kubectl config current-context
+kubectl get nodes
+```
+
+---
+
+## 6. アーキテクチャ設計
+
+### 監視設計（Three Pillars of Observability）
+```yaml
+# observability-design.yaml
+observability:
+  metrics:
+    sources:
+      - cloudwatch_container_insights  # インフラメトリクス
+      - prometheus_scraping            # アプリケーションメトリクス
+      - custom_metrics                 # ビジネスメトリクス
+    storage:
+      - amazon_managed_prometheus      # 長期保存（13ヶ月）
+      - cloudwatch_metrics             # AWS統合メトリクス
+    key_metrics:
+      # RED メトリクス（サービス）
+      - request_rate          # リクエストレート
+      - error_rate            # エラー率
+      - duration              # レイテンシ
+      # USE メトリクス（リソース）
+      - utilization           # CPU/Memory使用率
+      - saturation            # キュー長/スレッドプール
+      - errors                # リソースエラー
+
+  traces:
+    collector: aws_xray
+    sampling:
+      default: 0.05           # 5% サンプリング
+      errors: 1.0             # エラーは100%収集
+      slow_requests: 1.0      # 遅いリクエストは100%収集
+    correlation:
+      - trace_id → logs
+      - trace_id → metrics
+
+  logs:
+    collector: fluent_bit
+    storage: cloudwatch_logs
+    structure:
+      format: json
+      fields:
+        - timestamp
+        - level
+        - service
+        - trace_id
+        - span_id
+        - message
+        - metadata
+    retention:
+      hot: 7_days
+      warm: 30_days
+      cold: 365_days
+```
+
+### SLI/SLO 定義
+```yaml
+# sli-slo-definitions.yaml
+services:
+  rider_service:
+    slis:
+      availability:
+        description: "サービスが正常にリクエストを処理できる割合"
+        metric: "sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+        unit: percentage
+      latency:
+        description: "リクエストのP99レイテンシ"
+        metric: "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"
+        unit: seconds
+      error_rate:
+        description: "エラーリクエストの割合"
+        metric: "sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+        unit: percentage
+    slos:
+      availability:
+        target: 99.9%
+        window: 30d
+        budget: 43.2min  # 月間ダウンタイム許容
+      latency_p99:
+        target: 500ms
+        window: 30d
+      error_rate:
+        target: 0.1%
+        window: 30d
+
+  matching_service:
+    slis:
+      availability:
+        metric: "..."
+      latency:
+        metric: "..."
+      match_success_rate:
+        description: "配車マッチング成功率"
+        metric: "sum(rate(matching_success_total[5m])) / sum(rate(matching_attempts_total[5m]))"
+    slos:
+      availability:
+        target: 99.95%
+      latency_p99:
+        target: 200ms
+      match_success_rate:
+        target: 95%
+```
+
+---
+
+## 8. トラブルシューティング課題
+
+### 課題1: Prometheus メトリクスが AMP に書き込まれない
+
+**症状**:
+```
+Grafana で AMP をデータソースとして設定したが、
+メトリクスが表示されない。Prometheus Pod のログには
+"remote_write" 関連のエラーが出ている。
+```
+
+**調査コマンド**:
+```bash
+# Prometheus Pod のログ確認
+kubectl logs -n prometheus deployment/prometheus-server | grep -i "remote"
+
+# Service Account の確認
+kubectl get sa prometheus-server -n prometheus -o yaml
+
+# IAM ロールの確認
+aws iam get-role --role-name amp-prometheus-role
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: IRSA（IAM Roles for Service Accounts）の設定が正しくない
+
+**解決手順**:
+```bash
+# 1. OIDC プロバイダーの確認
+aws eks describe-cluster --name rideshare-cluster \
+    --query "cluster.identity.oidc.issuer" --output text
+
+# 2. OIDC プロバイダーが IAM に登録されているか確認
+aws iam list-open-id-connect-providers
+
+# 3. OIDC プロバイダーが未登録の場合、登録
+eksctl utils associate-iam-oidc-provider \
+    --cluster rideshare-cluster \
+    --approve
+
+# 4. Service Account のアノテーション確認
+kubectl get sa prometheus-server -n prometheus -o yaml | grep -A 5 annotations
+
+# 5. アノテーションが不足している場合、更新
+kubectl annotate sa prometheus-server -n prometheus \
+    eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/amp-prometheus-role \
+    --overwrite
+
+# 6. Prometheus Pod を再起動
+kubectl rollout restart deployment prometheus-server -n prometheus
+
+# 7. Pod が新しい認証情報を取得したか確認
+kubectl exec -n prometheus deployment/prometheus-server -- \
+    cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token | cut -d '.' -f 2 | base64 -d
+```
+
+**追加確認事項**:
+- IAM ロールの信頼ポリシーで OIDC の subject が正しいか
+- AMP ワークスペースが正しいリージョンにあるか
+- remote_write の URL が正しいか
+</details>
+
+### 課題2: X-Ray トレースが表示されない
+
+**症状**:
+```
+アプリケーションで X-Ray SDK を使用しているが、
+X-Ray コンソールにトレースが表示されない。
+サービスマップも空のまま。
+```
+
+**調査コマンド**:
+```bash
+# X-Ray Daemon Pod の状態確認
+kubectl get pods -l app=xray-daemon
+
+# X-Ray Daemon のログ確認
+kubectl logs daemonset/xray-daemon
+
+# アプリケーション Pod からの接続確認
+kubectl exec -it deployment/rider-service -- \
+    nc -vz xray-service.default 2000
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: 複数の原因が考えられる
+
+**パターン1: X-Ray Daemon への接続失敗**
+```bash
+# アプリケーションの環境変数確認
+kubectl get deployment rider-service -o yaml | grep -A 5 AWS_XRAY
+
+# 環境変数が設定されていない場合
+kubectl set env deployment/rider-service \
+    AWS_XRAY_DAEMON_ADDRESS=xray-service.default:2000
+```
+
+**パターン2: IAM 権限不足**
+```bash
+# Service Account の IAM ロール確認
+kubectl get sa xray-daemon -o yaml
+
+# 必要な権限があるか確認
+aws iam simulate-principal-policy \
+    --policy-source-arn arn:aws:iam::ACCOUNT_ID:role/xray-daemon-role \
+    --action-names xray:PutTraceSegments xray:PutTelemetryRecords
+```
+
+**パターン3: サンプリングルールの問題**
+```bash
+# デフォルトサンプリングルールの確認
+aws xray get-sampling-rules
+
+# サンプリングレートが低すぎる場合、調整
+aws xray update-sampling-rule --sampling-rule-update '{
+    "RuleName": "Default",
+    "FixedRate": 0.1,
+    "ReservoirSize": 10
+}'
+```
+
+**パターン4: アプリケーションコードの問題**
 ```python
-# 正しいHLS設定
-"HlsGroupSettings": {
-    "SegmentLength": 6,
-    "MinSegmentLength": 0,
-    "Destination": f"s3://{OUTPUT_BUCKET}/hls/{content_id}/",
-    "ManifestCompression": "NONE",
-    "DirectoryStructure": "SINGLE_DIRECTORY",
-    "OutputSelection": "MANIFESTS_AND_SEGMENTS"  # これを追加
-}
+# X-Ray SDK の初期化を確認
+from aws_xray_sdk.core import xray_recorder
+
+# 明示的にサービス名を設定
+xray_recorder.configure(
+    service='rider-service',
+    sampling=False,  # デバッグ時は全トレース収集
+    daemon_address='xray-service.default:2000'
+)
+```
+</details>
+
+### 課題3: Grafana アラートが発火しない
+
+**症状**:
+```
+SLO 違反が発生しているはずなのに、Grafana のアラートが
+発火しない。ダッシュボードではメトリクスが正常に表示されている。
 ```
 
-### 問題3: CloudFrontでCORSエラー
-
-**症状:**
-```
-Access-Control-Allow-Origin エラー
-動画プレイヤーで再生できない
-```
-
-**ヒント:**
-1. S3のCORS設定を確認
-2. CloudFrontのResponse Headers Policyを確認
-3. ブラウザのキャッシュをクリア
-
-**解決方法:**
+**調査手順**:
 ```bash
-# CloudFront Response Headers Policy設定
-# コンソールから:
-# 1. CloudFront → ディストリビューション → Behaviors
-# 2. Response headers policy: SimpleCORS または カスタムポリシー
-# 3. Access-Control-Allow-Origin: *
-# 4. Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+# Grafana のアラート状態確認（API経由）
+curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
+    "https://your-grafana.grafana.net/api/v1/alerts"
+
+# アラートルールの確認
+curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
+    "https://your-grafana.grafana.net/api/v1/provisioning/alert-rules"
 ```
 
----
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
 
-## 設計の考察ポイント
+**原因**: アラートルールの評価設定の問題
 
-### 1. MediaConvert vs 自前エンコード（FFmpeg）
+**確認・解決手順**:
 
-**考察ポイント:**
-- MediaConvert: マネージド、スケーラブル、品質保証
-- FFmpeg on EC2/ECS: 柔軟性、カスタマイズ性
-- コスト比較（長時間動画の場合）
+1. **アラートルールの `for` 期間を確認**
+```yaml
+# for が長すぎる場合、アラートが発火しにくい
+for: 2m  # 2分間継続して条件を満たす必要がある
+```
 
-### 2. 出力フォーマットの選定
+2. **データソースの設定確認**
+```yaml
+# データソース UID が正しいか確認
+datasourceUid: prometheus  # 実際のデータソース UID と一致しているか
+```
 
-**考察ポイント:**
-- HLS vs DASH（デバイスカバレッジ）
-- ビットレートラダーの設計
-- ABR（Adaptive Bitrate）の最適化
+3. **評価間隔の確認**
+```yaml
+# interval が長すぎるとアラートの遅延が発生
+interval: 1m  # 1分間隔で評価
+```
 
-### 3. 並列処理のアプローチ
-
-**考察ポイント:**
-- MediaConvert単独 vs AWS Batch併用
-- チャンク分割エンコード
-- コスト効率とスループットのバランス
-
-### 4. CDN配信の最適化
-
-**考察ポイント:**
-- CloudFrontのキャッシュ戦略
-- セグメントサイズと初回再生時間
-- リージョン配置（エッジロケーション）
-
-### 5. DRMとセキュリティ
-
-**考察ポイント:**
-- 有料コンテンツの保護
-- Widevine / FairPlay対応
-- 署名付きURL / Cookie
-
----
-
-## 発展課題（オプション）
-
-### 1. DRM対応（SPEKE）
-- AWS Elemental MediaPackage連携
-- Widevine / FairPlay / PlayReady
-- ライセンスサーバー統合
-
-### 2. ライブ配信対応
-- MediaLive + MediaPackage
-- ライブ to VODワークフロー
-- 低遅延配信（LL-HLS）
-
-### 3. コンテンツモデレーション
-- Rekognition Video連携
-- 不適切コンテンツの自動検出
-- 年齢制限の自動判定
-
-### 4. 字幕・多言語対応
-- Transcribe連携（自動字幕）
-- Translate連携（翻訳）
-- WebVTT埋め込み
-
-### 5. 視聴分析
-- CloudFrontログ分析
-- Athena + QuickSight
-- コンテンツ人気度ダッシュボード
-
----
-
-## 想定コストと削減方法
-
-### 月額概算コスト（月間500本 × 平均30分処理想定）
-
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| MediaConvert | 500本 × 30分 × 5出力 = 1,250時間 | $625 |
-| Amazon S3 | 入力500GB + 出力2TB | $55 |
-| AWS Lambda | 処理関数実行 | $5 |
-| Step Functions | 500ワークフロー | $0.15 |
-| CloudFront | 5TB転送 | $425 |
-| DynamoDB | オンデマンド | $2 |
-| SNS | 通知 | $0.50 |
-| CloudWatch | ログ | $10 |
-| **合計** | | **約$1,123（約168,000円）** |
-
-### コスト削減のポイント
-
-1. **MediaConvertの最適化**
-   - On-Demand vs Reserved Capacity
-   - 品質レベルの調整（SINGLE_PASS vs MULTI_PASS）
-   - → 最大30%削減
-
-2. **S3ストレージクラス**
-   - 入力: Standard（一時）→ 処理後削除
-   - 出力: Intelligent-Tiering
-   - → ストレージコスト40%削減
-
-3. **CloudFront Reserved Capacity**
-   - 年間契約で割引
-   - → 配信コスト最大30%削減
-
-4. **不要解像度の削除**
-   - 4K対応が不要なら4K出力を削除
-   - → MediaConvertコスト削減
-
-### リソース削除手順
-
+4. **クエリの検証**
 ```bash
-# CloudFront（コンソールから無効化→削除）
+# Grafana の Explore で直接クエリを実行して結果を確認
+# アラート条件と同じクエリを実行
+sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m])) * 100
+```
 
-# S3
-aws s3 rm s3://streamnow-master-${ACCOUNT_ID} --recursive
-aws s3 rm s3://streamnow-output-${ACCOUNT_ID} --recursive
-aws s3 rb s3://streamnow-master-${ACCOUNT_ID}
-aws s3 rb s3://streamnow-output-${ACCOUNT_ID}
+5. **通知チャネルの確認**
+```yaml
+# Contact Point が正しく設定されているか
+# Slack/PagerDuty の Webhook URL が有効か
+```
 
-# DynamoDB
-aws dynamodb delete-table --table-name streamnow-encoding-jobs
+6. **Grafana Alerting のデバッグログ有効化**
+```bash
+# AMG ではログレベルの変更はサポートされていないため、
+# CloudWatch Logs で Grafana のログを確認
+aws logs filter-log-events \
+    --log-group-name "/aws/grafana/rideshare-dashboard" \
+    --filter-pattern "alert"
+```
+</details>
 
-# Step Functions
-aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
+---
 
-# Lambda
-aws lambda delete-function --function-name streamnow-trigger
-aws lambda delete-function --function-name streamnow-start-encoding
-aws lambda delete-function --function-name streamnow-check-encoding
-aws lambda delete-function --function-name streamnow-finalize
+## 9. 設計課題
 
-# SNS
-aws sns delete-topic --topic-arn arn:aws:sns:...
+### 設計課題: 大規模マイクロサービスのオブザーバビリティ戦略
 
-# IAM
-aws iam detach-role-policy --role-name StreamNowMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-aws iam delete-role --role-name StreamNowMediaConvertRole
+**シナリオ**:
+RideShare社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
+以下の要件を満たすオブザーバビリティ戦略を設計してください。
+
+**要件**:
+```
+1. サービス規模
+   - マイクロサービス：50個
+   - 月間リクエスト：10億件
+   - 開発チーム：15チーム
+
+2. 機能要件
+   - 全サービスの統合監視
+   - チーム単位でのダッシュボード分離
+   - サービス間依存関係の可視化
+   - カスタムビジネスメトリクス対応
+
+3. 非機能要件
+   - メトリクス保持：13ヶ月（コンプライアンス要件）
+   - ログ検索：リアルタイム〜30日前
+   - アラート遅延：1分以内
+   - コスト効率：現状の2倍以内
+```
+
+**設計すべき項目**:
+```
+1. メトリクス収集・保存戦略
+2. トレーシング戦略（サンプリング設計）
+3. ログ管理戦略（保持・検索）
+4. ダッシュボード・アラート設計
+5. チーム間の責任分界
+```
+
+<details>
+<summary>設計例を見る</summary>
+
+### 大規模オブザーバビリティアーキテクチャ
+
+```mermaid
+architecture-beta
+    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
+
+    group collection(server)[データ収集層] in aws
+    service rider_team(server)[Rider Team Services 5 svcs] in collection
+    service driver_team(server)[Driver Team Services 4 svcs] in collection
+    service payment_team(server)[Payment Team Services 3 svcs] in collection
+    service other_teams(server)[Other Teams x15] in collection
+    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
+    service sampling(server)[Sampling Processor] in collection
+    service filtering(server)[Filtering Processor] in collection
+
+    group storage(database)[データ保存層] in aws
+    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
+    service amp(server)[AMP Metrics Retention 13 months] in storage
+    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
+
+    group visualization(server)[可視化・アラート層] in aws
+    service grafana(server)[Amazon Managed Grafana] in visualization
+    service platform_dash(server)[Platform Overview SRE] in visualization
+    service team_dash(server)[Team Dashboards 15 folders] in visualization
+    service business_dash(server)[Business Metrics Product] in visualization
+    service pagerduty(internet)[PagerDuty Critical/High] in visualization
+    service slack(internet)[Slack Alerts Warning/Info] in visualization
+
+    rider_team:B --> T:otel_collector
+    driver_team:B --> T:otel_collector
+    payment_team:B --> T:otel_collector
+    other_teams:B --> T:otel_collector
+    otel_collector:B --> T:xray
+    otel_collector:B --> T:amp
+    otel_collector:B --> T:cwlogs
+    xray:B --> T:grafana
+    amp:B --> T:grafana
+    cwlogs:B --> T:grafana
+    grafana:R --> L:pagerduty
+    grafana:R --> L:slack
+```
+
+### 1. メトリクス収集・保存戦略
+
+```yaml
+metrics_strategy:
+  collection:
+    method: pull  # Prometheus スタイル
+    interval: 15s
+    timeout: 10s
+
+  labeling_guidelines:
+    required_labels:
+      - service    # サービス名
+      - team       # 担当チーム
+      - env        # 環境
+    cardinality_control:
+      # 高カーディナリティラベルの制限
+      forbidden_labels:
+        - user_id
+        - request_id
+        - trace_id
+      max_label_values: 1000
+
+  storage:
+    primary: amazon_managed_prometheus
+    retention: 13_months
+    estimated_series: 80000  # 50サービス × 1600シリーズ/サービス
+
+  aggregation:
+    # 長期保存用に集約
+    raw_retention: 15_days
+    5m_aggregation: 90_days
+    1h_aggregation: 13_months
+```
+
+### 2. トレーシング戦略
+
+```yaml
+tracing_strategy:
+  sampling:
+    head_based:
+      default_rate: 0.05  # 5%
+      rules:
+        - service: payment-*
+          rate: 0.1  # 決済は10%
+        - service: matching-*
+          rate: 0.1  # マッチングは10%
+
+    tail_based:
+      enabled: true
+      policies:
+        - type: always_sample
+          conditions:
+            - status_code >= 500
+            - latency > 2s
+        - type: probabilistic
+          rate: 0.5
+          conditions:
+            - latency > 500ms
+
+  storage:
+    service: aws_xray
+    retention: 30_days
+    groups:
+      - name: errors
+        filter: "fault = true"
+      - name: slow_requests
+        filter: "responsetime > 1"
+
+  service_map:
+    refresh_interval: 1m
+    depth: 5  # 依存関係の深さ
+```
+
+### 3. ログ管理戦略
+
+```yaml
+log_strategy:
+  structure:
+    format: json
+    required_fields:
+      - timestamp
+      - level
+      - service
+      - team
+      - trace_id
+      - message
+    optional_fields:
+      - user_id  # マスキング必須
+      - request_path
+
+  storage:
+    primary: cloudwatch_logs
+    log_groups:
+      pattern: /rideshare/{team}/{service}
+    retention_policy:
+      hot: 7_days     # CloudWatch Logs
+      warm: 30_days   # CloudWatch Logs (Infrequent Access)
+      cold: 365_days  # S3 Glacier
+
+  export:
+    destination: s3
+    format: parquet  # Athena でクエリ可能
+    schedule: daily
+    bucket: rideshare-logs-archive
+
+  search:
+    tool: cloudwatch_logs_insights
+    max_scan_range: 30_days
+    query_timeout: 30s
+```
+
+### 4. チーム責任分界
+
+```yaml
+responsibility_matrix:
+  platform_sre:
+    owns:
+      - 全体 SLO ダッシュボード
+      - インフラメトリクス
+      - 共通アラートルール
+      - オンコールエスカレーション
+    maintains:
+      - AMP/AMG インフラ
+      - OpenTelemetry Collector
+      - 共通ライブラリ
+
+  application_teams:
+    owns:
+      - チームダッシュボード
+      - サービス固有アラート
+      - ビジネスメトリクス定義
+      - トラブルシューティング
+    maintains:
+      - アプリケーション計装
+      - ログ出力
+
+  access_control:
+    grafana:
+      - role: Viewer (全社員)
+      - role: Editor (チームメンバー) - チームフォルダのみ
+      - role: Admin (SRE)
+```
+
+### 推定コスト
+
+| サービス | 使用量 | 月額コスト |
+|----------|--------|-----------|
+| AMP | 80K series, 13M samples/month | $800 |
+| AMG | 1 workspace, 50 users | $250 |
+| CloudWatch Logs | 500GB/month | $250 |
+| CloudWatch Metrics | Container Insights | $150 |
+| X-Ray | 10M traces/month | $50 |
+| S3 (ログアーカイブ) | 1TB | $25 |
+| **合計** | | **$1,525/月** |
+
+</details>
+
+---
+
+## 10. 発展課題
+
+### 発展課題1: OpenTelemetry への移行（難易度：中級）
+
+**課題内容**:
+現在の X-Ray SDK から OpenTelemetry に移行し、ベンダーロックインを回避しつつ
+同等以上のオブザーバビリティを実現してください。
+
+**要件**:
+- 既存の X-Ray トレースとの互換性維持
+- メトリクス・ログ・トレースの統合収集
+- Kubernetes 環境での自動計装
+
+```yaml
+# ヒント: AWS Distro for OpenTelemetry の設定
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: adot-collector
+spec:
+  mode: deployment
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 50
+
+    exporters:
+      awsxray:
+        region: ap-northeast-1
+      awsprometheusremotewrite:
+        endpoint: https://aps-workspaces.ap-northeast-1.amazonaws.com/...
+      awscloudwatchlogs:
+        log_group_name: /rideshare/otel
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [awsxray]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [awsprometheusremotewrite]
+```
+
+### 発展課題2: AIOps の導入（難易度：上級）
+
+**課題内容**:
+Amazon DevOps Guru を導入し、ML ベースの異常検知と
+インシデント予測を実現してください。
+
+**要件**:
+- CloudWatch メトリクスの異常検知
+- インシデントの自動分類と優先度付け
+- 推奨アクションの自動生成
+
+### 発展課題3: カオスエンジニアリング統合（難易度：上級）
+
+**課題内容**:
+AWS Fault Injection Simulator を使用して、
+オブザーバビリティ基盤の有効性を検証するカオス実験を設計・実行してください。
+
+**要件**:
+- サービス障害時の検知時間測定
+- アラート精度の検証
+- ダッシュボードの有用性評価
+
+---
+
+## 11. 振り返りと次のステップ
+
+### 学習のまとめ
+
+```
+本課題で学んだこと:
+□ CloudWatch Container Insights による EKS 監視
+□ AWS X-Ray による分散トレーシング
+□ Amazon Managed Prometheus/Grafana の設定
+□ SLI/SLO の設計と可視化
+□ アラート設計のベストプラクティス
+□ 構造化ログと相関分析
+
+GCP との主な違い:
+- CloudWatch は統合サービス（メトリクス・ログ・トレース）
+- X-Ray は AWS サービスとの深い統合
+- AMP/AMG はオープンソース互換のマネージドサービス
+- Container Insights は EKS 専用の包括的監視
+```
+
+### GCP経験者向けポイント
+
+| 観点 | GCP | AWS | 移行時の注意 |
+|------|-----|-----|-------------|
+| メトリクス監視 | Cloud Monitoring | CloudWatch Metrics | メトリクス名・ラベル命名規則が異なる |
+| 分散トレーシング | Cloud Trace | X-Ray | トレースフォーマットが異なる（W3C vs X-Ray） |
+| ログ管理 | Cloud Logging | CloudWatch Logs | クエリ言語が異なる（LogQL vs Insights） |
+| Prometheus | Managed Prometheus | AMP | ほぼ同等、remote_write 設定のみ異なる |
+| Grafana | (Grafana Cloud) | AMG | データソース設定が異なる |
+
+### 推奨される次のステップ
+
+```
+1. AWS Certified DevOps Engineer の学習
+   - オブザーバビリティの深い理解
+   - CI/CD との統合
+
+2. OpenTelemetry の習得
+   - ベンダー中立なテレメトリ
+   - 将来性のある技術スタック
+
+3. SRE プラクティスの導入
+   - SLO ベースのアラート設計
+   - エラーバジェットの運用
+
+4. 関連課題への挑戦
+   - 課題27: セキュリティ監視
+   - 課題29: コスト最適化
 ```
 
 ---
 
-## 学習のポイント
+## 12. 推定コストと注意事項
 
-### 1. MediaConvertの基本
-AWS の動画変換サービスとして、入力 → 出力グループ → 出力の構造を理解する。HLS/DASH などのストリーミングフォーマットの基本も押さえる。
+### 本課題の推定コスト
 
-### 2. イベント駆動アーキテクチャ
-S3イベント → Lambda → Step Functions の流れは、バッチ処理の典型パターン。非同期処理の状態管理方法を学ぶ。
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| EKS | 1クラスター、3ノード | $75 |
+| CloudWatch | Container Insights | $5-10 |
+| X-Ray | 10万トレース | $5 |
+| AMP | 1万シリーズ | $5-10 |
+| AMG | 1ワークスペース | $9 |
+| **合計** | | **$100-110** |
 
-### 3. ABR（Adaptive Bitrate）の概念
-ネットワーク状況に応じて品質を切り替えるストリーミング技術。ビットレートラダーの設計がユーザー体験に直結する。
+### コスト最適化のヒント
 
-### 4. CDN配信の基礎
-CloudFront によるグローバル配信、キャッシュ戦略、CORSの設定など、コンテンツ配信の基本を習得する。
+```
+1. EKS のコスト削減
+   - Spot インスタンスの活用
+   - 演習後はクラスター削除
 
-### 5. ワークフローの可視化
-Step Functions でエンコード処理を可視化することで、進捗確認やエラー対応が容易になる。長時間バッチ処理では特に重要。
+2. CloudWatch のコスト削減
+   - 不要なメトリクスの除外
+   - ログ保持期間の短縮
+
+3. X-Ray のコスト削減
+   - サンプリングレートの調整
+   - 不要なサービスの除外
+
+4. AMP のコスト削減
+   - カーディナリティの管理
+   - 不要なメトリクスの除外
+```
+
+### 注意事項
+
+```
+⚠️ EKS クラスター
+- クラスターは課金が継続するため、演習後は削除を推奨
+- eksctl delete cluster コマンドで削除可能
+
+⚠️ マネージドサービス
+- AMP/AMG は有効化すると課金開始
+- 使用しない場合はワークスペースを削除
+
+⚠️ データ保持
+- 本番環境でのログ・メトリクス保持期間は要件に応じて設定
+- コンプライアンス要件がある場合は適切な保持期間を設定
+```
+
+---
+
+**課題作成日**: 2024年1月
+**最終更新日**: 2024年1月
+**作成者**: AWS学習プログラム

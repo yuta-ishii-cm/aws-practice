@@ -1,18 +1,87 @@
-# 課題6: LearnHub株式会社の動画教材自動字幕生成システム構築
+# 課題6: 月次レポート自動生成システム構築 - SaaS企業の大量帳票処理
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟢 初級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | AI / メディア処理 / EdTech |
-| 処理タイプ | バッチ / 非同期 |
+| 難易度 | 初級 |
+| カテゴリ | バッチ処理 / SaaS / 定期実行 |
+| 処理タイプ | バッチ / スケジュール |
 | 使用IaC | CloudFormation |
-| 所要時間 | 5〜6時間 |
+| 想定所要時間 | 4〜5時間 |
+
+---
+
+## 学習するAWSサービス
+
+この演習では以下のAWSサービスを実践的に学習します。
+
+### メインサービス
+
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon EventBridge Scheduler** | 月次スケジュール実行 | cron式、タイムゾーン対応 |
+| **AWS Step Functions** | ワークフローオーケストレーション | Map state、並列処理、エラーハンドリング |
+| **AWS Lambda** | レポート生成処理 | 大規模並列実行、レイヤー活用 |
+| **Amazon S3** | レポートファイル保存 | 大容量ストレージ、配信連携 |
+| **Amazon SES** | メール配信 | バルク送信、テンプレート |
+
+### 補助サービス
+
+| サービス | 役割 |
+|----------|------|
+| **Amazon DynamoDB** | ジョブ状態管理、企業マスタ |
+| **Amazon SNS** | 完了・エラー通知 |
+| **Amazon CloudWatch** | 監視・ログ・アラート |
+| **AWS IAM** | サービス間の権限管理 |
+
+---
+
+## 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group scheduler(server)[Scheduler Layer] in aws
+    group workflow(server)[Workflow Layer] in aws
+    group storage(disk)[Storage Layer] in aws
+    group notification(server)[Notification] in aws
+
+    service eventbridge(server)[EventBridge Scheduler] in scheduler
+    service stepfunctions(server)[Step Functions] in workflow
+    service lambda_fetch(server)[Lambda FetchCompanies] in workflow
+    service lambda_generate(server)[Lambda GenerateReport] in workflow
+    service lambda_send(server)[Lambda SendEmails] in workflow
+    service dynamodb(database)[DynamoDB] in storage
+    service s3(disk)[S3 Reports] in storage
+    service ses(server)[SES] in notification
+    service sns(server)[SNS] in notification
+
+    eventbridge:B --> T:stepfunctions
+    stepfunctions:B --> T:lambda_fetch
+    stepfunctions:B --> T:lambda_generate
+    stepfunctions:B --> T:lambda_send
+    lambda_fetch:R --> L:dynamodb
+    lambda_generate:R --> L:s3
+    lambda_send:R --> L:ses
+    stepfunctions:R --> L:sns
+```
+
+### 処理フロー
+
+| ステップ | コンポーネント | 説明 |
+|----------|----------------|------|
+| 1. トリガー | EventBridge Scheduler | 毎月1日AM1時にワークフロー起動 |
+| 2. 企業取得 | Lambda + DynamoDB | 処理対象企業一覧を取得 |
+| 3. 並列生成 | Step Functions Map + Lambda | 最大100並列でレポート生成 |
+| 4. 保存 | S3 | PDF/Excelをバケットに保存 |
+| 5. 配信 | Lambda + SES | 各企業担当者にメール送信 |
+| 6. 通知 | SNS | 処理完了を管理者に通知 |
 
 ---
 
@@ -20,65 +89,78 @@
 
 ### 企業プロフィール
 
-**LearnHub株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
+**〇〇株式会社**は、中小企業向けのクラウド会計・経費精算SaaSを提供しています。
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | EdTech（オンライン教育） |
-| 設立 | 2020年 |
-| 従業員数 | 25名 |
-| 月間アクティブ視聴者 | 3万人 |
-| 登録ユーザー | 10万人 |
-| 動画コンテンツ数 | 500本（総時間300時間） |
-| 平均動画長 | 36分 |
-| 月商 | 2,500万円 |
-| 講師数 | 30名（外部委託含む） |
+| 業種 | SaaS（会計・経費精算） |
+| 設立 | 2017年 |
+| 従業員数 | 60名 |
+| 契約企業数 | 5,000社 |
+| 月間処理件数 | 500万件（仕訳・経費） |
+| 月商 | 1.2億円 |
+| 平均契約単価 | 24,000円/月 |
+| データ量 | 月次約100GB増加 |
 
 ### 現状の課題
 
-海外展開を進めるため、既存の日本語動画コンテンツに多言語字幕を追加したいが、外注費用と時間がかかりすぎています。また、聴覚障害者向けのアクセシビリティ対応も求められています。
+毎月初に全契約企業（5,000社）に対して前月の月次レポート（損益計算書、貸借対照表、経費分析）を生成・配信していますが、処理に時間がかかり、月初の業務負荷が高くなっています。
 
 ### 数値で示された問題
 
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 字幕付き動画比率 | 20%（日本語のみ） | 100%（日英中） |
-| 字幕作成コスト | 15,000円/時間 | 3,000円/時間以下 |
-| 字幕作成リードタイム | 2週間 | 24時間以内 |
-| 多言語対応言語数 | 日本語のみ | 日本語・英語・中国語 |
-| 月間新規動画 | 20本 | - |
-| 字幕外注費 | 月90万円 | 月20万円以下 |
+| レポート生成対象 | 5,000社 | 変わらず |
+| 月次処理時間 | 48時間 | 6時間以内 |
+| 経理チーム作業 | 20時間/月 | 2時間/月 |
+| 配信完了日 | 毎月5日 | 毎月2日 |
+| 生成エラー率 | 3% | 0.5%以下 |
+| 再生成依頼 | 50件/月 | 10件/月以下 |
 
-### 現状の字幕作成フロー
+### 現状のレポート生成フロー
 
 ```
-1. 動画を外部字幕制作会社に送付
-2. 制作会社が文字起こし（3-5日）
-3. 内容確認・修正依頼（2-3日）
-4. 翻訳発注（3-5日）
-5. 翻訳確認・修正（2-3日）
-6. VTT/SRTファイル納品
-7. 動画プレイヤーへ統合
-→ 合計: 2-3週間
+毎月1日:
+1. バッチサーバーでスクリプト実行開始
+2. PostgreSQLから企業ごとにデータ抽出
+3. Pythonでレポート計算・PDF生成
+4. S3にアップロード
+5. メール配信
+
+問題点:
+- 単一サーバーで逐次処理
+- エラー時の再実行が困難
+- 進捗把握ができない
+- サーバーリソースがボトルネック
 ```
+
+### 生成するレポート種類
+
+| レポート | 内容 | ファイル形式 |
+|----------|------|--------------|
+| 月次損益計算書 | 売上、費用、利益 | PDF + Excel |
+| 月次貸借対照表 | 資産、負債、純資産 | PDF + Excel |
+| 経費分析レポート | カテゴリ別経費推移 | PDF |
+| キャッシュフロー概要 | 入出金サマリー | PDF |
+| 経費精算一覧 | 当月の経費明細 | Excel |
 
 ### 解決したいこと
 
-1. 動画の音声からの自動文字起こし（日本語）
-2. 日本語字幕の自動生成（タイムスタンプ付き）
-3. 英語・中国語への自動翻訳
-4. 字幕ファイル（VTT形式）の自動生成
-5. 生成された字幕の品質向上（AI校正）
+1. 5,000社のレポートを6時間以内に生成
+2. 並列処理による高速化
+3. 進捗監視とエラーハンドリング
+4. 自動リトライ・再生成機能
+5. 配信スケジュールの柔軟な管理
 
 ### 成功指標（KPI）
 
 | KPI | 現状 | 目標 | 達成期限 |
 |-----|------|------|----------|
-| 字幕カバー率 | 20% | 100% | 3ヶ月後 |
-| 文字起こし精度 | - | 95%以上 | 1ヶ月後 |
-| 字幕作成時間 | 2週間 | 24時間以内 | 1ヶ月後 |
-| コスト削減率 | - | 70%以上 | 3ヶ月後 |
-| 海外ユーザー増加 | - | +30% | 6ヶ月後 |
+| 処理時間 | 48時間 | 6時間以内 | 1ヶ月後 |
+| エラー率 | 3% | 0.5%以下 | 1ヶ月後 |
+| 自動化率 | 60% | 95%以上 | 2ヶ月後 |
+| 経理工数 | 20時間/月 | 2時間/月 | 2ヶ月後 |
+| 配信完了 | 5日 | 2日 | 1ヶ月後 |
 
 ---
 
@@ -88,62 +170,40 @@
 
 ### 技術的な学習ポイント
 
-1. **Amazon Transcribeの実践活用**
-   - 音声からの自動文字起こし
-   - 日本語モデルの活用
-   - カスタムボキャブラリー設定
+1. **Amazon EventBridge Schedulerの実践活用**
+   - cron式によるスケジュール設定
+   - タイムゾーン対応
+   - 柔軟なスケジュール管理
 
-2. **Amazon Translateの実践活用**
-   - 多言語翻訳
-   - 用語集（Terminology）の活用
-   - バッチ翻訳処理
+2. **AWS Step Functionsによる並列処理**
+   - Map stateによる並列実行
+   - エラーハンドリング・リトライ
+   - 進捗監視
 
-3. **Amazon Bedrockによる品質向上**
-   - 字幕の校正・修正
-   - 文脈を考慮した翻訳改善
+3. **AWS Lambdaの大規模並列処理**
+   - 同時実行制限の理解
+   - メモリ・タイムアウト最適化
+   - レイヤーの活用
 
-4. **メディアパイプラインの構築**
-   - S3イベント駆動
-   - Lambda + SQSによる非同期処理
-   - VTT/SRT形式の生成
+4. **Amazon SESによるメール配信**
+   - テンプレートメール
+   - バルク送信
+   - バウンス処理
 
 ### 実務で活かせる知識
 
-- 音声処理パイプラインの設計
-- 多言語対応システムの構築
-- メディアファイル処理の自動化
+- 定期バッチ処理の設計パターン
+- 大量データの並列処理アーキテクチャ
+- SaaS向けマルチテナント処理
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| 音声認識 | Amazon Transcribe | Speech-to-Text |
-| 翻訳 | Amazon Translate | Cloud Translation |
-| 生成AI | Bedrock | Vertex AI |
-| メディア処理 | MediaConvert | Transcoder API |
-
----
-
-## 使用するAWSサービス
-
-### メインサービス
-
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon Transcribe | 音声→テキスト変換 | 日本語対応、字幕形式出力 |
-| Amazon Translate | 多言語翻訳 | リアルタイム翻訳、用語集対応 |
-| Amazon Bedrock | 字幕校正・品質向上 | 文脈理解、自然な表現 |
-| AWS Lambda | 各処理の実行 | サーバーレス |
-| Amazon S3 | 動画・字幕ファイル保存 | 大容量対応 |
-| Amazon SQS | 非同期処理キュー | 順序制御、リトライ |
-
-### 補助サービス
-
-| サービス | 役割 |
-|----------|------|
-| Amazon DynamoDB | 処理ステータス管理 |
-| Amazon SNS | 処理完了通知 |
-| Amazon CloudWatch | 監視・ログ |
+| スケジューラー | EventBridge Scheduler | Cloud Scheduler |
+| ワークフロー | Step Functions | Cloud Workflows |
+| サーバーレス関数 | Lambda | Cloud Functions |
+| メール配信 | SES | - (SendGridなど外部) |
 
 ---
 
@@ -152,326 +212,251 @@
 ### 必要な事前知識
 
 - AWSの基本操作（S3, Lambda）
-- Python基礎
-- 字幕フォーマット（VTT/SRT）の基本理解
+- Pythonの基礎
+- cron式の基本
 
 ### 準備するもの
 
 1. **AWSアカウント**
-   - Bedrock有効化（Claude 3 Haiku推奨）
-   - Transcribe/Translate アクセス権限
+   - SES本番アクセス（サンドボックス解除推奨）
+   - 適切なIAM権限
 
 2. **開発環境**
    - AWS CLI v2
    - Python 3.9以上
+   - pip（reportlab, openpyxl等）
 
 3. **テストデータ**
-   - サンプル動画ファイル（MP4, 5-10分）
-   - または音声ファイル（MP3/WAV）
-
----
-
-## アーキテクチャ概要
-
-### システム全体構成
-
-```
-[講師が動画アップロード]
-        ↓
-[S3: 動画入力バケット]
-        ↓ S3イベント
-[SQS: 処理キュー]
-        ↓
-[Lambda: transcribe-starter]
-        ↓
-[Amazon Transcribe]（非同期ジョブ）
-        ↓ 完了イベント
-[Lambda: transcribe-callback]
-        ↓
-[S3: 日本語字幕JSON保存]
-        ↓
-[Lambda: translator]
-        ├── Amazon Translate（英語）
-        └── Amazon Translate（中国語）
-        ↓
-[Lambda: vtt-generator]
-        ├── Bedrock（字幕校正）
-        └── VTT/SRTファイル生成
-        ↓
-[S3: 字幕出力バケット]
-        ↓
-[SNS: 完了通知]
-```
-
-### 字幕生成フロー
-
-1. **動画アップロード**: S3にMP4をアップロード
-2. **音声抽出**: Transcribeが自動で音声を認識
-3. **文字起こし**: 日本語テキスト+タイムスタンプ生成
-4. **翻訳**: Translateで英語・中国語に翻訳
-5. **校正**: Bedrockで字幕の品質向上
-6. **出力**: VTT形式で3言語分の字幕ファイル生成
-7. **通知**: 処理完了をメール通知
+   - サンプル企業データ（10社程度）
 
 ---
 
 ## トラブルシューティング課題
 
-### 問題1: Transcribeジョブが失敗
+### 問題1: Map stateがタイムアウト
 
 **症状:**
 ```
-TranscriptionJobStatus: FAILED
-FailureReason: "The media format provided does not match the detected media format."
+Step Functions実行が5分以上かかり、タイムアウト
+大量の企業を処理できない
 ```
 
 **ヒント:**
-1. ファイル拡張子と実際のフォーマットが一致しているか確認
-2. サポートされているフォーマットか確認（MP3, MP4, WAV, FLAC等）
-3. ファイルが破損していないか確認
+1. MaxConcurrencyの設定を確認
+2. Lambda個別のタイムアウトを確認
+3. DynamoDB/S3のスループットを確認
 
 **解決方法:**
-```python
-# Lambda内でファイル形式を自動検出
-import mimetypes
-
-def get_media_format(key):
-    extension = key.split('.')[-1].lower()
-    format_map = {
-        'mp4': 'mp4',
-        'mp3': 'mp3',
-        'wav': 'wav',
-        'm4a': 'mp4',
-        'flac': 'flac'
-    }
-    return format_map.get(extension, 'mp4')
+```json
+// Map stateの設定調整
+{
+  "Type": "Map",
+  "MaxConcurrency": 50,  // 100から減らす
+  "ItemsPath": "$.companies",
+  // Express Workflowの場合は5分制限
+  // Standard Workflowは1年まで可能
+}
 ```
 
-### 問題2: 翻訳結果が不自然
+### 問題2: SESでメール送信エラー
 
 **症状:**
 ```
-技術用語が一般的な意味で翻訳される
-プログラミング用語が変な日本語になる
+MessageRejected: Email address is not verified
+サンドボックス環境での制限
 ```
 
 **ヒント:**
-1. Amazon Translateの用語集（Terminology）を活用
-2. Bedrockの校正プロンプトを調整
-3. カスタムボキャブラリーを設定
+1. SESのサンドボックス状態を確認
+2. 送信先メールアドレスの検証状態を確認
+3. 本番アクセスリクエストを申請
 
 **解決方法:**
-```python
-# 用語集の使用
-def translate_with_terminology(text, source_lang, target_lang, terminology_names):
-    response = translate.translate_text(
-        Text=text,
-        SourceLanguageCode=source_lang,
-        TargetLanguageCode=target_lang,
-        TerminologyNames=terminology_names
-    )
-    return response['TranslatedText']
+```bash
+# メールアドレス検証（サンドボックス環境）
+aws ses verify-email-identity --email-address test@example.com --region ${AWS_REGION}
 
-# 用語集の例（事前にCSVでアップロード）
-# en,ja
-# Lambda,Lambda
-# API Gateway,API Gateway
-# serverless,サーバーレス
+# 本番アクセス申請（コンソールから）
+# SES → Account dashboard → Request production access
 ```
 
-### 問題3: 字幕のタイミングがずれる
+### 問題3: Lambda同時実行制限に到達
 
 **症状:**
 ```
-音声と字幕が同期していない
-特に翻訳後の字幕で顕著
+TooManyRequestsException: Rate Exceeded
+一部のレポート生成がスキップされる
 ```
 
 **ヒント:**
-1. VTTパース時にタイムスタンプが正しく保持されているか
-2. 翻訳で文が長くなりすぎていないか
-3. セグメント分割が適切か
+1. Lambda同時実行数制限（デフォルト1000）を確認
+2. Reserved Concurrencyの設定を確認
+3. MaxConcurrencyの調整
 
 **解決方法:**
-```python
-# 長すぎる字幕を分割
-MAX_CHARS_PER_LINE = 40
+```bash
+# アカウントレベルの同時実行制限確認
+aws lambda get-account-settings --region ${AWS_REGION}
 
-def split_long_subtitle(text, max_chars=MAX_CHARS_PER_LINE):
-    if len(text) <= max_chars:
-        return text
-
-    # 適切な位置で改行
-    words = text.split()
-    lines = []
-    current_line = []
-
-    for word in words:
-        if len(' '.join(current_line + [word])) <= max_chars:
-            current_line.append(word)
-        else:
-            lines.append(' '.join(current_line))
-            current_line = [word]
-
-    if current_line:
-        lines.append(' '.join(current_line))
-
-    return '\n'.join(lines)
+# 関数レベルのReserved Concurrency設定
+aws lambda put-function-concurrency \
+  --function-name financeflow-generate-report \
+  --reserved-concurrent-executions 200 \
+  --region ${AWS_REGION}
 ```
 
 ---
 
 ## 設計の考察ポイント
 
-### 1. なぜTranscribeの標準字幕出力を使わないのか？
+### 1. EventBridge Scheduler vs CloudWatch Events
 
 **考察ポイント:**
-- Transcribeの標準VTT出力 vs カスタム処理
-- 翻訳を挟む必要性
-- 品質向上のためのカスタマイズ余地
+- Scheduler: タイムゾーン対応、より柔軟なスケジュール
+- CloudWatch Events: 従来の方法、広く使われている
+- 2023年以降は Scheduler 推奨
 
-### 2. Bedrockによる校正は必要か？
-
-**考察ポイント:**
-- Amazon Translateの品質
-- 追加コストと品質向上のトレードオフ
-- 処理時間への影響
-
-### 3. 同期処理 vs 非同期処理の選択
+### 2. 並列度の最適化
 
 **考察ポイント:**
-- Transcribeは非同期のみ
-- 翻訳は同期/非同期どちらも可能
-- ユーザー体験とシステム設計のバランス
+- Lambda同時実行制限とのバランス
+- DynamoDB/S3のスループット
+- コストとスピードのトレードオフ
 
-### 4. カスタムボキャブラリーの運用
-
-**考察ポイント:**
-- 技術用語の一貫性
-- 更新頻度と管理方法
-- 講師ごとの専門用語対応
-
-### 5. 字幕品質のモニタリング
+### 3. エラーハンドリング戦略
 
 **考察ポイント:**
-- 自動評価の方法
-- 人間によるサンプリング確認
-- フィードバックループの設計
+- 個別失敗 vs 全体失敗
+- リトライ回数と間隔
+- 手動再実行の仕組み
+
+### 4. メール配信の信頼性
+
+**考察ポイント:**
+- SESのバウンス処理
+- 配信レート制限
+- 代替手段（SendGrid等）
+
+### 5. レポートの保存期間
+
+**考察ポイント:**
+- S3ライフサイクルポリシー
+- コンプライアンス要件
+- コスト最適化
 
 ---
 
 ## 発展課題（オプション）
 
-### 1. リアルタイム字幕（ライブ配信対応）
-- Amazon Transcribe Streamingの活用
-- WebSocketによるリアルタイム配信
-- 遅延最小化の工夫
+### 1. レポートのカスタマイズ
+- プラン別レポート内容
+- 企業ごとのテンプレート
+- ロゴ・ブランディング対応
 
-### 2. 話者分離（Speaker Diarization）
-- 複数講師の動画対応
-- 話者ラベルの自動付与
-- 対話形式コンテンツへの対応
+### 2. オンデマンド再生成
+- 特定企業のみ再生成
+- APIエンドポイント追加
+- ダッシュボード連携
 
-### 3. 字幕エディターUIの構築
-- Webベースの字幕編集ツール
-- タイムライン表示
-- 修正→再生成のワークフロー
+### 3. マルチ言語対応
+- 英語レポート生成
+- 多通貨対応
+- タイムゾーン別配信
 
-### 4. 品質スコアリング
-- 文字起こし精度の自動評価
-- WER（Word Error Rate）計測
-- 低品質字幕の自動フラグ
+### 4. 分析機能追加
+- AIによる異常検知
+- 前月比較・トレンド分析
+- 経営アドバイス生成（Bedrock）
 
-### 5. 対応言語の拡大
-- 韓国語、スペイン語等の追加
-- 言語自動検出
-- 多言語プレイリスト対応
+### 5. 配信チャネル拡大
+- Slack通知
+- モバイルプッシュ
+- ダッシュボード表示
 
 ---
 
 ## 想定コストと削減方法
 
-### 月額概算コスト（月20本×平均36分処理想定）
+### 月額概算コスト（月間5,000社処理想定）
 
 | サービス | 内訳 | 月額コスト |
 |----------|------|------------|
-| Amazon Transcribe | 20本 × 36分 = 720分 | $17 |
-| Amazon Translate | 720分 × 2言語 × 約2000文字 | $30 |
-| Amazon Bedrock (Haiku) | 720分 × 2言語 × 50セグメント | $5 |
-| AWS Lambda | 処理時間合計 | $2 |
-| Amazon S3 | 動画+字幕保存 | $5 |
-| Amazon DynamoDB | オンデマンド | $1 |
-| Amazon SQS | メッセージ | $0.01 |
+| AWS Lambda | 5,000回 × 30秒 × 512MB | $3 |
+| Step Functions | 5,000遷移 × 7ステート | $0.15 |
+| EventBridge Scheduler | 1スケジュール | 無料 |
+| Amazon S3 | 5GB（レポート）+ リクエスト | $0.50 |
+| Amazon SES | 5,000通 | $0.50 |
+| Amazon DynamoDB | オンデマンド | $2 |
 | Amazon SNS | 通知 | $0.01 |
 | CloudWatch | ログ | $3 |
-| **合計** | | **約$63（約9,500円）** |
+| **合計** | | **約$9（約1,400円）** |
 
 ### コスト削減のポイント
 
-1. **Transcribeの効率化**
-   - 同じ動画の再処理を避ける（キャッシング）
-   - 短い動画は結合して処理
+1. **Lambda最適化**
+   - メモリサイズの最適化（256MB検討）
+   - ARM64アーキテクチャ使用
+   - → 最大20%削減
 
-2. **翻訳の最適化**
-   - 繰り返しフレーズのキャッシュ
-   - バッチ翻訳API（大量処理時）
+2. **S3ライフサイクル**
+   - 古いレポートの自動削除/アーカイブ
+   - Intelligent-Tiering
 
-3. **Bedrock校正の選択的適用**
-   - 全セグメントではなく長いセグメントのみ
-   - Claude 3 Haikuの使用（Sonnetより安価）
+3. **Express Workflow検討**
+   - 処理時間5分以内の場合
+   - → Step Functions コスト90%削減
 
-4. **S3ライフサイクル**
-   - 古い中間ファイルの自動削除
-   - Intelligent-Tieringの活用
+4. **SESの最適化**
+   - バウンス管理による無駄削減
+   - 配信レピュテーション維持
 
 ### リソース削除手順
 
 ```bash
-# S3バケット内容削除
-aws s3 rm s3://learnhub-videos-input-${ACCOUNT_ID} --recursive
-aws s3 rm s3://learnhub-subtitles-output-${ACCOUNT_ID} --recursive
+# EventBridge Scheduler
+aws scheduler delete-schedule --name financeflow-monthly-report-schedule --region ${AWS_REGION}
 
-# S3バケット削除
-aws s3 rb s3://learnhub-videos-input-${ACCOUNT_ID}
-aws s3 rb s3://learnhub-subtitles-output-${ACCOUNT_ID}
+# Step Functions
+aws stepfunctions delete-state-machine \
+  --state-machine-arn arn:aws:states:${AWS_REGION}:${ACCOUNT_ID}:stateMachine:financeflow-monthly-report
 
-# DynamoDBテーブル削除
-aws dynamodb delete-table --table-name learnhub-subtitle-jobs
+# Lambda
+aws lambda delete-function --function-name financeflow-fetch-companies
+aws lambda delete-function --function-name financeflow-generate-report
+aws lambda delete-function --function-name financeflow-send-emails
+aws lambda delete-function --function-name financeflow-notify-completion
 
-# SQSキュー削除
-aws sqs delete-queue --queue-url https://sqs.${AWS_REGION}.amazonaws.com/${ACCOUNT_ID}/learnhub-subtitle-queue
+# DynamoDB
+aws dynamodb delete-table --table-name financeflow-companies
+aws dynamodb delete-table --table-name financeflow-report-jobs
 
-# SNSトピック削除
-aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:learnhub-subtitle-notifications
+# S3
+aws s3 rm s3://financeflow-reports-${ACCOUNT_ID} --recursive
+aws s3 rb s3://financeflow-reports-${ACCOUNT_ID}
 
-# EventBridgeルール削除
-aws events remove-targets --rule learnhub-transcribe-complete --ids 1
-aws events delete-rule --name learnhub-transcribe-complete
+# SNS
+aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:financeflow-report-notifications
 
-# Lambda関数削除
-aws lambda delete-function --function-name learnhub-transcribe-starter
-aws lambda delete-function --function-name learnhub-transcribe-callback
-aws lambda delete-function --function-name learnhub-translator-vtt-generator
-
-# CloudFormation スタック削除
-aws cloudformation delete-stack --stack-name learnhub-subtitle-iam
+# IAM
+aws iam delete-role-policy --role-name FinanceFlowSchedulerRole --policy-name StepFunctionsExecution
+aws iam delete-role --role-name FinanceFlowSchedulerRole
 ```
 
 ---
 
 ## 学習のポイント
 
-### 1. メディア処理パイプラインの設計
-Transcribe（音声認識）→ Translate（翻訳）→ カスタム処理の流れは、メディア処理の典型パターン。各サービスの特性（同期/非同期、制限）を理解して設計する。
+### 1. EventBridge Schedulerの活用
+cron式による定期実行をサーバーレスで実現。CloudWatch Eventsより柔軟で、タイムゾーン対応も標準でサポート。
 
-### 2. 非同期処理の設計
-Transcribeのような長時間ジョブは必然的に非同期になる。EventBridgeでジョブ完了イベントをキャッチし、後続処理につなげるパターンを習得する。
+### 2. Step Functions Map stateによる並列処理
+大量データを効率的に並列処理する方法。MaxConcurrencyでLambda同時実行数を制御し、リソース制限内で最大効率を実現。
 
-### 3. 多言語対応の考慮点
-翻訳品質は用語集（Terminology）やカスタムボキャブラリーで大きく向上する。技術コンテンツでは特に重要。
+### 3. エラーハンドリングとリトライ
+Step Functionsの Retry / Catch 機能で、自動リトライと失敗時のフォールバックを実装。個別失敗が全体に影響しない設計。
 
-### 4. 字幕フォーマットの理解
-VTT/SRT形式の構造を理解し、パース・生成ができるようになる。タイムスタンプの精度が視聴体験に直結する。
+### 4. SaaSのマルチテナント処理パターン
+数千社のデータを効率的に処理するアーキテクチャ。テナント分離、並列処理、進捗管理の実践的なパターン。
 
-### 5. AI校正による品質向上
-機械翻訳の結果をLLMで校正する「翻訳後編集（Post-editing）」パターン。コストと品質のバランスを取りながら、実用的な品質を実現する。
+### 5. PDFレポート生成のサーバーレス化
+Lambda Layerを活用してPDF生成ライブラリを組み込み、サーバーレスでドキュメント生成を実現。

@@ -1,416 +1,512 @@
-# 課題5: 〇〇株式会社の物件画像自動分析システム構築
+# 課題5: 社内イベント管理システム - ECS + RDS で作るコンテナアプリケーション
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | AI / 画像分析 / 不動産テック |
-| 処理タイプ | バッチ / イベント駆動 |
-| 使用IaC | Terraform |
-| 所要時間 | 5〜7時間 |
+| 難易度 | 中級 |
+| カテゴリ | コンテナ / データベース |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 5〜6時間 |
 
 ---
 
-## 2. シナリオ
+## 学習するAWSサービス
 
-### 企業プロフィール
-
-**〇〇株式会社**は、AIを活用した不動産マッチングプラットフォームを運営する不動産テック企業です。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | 不動産テック（PropTech） |
-| 設立 | 2019年 |
-| 従業員数 | 80名（うち画像チェック担当10名） |
-| 月間訪問者数 | 50万人 |
-| 掲載物件数 | 5万件 |
-| 提携不動産会社 | 300社 |
-| 月商 | 8,000万円 |
-
-### 現状の課題
-
-提携不動産会社から日次で約1万枚の物件画像がアップロードされますが、品質チェックとタグ付け作業を10名のスタッフが手作業で行っており、業務が逼迫しています。また、タグ付けの品質にばらつきがあり、ユーザーの検索精度に影響を与えています。
-
-### 数値で示された問題
-
-| 指標 | 現状 | 業界平均 |
-|------|------|----------|
-| 画像処理スタッフ | 10名 | - |
-| 1人あたり処理枚数 | 1,000枚/日 | - |
-| 画像処理人件費 | 月400万円 | - |
-| 平均処理時間 | 24秒/枚 | - |
-| タグ付け精度 | 75%（人によりばらつき） | 90% |
-| 掲載までのリードタイム | 48時間 | 12時間 |
-| 不適切画像の見落とし率 | 5% | 1%未満 |
-
-### 画像処理の現状フロー
-
-```
-1. 不動産会社がS3に画像アップロード
-2. スタッフがS3から画像をダウンロード
-3. 目視で品質チェック（解像度、明るさ、ブレ）
-4. 手動でタグ付け（部屋タイプ、設備、特徴）
-5. 不適切画像は差し戻し
-6. 承認済み画像をCDNに公開
-```
-
-### 解決したいこと
-
-1. 画像品質チェックの自動化（解像度、明るさ、ブレ、不適切コンテンツ検出）
-2. AIによる自動タグ付け（部屋タイプ、設備、特徴の認識）
-3. 処理スタッフの業務時間70%削減
-4. タグ付け精度を90%以上に向上
-5. 掲載リードタイムを48時間から4時間に短縮
-
-### 成功指標（KPI）
-
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| 自動処理率 | 0% | 85%以上 |
-| タグ付け精度 | 75% | 90%以上 |
-| 処理スタッフ工数 | 10名フルタイム | 3名（監視・例外対応） |
-| 掲載リードタイム | 48時間 | 4時間以内 |
-| 不適切画像検出率 | 95% | 99.5%以上 |
-| 月間コスト | 400万円（人件費） | 150万円（AWS+人件費） |
-
----
-
-## 3. 達成目標
-
-この演習で習得できるスキル：
-
-### 技術的な学習ポイント
-
-1. **Amazon Rekognitionの実践活用**
-   - ラベル検出（DetectLabels）
-   - 不適切コンテンツ検出（DetectModerationLabels）
-   - 画像品質分析（顔検出APIの品質スコア活用）
-
-2. **S3イベント駆動アーキテクチャ**
-   - S3イベント通知とLambdaトリガー
-   - 大量画像の並列処理パターン
-
-3. **Amazon Bedrockによる高度な画像分析**
-   - Claude 3のマルチモーダル機能（画像入力）
-   - 日本語での詳細な物件説明生成
-
-4. **Terraformによるインフラ構築**
-   - モジュール化されたTerraform構成
-   - 環境変数管理とワークスペース
-
-### 実務で活かせる知識
-
-- 画像処理パイプラインの設計パターン
-- AI/MLサービスの組み合わせ方
-- 大量データ処理のスケーリング戦略
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| 画像認識 | Amazon Rekognition | Cloud Vision AI |
-| 生成AI（マルチモーダル） | Bedrock (Claude 3) | Vertex AI (Gemini) |
-| オブジェクトストレージ | S3 | Cloud Storage |
-| サーバーレス関数 | Lambda | Cloud Functions |
-
----
-
-## 4. 使用するAWSサービス
+この演習では以下のAWSサービスを実践的に学習します。
 
 ### メインサービス
 
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon S3 | 画像保存（入力/出力） | スケーラブル、イベント通知対応 |
-| Amazon Rekognition | ラベル検出・不適切コンテンツ検出 | 事前学習済み、日本語対応 |
-| Amazon Bedrock | Claude 3による詳細分析 | マルチモーダル、日本語の説明生成 |
-| AWS Lambda | 画像処理ロジック | イベント駆動、並列実行 |
-| Amazon DynamoDB | 処理結果・メタデータ保存 | 高スループット、柔軟なスキーマ |
-| Amazon SQS | 処理キュー | 大量リクエストのバッファリング |
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon ECS (Fargate)** | コンテナ実行環境 | タスク定義、サービス、クラスター |
+| **Amazon RDS (PostgreSQL)** | リレーショナルDB | インスタンス作成、セキュリティグループ、接続 |
+| **Amazon VPC** | ネットワーク基盤 | パブリック/プライベートサブネット設計 |
+| **AWS Secrets Manager** | DB認証情報管理 | シークレット作成、ローテーション |
 
 ### 補助サービス
 
 | サービス | 役割 |
 |----------|------|
-| Amazon CloudFront | 承認済み画像の配信 |
-| Amazon SNS | 処理完了通知・エラー通知 |
-| Amazon CloudWatch | ログ・メトリクス・アラート |
-| AWS Step Functions | ワークフロー管理（オプション） |
+| **Application Load Balancer** | HTTPトラフィック分散 |
+| **Amazon ECR** | コンテナイメージ保存 |
+| **Amazon CloudWatch** | ログ・メトリクス監視 |
+| **AWS IAM** | サービス間の権限管理 |
 
 ---
 
-## 5. 前提条件
+## 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group vpc(cloud)[VPC 10.0.0.0/16] in aws
+    group public(server)[Public Subnets] in vpc
+    group private(server)[Private Subnets] in vpc
+    group data(database)[Data Layer] in vpc
+
+    service user(internet)[社員ユーザー]
+    service alb(server)[Application Load Balancer] in public
+    service nat(server)[NAT Gateway] in public
+    service ecs(server)[ECS Fargate イベント管理アプリ] in private
+    service rds(database)[RDS PostgreSQL] in data
+    service secrets(server)[Secrets Manager] in aws
+    service ecr(disk)[ECR コンテナイメージ] in aws
+
+    user:R --> L:alb
+    alb:B --> T:ecs
+    ecs:R --> L:rds
+    ecs:R --> L:secrets
+    ecs:B --> T:nat
+    ecr:B --> T:ecs
+```
+
+### ネットワーク構成
+
+| サブネット | CIDR | 用途 | リソース |
+|------------|------|------|----------|
+| Public Subnet 1a | 10.0.1.0/24 | インターネット接続 | ALB, NAT Gateway |
+| Public Subnet 1c | 10.0.2.0/24 | インターネット接続 | ALB |
+| Private Subnet 1a | 10.0.11.0/24 | アプリケーション | ECS Tasks |
+| Private Subnet 1c | 10.0.12.0/24 | アプリケーション | ECS Tasks |
+| Private Subnet 1a (DB) | 10.0.21.0/24 | データベース | RDS Primary |
+| Private Subnet 1c (DB) | 10.0.22.0/24 | データベース | RDS Standby |
+
+---
+
+## シナリオ
+
+### 企業プロフィール
+
+**〇〇株式会社**は、社員100名規模のIT企業です。勉強会、懇親会、部活動などの社内イベントが活発ですが、イベント管理がSlackとスプレッドシートに分散しており、情報が整理されていません。
+
+| 項目 | 内容 |
+|------|------|
+| 業種 | IT / SaaS |
+| 従業員数 | 100名 |
+| 月間イベント数 | 15〜20件 |
+| 管理方法 | Slack + スプレッドシート（散在） |
+
+### 現状の課題
+
+「あのイベントいつだっけ？」「参加者誰だっけ？」がSlackの検索で埋もれてしまう。スプレッドシートは誰かが作るが、更新されなかったり、どれが最新かわからなくなる。
+
+### 数値で示された問題
+
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| イベント情報の検索時間 | 5分 | 10秒 |
+| 参加登録の手間 | Slack返信 + 手動集計 | ワンクリック |
+| イベント一覧の把握 | 困難 | 一目で把握 |
+
+### 解決したいこと
+
+1. 社内イベントを一元管理したい
+2. イベントの作成・参加登録を簡単にしたい
+3. 過去のイベント履歴も検索できるようにしたい
+4. モダンな技術スタック（コンテナ）で構築したい
+
+### 成功指標（KPI）
+
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| イベント登録率 | 50%（把握できてない） | 100% |
+| 情報検索時間 | 5分 | 10秒 |
+| システム稼働率 | - | 99.9% |
+
+---
+
+## 達成目標
+
+この演習で習得できるスキル：
+
+### 技術的な学習ポイント
+
+1. **ECS Fargateの基本**
+   - タスク定義の作成
+   - サービスの設定
+   - ALB との統合
+   - オートスケーリング
+
+2. **RDSの基本**
+   - PostgreSQL インスタンスの作成
+   - サブネットグループの設定
+   - セキュリティグループによるアクセス制御
+   - 接続文字列の管理
+
+3. **VPCネットワーク設計**
+   - パブリック/プライベートサブネットの使い分け
+   - NAT Gateway の役割
+   - セキュリティグループの設計
+
+4. **Secrets Managerによる認証情報管理**
+   - シークレットの作成
+   - ECSタスクからの参照
+   - 自動ローテーション（オプション）
+
+### 実務で活かせる知識
+
+- コンテナベースのWebアプリケーション構成
+- セキュアなデータベース接続パターン
+- 本番レベルのネットワーク設計
+
+---
+
+## 前提条件
 
 ### 必要な事前知識
 
-- AWSマネジメントコンソールの基本操作
-- Terraform基礎（HCL構文、state管理）
-- Python 3.9以上の基礎
-- 画像処理の基本概念
+- Dockerの基本（Dockerfile, docker build, docker run）
+- SQLの基本（SELECT, INSERT, UPDATE, DELETE）
+- REST APIの基本概念
 
 ### 準備するもの
 
 1. **AWSアカウント**
-   - Bedrockのモデルアクセス有効化（Claude 3 Sonnet）
-   - Rekognitionへのアクセス権限
+   - VPC、ECS、RDS、ALBの利用権限
 
 2. **開発環境**
-   - Terraform v1.5以上
    - AWS CLI v2（設定済み）
-   - Python 3.9以上
-   - jq（JSON処理用）
+   - Docker Desktop
+   - お好みのプログラミング言語（Python/Node.js/Go等）
 
-3. **テストデータ**
-   - サンプル物件画像（10-20枚）
-   - 不適切画像サンプル（テスト用）
+3. **サンプルアプリケーション**
+   - 簡単なCRUD Webアプリ（提供 or 自作）
 
-### Terraform初期設定
+### 必要なIAM権限
 
-```bash
-# Terraformインストール確認
-terraform version
+以下の権限が必要です（事前に確認してください）：
 
-# AWS認証情報確認
-aws sts get-caller-identity
-
-# 作業ディレクトリ作成
-mkdir -p homematch-image-analyzer/{modules,environments}
-cd homematch-image-analyzer
+```
+- ec2:* (VPC関連)
+- ecs:*
+- ecr:*
+- rds:*
+- elasticloadbalancing:*
+- secretsmanager:*
+- iam:CreateRole, iam:AttachRolePolicy
+- logs:*
 ```
 
 ---
 
-## 6. トラブルシューティング課題
+## アプリケーション仕様
 
-### 問題1: Lambda実行時にタイムアウト
+### 機能一覧
+
+| 機能 | 説明 |
+|------|------|
+| イベント一覧 | 開催予定のイベントを一覧表示 |
+| イベント作成 | 新しいイベントを作成 |
+| イベント詳細 | イベントの詳細と参加者を表示 |
+| 参加登録 | イベントに参加登録 |
+| 参加キャンセル | 参加登録のキャンセル |
+
+### API設計
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | /events | イベント一覧取得 |
+| POST | /events | イベント作成 |
+| GET | /events/{id} | イベント詳細取得 |
+| PUT | /events/{id} | イベント更新 |
+| DELETE | /events/{id} | イベント削除 |
+| POST | /events/{id}/join | 参加登録 |
+| DELETE | /events/{id}/join | 参加キャンセル |
+
+### データベーススキーマ
+
+```sql
+-- イベントテーブル
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    event_date TIMESTAMP NOT NULL,
+    location VARCHAR(200),
+    max_participants INT,
+    organizer VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 参加者テーブル
+CREATE TABLE participants (
+    id SERIAL PRIMARY KEY,
+    event_id INT REFERENCES events(id) ON DELETE CASCADE,
+    user_name VARCHAR(100) NOT NULL,
+    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, user_name)
+);
+```
+
+---
+
+## トラブルシューティング課題
+
+### 問題1: ECSタスクがRDSに接続できない
 
 **症状:**
 ```
-Task timed out after 120.00 seconds
-CloudWatch Logsで処理が途中で終了している
+Connection refused to database
+FATAL: no pg_hba.conf entry for host
 ```
 
 **ヒント:**
-1. Bedrockの呼び出しに時間がかかっていないか確認
-2. 画像サイズが大きすぎないか確認
-3. S3からの画像ダウンロード時間を確認
+1. セキュリティグループの設定を確認
+2. RDSのセキュリティグループがECSからの5432ポートを許可しているか
+3. ECSタスクが正しいサブネットで起動しているか
 
-**解決方法:**
-```hcl
-# Lambda設定の調整
-resource "aws_lambda_function" "image_processor" {
-  # ...
-  timeout     = 180  # タイムアウトを延長
-  memory_size = 1024  # メモリを増やして処理速度向上
-}
-```
+<details>
+<summary>解決方法を見る</summary>
 
-また、画像サイズの制限を追加：
-```python
-# Lambda関数内で画像サイズチェック
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
+1. RDSのセキュリティグループでインバウンドルールを確認：
+   - タイプ: PostgreSQL
+   - ポート: 5432
+   - ソース: ECSタスクのセキュリティグループID
 
-response = s3.head_object(Bucket=bucket, Key=key)
-if response['ContentLength'] > MAX_IMAGE_SIZE:
-    raise ValueError(f"Image too large: {response['ContentLength']} bytes")
-```
+2. ECSタスクがプライベートサブネットで起動していることを確認。
 
-### 問題2: Rekognitionでエラー「InvalidS3ObjectException」
+3. VPCのルートテーブルで、プライベートサブネットからNAT Gateway経由でインターネットにアクセスできることを確認（ECRからのイメージプルに必要）。
+
+</details>
+
+### 問題2: ECSタスクが起動しない
 
 **症状:**
 ```
-botocore.exceptions.ClientError: An error occurred (InvalidS3ObjectException)
-when calling the DetectLabels operation: Unable to get object metadata from S3
+STOPPED (CannotPullContainerError)
+ResourceInitializationError: unable to pull secrets
 ```
 
 **ヒント:**
-1. S3バケット名とキーが正しいか確認
-2. Lambda実行ロールにS3読み取り権限があるか確認
-3. リージョンが一致しているか確認
+1. ECRリポジトリにイメージが存在するか確認
+2. タスク実行ロールにECRへのアクセス権限があるか
+3. Secrets Managerへのアクセス権限があるか
 
-**解決方法:**
-```hcl
-# IAMポリシーにs3:GetObjectが含まれているか確認
+<details>
+<summary>解決方法を見る</summary>
+
+タスク実行ロールに以下のポリシーが必要：
+
+```json
 {
-  Effect = "Allow"
-  Action = [
-    "s3:GetObject",
-    "s3:HeadObject"  # これも追加
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:*:secret:your-secret-*"
+    }
   ]
-  Resource = "${var.input_bucket_arn}/*"
 }
 ```
 
-### 問題3: SQSメッセージが処理されずDLQに溜まる
+</details>
+
+### 問題3: ALBのヘルスチェックが失敗する
 
 **症状:**
 ```
-DLQにメッセージが溜まり続ける
-メインキューは空
-Lambda呼び出し回数は0
+ECSサービスのタスクが起動してもすぐに停止される
+ターゲットグループのヘルスステータスが unhealthy
 ```
 
 **ヒント:**
-1. SQS → Lambdaのイベントソースマッピングを確認
-2. Lambdaの実行ロールにSQS権限があるか確認
-3. SQSキューポリシーを確認
+1. ヘルスチェックパスが正しいか
+2. アプリケーションが指定ポートでリッスンしているか
+3. ヘルスチェックの猶予期間が十分か
 
-**解決方法:**
-```bash
-# イベントソースマッピング確認
-aws lambda list-event-source-mappings --function-name homematch-image-processor-dev
+<details>
+<summary>解決方法を見る</summary>
 
-# 無効になっている場合は有効化
-aws lambda update-event-source-mapping \
-  --uuid <mapping-uuid> \
-  --enabled
-```
+1. ターゲットグループのヘルスチェック設定：
+   - パス: `/health` または `/` （アプリに合わせる）
+   - 正常しきい値: 2
+   - 非正常しきい値: 5
+   - タイムアウト: 5秒
+   - 間隔: 30秒
+
+2. ECSサービスのヘルスチェック猶予期間を設定（アプリ起動に時間がかかる場合）：
+   - healthCheckGracePeriodSeconds: 60
+
+3. アプリケーションが正しいポート（例: 8080）でリッスンしていることを確認。
+
+</details>
 
 ---
 
 ## 設計の考察ポイント
 
-### 1. なぜSQSを間に挟んだのか？S3→Lambda直接でも良いのでは？
+### 1. なぜFargateを選ぶか
 
-**考察ポイント:**
-- S3直接トリガーの同時実行制限
-- リトライ戦略の柔軟性
-- デッドレターキューによる失敗管理
-- バッチ処理による効率化
+**考えてみよう:**
+- EC2でコンテナを動かす場合と何が違う？
+- Fargateのメリット・デメリットは？
 
-### 2. RekognitionとBedrockの両方を使う理由は？
+**比較:**
+| 項目 | ECS on EC2 | ECS on Fargate |
+|------|------------|----------------|
+| サーバー管理 | 必要 | 不要 |
+| スケーリング | インスタンス単位 | タスク単位 |
+| コスト | 予約で安くなる | 従量課金のみ |
+| 起動速度 | 速い（既存インスタンス） | やや遅い |
 
-**考察ポイント:**
-- Rekognitionの高速・低コストなラベル検出
-- Bedrockの詳細な日本語説明生成
-- コストと精度のトレードオフ
-- 代替案：Bedrock単独（コスト増）
+### 2. RDSをプライベートサブネットに置く理由
 
-### 3. 画像の保存先を分けた設計の意図は？
+**考えてみよう:**
+- パブリックサブネットに置いたらどうなる？
+- セキュリティグループだけで守れないの？
 
-**考察ポイント:**
-- 承認/却下フローの実装
-- 運用担当者のワークフロー
-- ライフサイクルポリシーの差別化
-- アクセス権限の分離
+**理由:**
+- 多層防御の原則（ネットワーク + SG）
+- 誤設定リスクの軽減
+- コンプライアンス要件
 
-### 4. DynamoDBのGSI設計は適切か？
+### 3. Secrets Managerを使う理由
 
-**考察ポイント:**
-- status-indexの用途（承認待ち一覧）
-- room_type-indexの用途（部屋タイプ別検索）
-- クエリパターンとの整合性
-- GSI追加コストの検討
+**考えてみよう:**
+- 環境変数に直接パスワードを書いたらダメ？
+- Parameter Store との違いは？
 
-### 5. コールドスタート対策は必要か？
-
-**考察ポイント:**
-- 画像処理は非同期のため許容可能
-- 大量アップロード時のスパイク
-- Provisioned Concurrencyの費用対効果
+**メリット:**
+- 認証情報の一元管理
+- 自動ローテーション
+- 監査ログ
 
 ---
 
-## 発展課題（オプション）
+## 発展課題
 
-### 1. 顔検出による個人情報保護
-- Rekognition DetectFacesで顔を検出
-- 顔部分に自動モザイク処理
-- プライバシー保護の自動化
+### 1. オートスケーリングの設定
+- CPU使用率に基づくスケーリング
+- スケジュールベースのスケーリング（イベント前に増強）
 
-### 2. 画像のリサイズ・最適化
-- Lambda Layerにsharpを追加
-- 複数サイズ（サムネイル、中、大）を生成
-- WebP形式への変換で容量削減
+### 2. CI/CDパイプラインの構築
+- GitHub Actions / CodePipeline
+- イメージのビルド → ECRプッシュ → ECSデプロイ
 
-### 3. バッチ処理モードの追加
-- Step Functionsでオーケストレーション
-- 大量インポート時の一括処理
-- 進捗レポート機能
+### 3. RDSのMulti-AZ構成
+- 高可用性構成への変更
+- フェイルオーバーテスト
 
-### 4. 類似画像検出
-- Rekognition CompareFacesの応用
-- 重複画像の自動検出
-- 不正利用（他物件画像の流用）防止
-
-### 5. ダッシュボード構築
-- QuickSightとの連携
-- 日次処理統計
-- エラー傾向分析
+### 4. CloudFrontの追加
+- 静的アセットのキャッシュ
+- カスタムドメインとSSL証明書
 
 ---
 
 ## 想定コストと削減方法
 
-### 月額概算コスト（日次1万枚処理想定）
+### 月額概算コスト（最小構成）
 
 | サービス | 内訳 | 月額コスト |
 |----------|------|------------|
-| Amazon Rekognition | DetectLabels: 30万枚 × $0.001 | $300 |
-| Amazon Rekognition | DetectModeration: 30万枚 × $0.001 | $300 |
-| Amazon Bedrock | 30万リクエスト × $0.003/1K入力トークン | $150 |
-| AWS Lambda | 30万回 × 30秒 × 512MB | $40 |
-| Amazon S3 | 500GB保存 + リクエスト | $15 |
-| Amazon SQS | 60万メッセージ | $0.30 |
-| Amazon DynamoDB | オンデマンド、30万書き込み | $40 |
-| CloudWatch | ログ・メトリクス | $10 |
-| **合計** | | **約$855（約128,000円）** |
+| ECS Fargate | 0.25 vCPU / 0.5GB × 1タスク × 720時間 | $9 |
+| RDS PostgreSQL | db.t3.micro × 720時間 | $15 |
+| ALB | 1 ALB + 処理データ | $20 |
+| NAT Gateway | 1 NAT × 720時間 + データ処理 | $35 |
+| ECR | 1GB | $0.10 |
+| Secrets Manager | 1シークレット | $0.40 |
+| CloudWatch Logs | 1GB | $0.50 |
+| **合計** | | **約$80（約12,000円）** |
 
 ### コスト削減のポイント
 
-1. **段階的な処理フロー**
-   - まずRekognitionで高速チェック
-   - 問題なければBedrockで詳細分析
-   - 問題画像はBedrock呼び出しスキップ
-   - → 最大30%削減
+1. **NAT Gatewayの最適化**
+   - VPCエンドポイントの活用（ECR, Secrets Manager）
+   - 開発環境ではNATインスタンス検討
 
-2. **Rekognition Custom Labels検討**
-   - 物件特化のモデルを作成
-   - 精度向上とコスト削減の両立
+2. **RDSの最適化**
+   - 開発環境は停止スケジュール設定
+   - 本番以外はSingle-AZ
 
-3. **S3 Intelligent-Tiering**
-   - アクセス頻度に応じた自動階層化
-   - → ストレージコスト30%削減
+3. **Fargateの最適化**
+   - Fargate Spot の活用（開発環境）
+   - 適切なリソースサイジング
 
-4. **Lambda ARM64アーキテクチャ**
-   - Graviton2プロセッサ使用
-   - → Lambda コスト20%削減
+---
 
-### リソース削除手順
+## クリーンアップチェックリスト
+
+演習終了後、以下のリソースを**必ず**削除してください（特にNAT GatewayとRDSは課金が続きます）：
 
 ```bash
-# Terraform経由で全削除
-terraform destroy -auto-approve
+# 削除順序が重要！依存関係に注意
 
-# S3バケットが残る場合（中身がある場合）
-aws s3 rm s3://homematch-input-dev-xxxx --recursive
-aws s3 rm s3://homematch-approved-dev-xxxx --recursive
-aws s3 rm s3://homematch-review-dev-xxxx --recursive
+# 1. ECSサービスを0にスケールダウン
+aws ecs update-service --cluster your-cluster --service your-service --desired-count 0
 
-# 再度destroy
-terraform destroy -auto-approve
+# 2. ECSサービス削除
+aws ecs delete-service --cluster your-cluster --service your-service --force
+
+# 3. ALB削除（ターゲットグループも）
+aws elbv2 delete-load-balancer --load-balancer-arn your-alb-arn
+
+# 4. RDS削除（スナップショット不要なら --skip-final-snapshot）
+aws rds delete-db-instance --db-instance-identifier your-db --skip-final-snapshot
+
+# 5. NAT Gateway削除
+aws ec2 delete-nat-gateway --nat-gateway-id your-nat-id
+
+# 6. ECSクラスター削除
+aws ecs delete-cluster --cluster your-cluster
+
+# 7. VPC削除（依存リソースを先に削除）
+# サブネット、IGW、ルートテーブルなど
+
+# 8. ECRリポジトリ削除
+aws ecr delete-repository --repository-name your-repo --force
+
+# 9. Secrets Manager（即時削除）
+aws secretsmanager delete-secret --secret-id your-secret --force-delete-without-recovery
 ```
+
+- [ ] ECSサービス・クラスター
+- [ ] Application Load Balancer・ターゲットグループ
+- [ ] RDSインスタンス・サブネットグループ
+- [ ] **NAT Gateway**（課金注意！）
+- [ ] VPC・サブネット・IGW
+- [ ] ECRリポジトリ
+- [ ] Secrets Manager シークレット
+- [ ] CloudWatchロググループ
+- [ ] IAMロール・ポリシー
 
 ---
 
 ## 学習のポイント
 
-### 1. イベント駆動アーキテクチャの理解
-S3イベント → SQS → Lambda のパターンは、大量データ処理の基本形。SQSによるバッファリングで、Lambda同時実行数制限やスパイク対策ができる。
+### 1. コンテナ + RDS は王道パターン
+Webアプリケーションの構成として、ECS (Fargate) + RDS は最もよく使われるパターンの一つ。この構成を理解すれば、多くの実案件に応用できます。
 
-### 2. Terraformのモジュール化
-再利用可能なモジュールに分割することで、複数環境への展開や保守性が向上する。outputを活用したモジュール間連携を習得する。
+### 2. ネットワーク設計の重要性
+VPC、サブネット、セキュリティグループの設計は、セキュリティとコストに直結。パブリック/プライベートの使い分けを理解することが重要。
 
-### 3. AI/MLサービスの組み合わせ
-単一サービスで全てを解決しようとせず、Rekognition（高速・低コスト）とBedrock（高精度・日本語）を使い分けることで、コストと品質のバランスを取る。
+### 3. 認証情報の適切な管理
+パスワードをハードコードしない。Secrets Manager や Parameter Store を使って、安全に認証情報を管理する習慣をつける。
 
-### 4. デッドレターキュー（DLQ）の重要性
-処理失敗時のリカバリーパスを最初から設計に含める。DLQに溜まったメッセージは、原因調査後に再処理できる。
+---
 
-### 5. Infrastructure as Codeの実践
-コンソールでの手作業ではなく、Terraformで全リソースを管理することで、環境の再現性・変更履歴の追跡・レビュープロセスが可能になる。
+## 次のステップ
+
+この演習を終えたら、以下の演習に挑戦してみましょう：
+
+- [課題11: スタートアップのコンテナCI/CD構築](exercise-11.md) - CI/CDパイプラインの構築
+- [課題38: SaaS企業のマルチテナント基盤](exercise-38.md) - より高度なECS構成（RDS Proxy活用）

@@ -1,4 +1,4 @@
-# 課題37: 物流企業のイベント駆動配送管理
+# 課題37: TechCorp - IAM Identity Center (AWS SSO) 構築
 
 **難易度: 🟡 中級**
 
@@ -9,295 +9,748 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | マイクロサービス・API |
-| 処理タイプ | 非同期 |
-| 使用IaC | CDK |
+| カテゴリ | 認証・認可 / セキュリティ |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. シナリオ
 
-### 企業プロフィール
-**QuickDeliver株式会社**は、EC事業者向けの配送代行サービスを提供する物流企業です。日次配送件数は1万件を超え、荷主、倉庫、配送ドライバー、エンドユーザーなど多くのステークホルダーと連携しています。
+ITコンサルティング会社「TechCorp株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
 
-### 現状の課題
-配送状況の通知システムが各所に分散し、リアルタイム性と一貫性に問題があります：
+### 企業プロファイル
 
-1. **通知の遅延**：配送状況の更新がバッチ処理のため、30分〜1時間遅れる
-2. **通知漏れ**：システム間連携の不整合で、通知が届かないケースが発生
-3. **拡張性の低さ**：新しい通知チャネル（LINE、アプリプッシュ）の追加が困難
-4. **トレーサビリティ不足**：配送の状態遷移履歴が追跡しにくい
+| 項目 | 内容 |
+|------|------|
+| 企業名 | TechCorp株式会社 |
+| 業種 | ITコンサルティング |
+| 従業員数 | 500名 |
+| AWSアカウント数 | 15アカウント（開発/本番/共有サービス等） |
+| 部門数 | 6部門（開発、インフラ、セキュリティ、営業、管理、経営） |
+| 課題 | 複数アカウントへのアクセス管理の複雑化、セキュリティ強化 |
 
-### 数値で見る問題
-- 通知遅延：平均 **45分**
-- 通知漏れ率：**2%**（月200件）
-- 顧客問い合わせ：月 **500件**（「荷物はどこ？」）
-- 新チャネル追加：**3ヶ月**かかる
+### 達成目標（white hat KPI）
 
-### 成功指標（KPI）
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 通知遅延 | 45分 | 1分以内 |
-| 通知漏れ率 | 2% | 0.1%以下 |
-| 顧客問い合わせ | 500件/月 | 100件/月 |
-| 新チャネル追加 | 3ヶ月 | 1週間 |
+| KPI | 目標値 | 測定方法 |
+|-----|--------|----------|
+| SSO認証成功率 | 99.9% | CloudWatch メトリクス |
+| アクセス権プロビジョニング | < 5分 | 権限変更の反映時間 |
+| セキュリティコンプライアンス | 100% | MFA必須、監査ログ完全性 |
+| 運用負荷削減 | 80%削減 | アカウント管理作業時間 |
 
 ---
 
-## 3. 学習目標
-
-### 主要な学習成果
-1. EventBridgeを使ったイベント駆動アーキテクチャの構築
-2. Fan-outパターンによる複数通知チャネルへの配信
-3. DynamoDB Streamsによるイベント発行
-4. デッドレターキューによるエラーハンドリング
-
-### 習得するスキル
-- EventBridge Rules / Event Bus の設計
-- Lambda と SQS / SNS の連携
-- イベントスキーマの設計
-- 冪等性の実装
-
----
-
-## 4. 使用するAWSサービス
-
-### コアサービス
-| サービス | 用途 | 重要度 |
-|----------|------|--------|
-| EventBridge | イベントバス・ルーティング | 高 |
-| Lambda | イベント処理 | 高 |
-| SQS | メッセージキューイング | 高 |
-| SNS | Fan-out配信 | 高 |
-| DynamoDB | 配送データ・イベント履歴 | 高 |
-
-### 補助サービス
-| サービス | 用途 |
-|----------|------|
-| API Gateway | 外部システム連携API |
-| SES | メール通知 |
-| CloudWatch | ログ・メトリクス・アラーム |
-| X-Ray | 分散トレーシング |
-| Step Functions | 複雑なワークフロー |
-
----
-
-## 5. 前提条件
-
-### 必要な知識
-- イベント駆動アーキテクチャの基本概念
-- AWS Lambda の基本操作
-- TypeScript の基礎
-
-### 事前準備
-1. AWSアカウント
-2. AWS CLI v2
-3. Node.js 18.x
-4. AWS CDK CLI
-
----
-
-## 6. アーキテクチャ概要
-
-### システム構成図
+## 2. アーキテクチャ図
 
 ```mermaid
 architecture-beta
-    group sources(cloud)[Event Sources]
-    group aws(cloud)[AWS Cloud]
-    group ingestion(server)[Ingestion Layer] in aws
-    group eventbus(server)[EventBridge] in aws
-    group targets(server)[Event Targets] in aws
-    group notifications(server)[Notification Handlers] in aws
+    group techcorp(cloud)[TechCorp IAM Identity Center]
 
-    service wms(server)[WMS Warehouse] in sources
-    service tms(server)[TMS Transport] in sources
-    service driver_app(internet)[Driver App] in sources
-    service external_api(server)[External API] in sources
+    group idp(server)[External Identity Provider] in techcorp
+    group idc(server)[AWS IAM Identity Center] in techcorp
+    group org(cloud)[AWS Organizations] in techcorp
 
-    service apigw(server)[API Gateway POST /events] in ingestion
-    service lambda_ingest(server)[Lambda EventIngestion] in ingestion
+    service external_idp(server)[Azure AD / Okta / Google SAML 2.0 / SCIM] in idp
 
-    service eventbridge(server)[EventBridge Custom Event Bus] in eventbus
+    service identity_store(database)[Identity Store Users & Groups] in idc
+    service permission_sets(server)[Permission Sets] in idc
 
-    service sns_customer(server)[SNS Customer] in targets
-    service sqs_shipper(server)[SQS Shipper] in targets
-    service lambda_dashboard(server)[Lambda Dashboard] in targets
-    service s3_archive(disk)[S3 Archive] in targets
+    service mgmt_acct(server)[Management Account] in org
+    service security_ou(server)[Security OU] in org
+    service workloads_ou(server)[Workloads OU] in org
+    service sandbox_ou(server)[Sandbox OU] in org
 
-    service lambda_email(server)[Lambda EmailNotify] in notifications
-    service lambda_sms(server)[Lambda SMSNotify] in notifications
-    service lambda_push(server)[Lambda PushNotify] in notifications
-    service lambda_webhook(server)[Lambda WebhookCall] in notifications
+    service security_acct(server)[Security Account] in org
+    service log_archive(server)[Log Archive Account] in org
+    service prod_acct(server)[Production Account] in org
+    service stg_acct(server)[Staging Account] in org
+    service dev_acct(server)[Development Account] in org
+    service sandbox_dev(server)[Sandbox-Dev Account] in org
 
-    service ses(server)[SES Email] in notifications
-    service sns_sms(server)[SNS SMS] in notifications
-    service pinpoint(server)[Pinpoint Push] in notifications
+    service access_portal(internet)[Access Portal] in techcorp
 
-    wms:B --> T:apigw
-    tms:B --> T:apigw
-    driver_app:B --> T:apigw
-    external_api:B --> T:apigw
-    apigw:B --> T:lambda_ingest
-    lambda_ingest:B --> T:eventbridge
-    eventbridge:B --> T:sns_customer
-    eventbridge:B --> T:sqs_shipper
-    eventbridge:B --> T:lambda_dashboard
-    eventbridge:B --> T:s3_archive
-    sns_customer:B --> T:lambda_email
-    sns_customer:B --> T:lambda_sms
-    sns_customer:B --> T:lambda_push
-    sqs_shipper:B --> T:lambda_webhook
+    external_idp:B --> T:identity_store
+    identity_store:B --> T:permission_sets
+    permission_sets:B --> T:mgmt_acct
+    mgmt_acct:B --> T:security_ou
+    mgmt_acct:B --> T:workloads_ou
+    mgmt_acct:B --> T:sandbox_ou
+    permission_sets:R --> L:access_portal
 ```
 
-**EventBridge Rules:**
-- NotifyCustomer: status = OUT_FOR_DELIVERY, DELIVERED
-- NotifyShipper: status = *
-- UpdateDashboard: status = *
-- Archive: status = *
+**Identity Store Groups:**
+- 開発部門 (80 users) / インフラ部門 (40 users) / セキュリティ部門 (20 users)
+- 営業部門 (200 users) / 管理部門 (100 users) / 経営層 (60 users)
 
-### イベントフロー
+**Permission Sets:**
+- AdministratorPS (Full Admin) / DeveloperPS (Dev Resources) / ReadOnlyPS (View Only)
+- SecurityAuditPS / NetworkAdminPS / BillingViewerPS
+
+**Access Portal:** https://techcorp.awsapps.com/start
+
+### アクセス管理マトリクス
+
+| 部門 | Production | Staging | Development | Sandbox | Security |
+|------|------------|---------|-------------|---------|----------|
+| 開発部門 | Developer, ReadOnly | Admin | Admin | Admin | - |
+| インフラ部門 | Admin, Network | Admin, Network | Admin, Network | Admin | ReadOnly |
+| セキュリティ部門 | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | Admin |
+| 営業部門 | - | - | - | - | - |
+| 管理部門 | Billing, ReadOnly | Billing | - | - | - |
+| 経営層 | ReadOnly, Billing | ReadOnly | ReadOnly | - | ReadOnly |
+
+---
+
+## 3. 前提知識
+
+### 3.1 IAM Identity Center の概念
+
+GCPでのアイデンティティ管理経験がある方向けの比較：
+
+| 観点 | GCP | AWS |
+|------|-----|-----|
+| SSO基盤 | Cloud Identity | IAM Identity Center |
+| IdP連携 | Cloud Identity + SAML | Identity Center + SAML/SCIM |
+| 権限管理 | IAM Roles | Permission Sets |
+| ディレクトリ | Cloud Identity Directory | Identity Center Directory |
+| マルチプロジェクト | Project IAM Bindings | Account Assignments |
+
+### 3.2 IAM Identity Center の主要概念
 
 ```mermaid
-stateDiagram-v2
-    [*] --> ORDER_RECEIVED
-    ORDER_RECEIVED --> PROCESSING
-    PROCESSING --> PICKED_UP
-    PROCESSING --> CANCELLED
-    PICKED_UP --> IN_TRANSIT
-    PICKED_UP --> RETURNED_TO_SENDER
-    IN_TRANSIT --> OUT_FOR_DELIVERY
-    OUT_FOR_DELIVERY --> DELIVERED
-    OUT_FOR_DELIVERY --> DELIVERY_FAILED
-    DELIVERY_FAILED --> RESCHEDULED
-    RESCHEDULED --> OUT_FOR_DELIVERY
-    DELIVERED --> [*]
-    CANCELLED --> [*]
-    RETURNED_TO_SENDER --> [*]
+flowchart TB
+    subgraph concepts[IAM Identity Center Core Concepts]
+        subgraph identity[1. Identity Source]
+            builtin[Identity Center Directory<br/>Built-in]
+            ad[Active Directory<br/>Connector]
+            external[External IdP<br/>Okta, Azure AD]
+        end
+
+        subgraph permission[2. Permission Set]
+            ps_desc[AWSアカウントで使用する権限の集合]
+            ps_example[例: DeveloperPermissionSet]
+            ps_example --> managed[AWS管理ポリシー: PowerUserAccess]
+            ps_example --> custom[カスタムポリシー: DenyIAMChanges]
+            ps_example --> session[セッション時間: 8時間]
+        end
+
+        subgraph assignment[3. Account Assignment]
+            formula[User/Group + Permission Set + AWS Account]
+            example[例: Developers Group + DeveloperPS + Development Account<br/>→ 開発グループが開発アカウントにDeveloper権限でアクセス]
+        end
+
+        subgraph portal[4. Access Portal]
+            portal_desc[ユーザーがSSOでログインするWebポータル<br/>割り当てられたアカウント・ロールの一覧表示<br/>マネジメントコンソール or CLI認証情報の取得]
+            portal_url[URL例: https://d-1234567890.awsapps.com/start]
+        end
+    end
+
+    identity --> permission
+    permission --> assignment
+    assignment --> portal
+```
+
+**📝 補足**: 本課題では Built-in Directory を使用します。
+
+---
+
+## 6. 課題
+
+### 6.1 ハンズオン課題
+
+#### 課題1: 緊急アクセス用 Break Glass アカウント（難易度：初級）
+
+**目標**: 緊急時用の高権限アカウントを設定する
+
+**要件**:
+- 緊急時のみ使用する管理者アカウント
+- 使用時にアラート通知
+- 使用履歴の完全な監査ログ
+
+**実装ポイント**:
+```hcl
+# Break Glass用のPermission Set
+resource "aws_ssoadmin_permission_set" "break_glass" {
+  name             = "BreakGlassAccess"
+  description      = "Emergency access - use only in critical situations"
+  instance_arn     = local.instance_arn
+  session_duration = "PT1H" # 緊急アクセスは1時間に制限
+}
+
+# 使用時のCloudWatch Alarm設定
+# ...
 ```
 
 ---
 
-## 8. トラブルシューティング課題
+#### 課題2: 外部IdP（Okta）との連携（難易度：中級）
 
-### Challenge 1: イベントの重複処理
-**状況**: 同じ配送ステータス更新が複数回処理されている
+**目標**: OktaをIdentity Providerとして設定し、SCIM自動同期を構成する
 
-**調査ポイント**:
-1. Lambda の冪等性実装を確認
-2. SQS のVisibility Timeoutを確認
-3. DynamoDB の条件付き書き込みを確認
+**要件**:
+- SAML 2.0による認証連携
+- SCIMによるユーザー・グループの自動プロビジョニング
+- 属性マッピングの設定
 
-### Challenge 2: 通知の順序保証
-**状況**: OUT_FOR_DELIVERY より先に DELIVERED の通知が届く
-
-**調査ポイント**:
-1. SQS FIFO キューの利用を検討
-2. イベントにシーケンス番号を付与
-3. 消費側での順序制御
-
-### Challenge 3: 外部Webhookのタイムアウト
-**状況**: 荷主のWebhookが応答しない場合にLambdaがタイムアウト
-
-**調査ポイント**:
-1. Webhook呼び出しのタイムアウト設定
-2. 非同期呼び出しへの変更
-3. Circuit Breakerパターンの導入
+**設定手順の概要**:
+1. Okta側でAWS IAM Identity Centerアプリケーションを追加
+2. SAMLメタデータの交換
+3. SCIM APIトークンの発行
+4. 属性マッピングの設定
 
 ---
 
-## 9. 設計考慮ポイント
+#### 課題3: 一時的アクセス権限の付与（難易度：中級〜上級）
 
-### ディスカッション1: イベントスキーマの設計
-**テーマ**: スキーマバージョニングと互換性
+**目標**: 限定的な期間だけ追加権限を付与する仕組みを作る
 
-| 戦略 | メリット | デメリット |
-|------|----------|------------|
-| バージョン埋め込み | 明示的 | スキーマ増加 |
-| 後方互換性維持 | シンプル | 制約が多い |
-| イベントストア | 完全な履歴 | 複雑性増加 |
+**要件**:
+- 申請・承認ワークフロー
+- 自動的な権限の付与・削除
+- 監査証跡の記録
 
-### ディスカッション2: At-least-once vs Exactly-once
-**テーマ**: メッセージ配信保証
-
-**考慮点**:
-- SQS標準キューは At-least-once
-- 冪等性の実装が必須
-- FIFO キューでの重複排除
-
-### ディスカッション3: Fan-outパターン
-**テーマ**: SNS vs EventBridge
-
-| 観点 | SNS | EventBridge |
-|------|-----|-------------|
-| フィルタリング | シンプル | 高度 |
-| ターゲット数 | 多い | 5ルール/バス |
-| スキーマレジストリ | なし | あり |
+**実装アプローチ**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Temporary Access Workflow                          │
+│                                                                 │
+│  1. 申請  →  2. 承認  →  3. 権限付与  →  4. 自動削除           │
+│     │           │            │              │                   │
+│     ▼           ▼            ▼              ▼                   │
+│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐         │
+│  │API GW   │ │Step     │ │Lambda    │ │EventBridge   │         │
+│  │+ Lambda │ │Functions│ │+ SSO API │ │Scheduled     │         │
+│  └─────────┘ └─────────┘ └──────────┘ └──────────────┘         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 10. 発展課題
+### 6.2 トラブルシューティング課題
 
-### Advanced 1: Event Replay 機能
-**課題**: EventBridge Archive を使って、特定期間のイベントを再処理
+#### 問題1: Permission Set が反映されない
 
-### Advanced 2: CQRS + Event Sourcing
-**課題**: イベントストアを構築し、配送状態を完全に再構築可能に
+**症状**: Permission Setを更新したが、ユーザーの権限に反映されない
 
-### Advanced 3: Step Functions Saga
-**課題**: 複雑な配送ワークフロー（ピックアップ→配送→返品）をStep Functionsで実装
+**調査のヒント**:
+1. Permission Setのプロビジョニング状態を確認
+2. アカウント割り当ての状態を確認
+3. IAMロールの更新状態を確認
+
+<details>
+<summary>原因と解決策</summary>
+
+**原因**: Permission Setの変更後、アカウントへの再プロビジョニングが必要
+
+```bash
+# Permission Setのプロビジョニング状態確認
+aws sso-admin list-permission-sets-provisioned-to-account \
+  --instance-arn $INSTANCE_ARN \
+  --account-id $ACCOUNT_ID
+
+# 手動でプロビジョニング実行
+aws sso-admin provision-permission-set \
+  --instance-arn $INSTANCE_ARN \
+  --permission-set-arn $PERMISSION_SET_ARN \
+  --target-type ALL_PROVISIONED_ACCOUNTS
+
+# プロビジョニングステータスの確認
+aws sso-admin describe-permission-set-provisioning-status \
+  --instance-arn $INSTANCE_ARN \
+  --provision-request-id $REQUEST_ID
+```
+
+**Terraformでの対策**:
+```hcl
+# プロビジョニングのトリガー（null_resource使用）
+resource "null_resource" "provision_permission_set" {
+  triggers = {
+    permission_set_arn = aws_ssoadmin_permission_set.developer.arn
+    inline_policy      = md5(aws_ssoadmin_permission_set_inline_policy.developer_deny_iam.inline_policy)
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOF
+      aws sso-admin provision-permission-set \
+        --instance-arn ${local.instance_arn} \
+        --permission-set-arn ${aws_ssoadmin_permission_set.developer.arn} \
+        --target-type ALL_PROVISIONED_ACCOUNTS
+    EOF
+  }
+}
+```
+</details>
 
 ---
 
-## 11. コスト見積もり
+#### 問題2: SSOログインでエラーが発生
 
-### 月額コスト概算
+**症状**: アクセスポータルでログイン後、「An error occurred」と表示される
 
-| サービス | 使用量 | 月額コスト |
-|----------|--------|------------|
-| EventBridge | 100万イベント | $1 |
-| Lambda | 100万回 × 1秒 × 256MB | $2 |
-| SQS | 100万メッセージ | $0.40 |
-| SNS | 100万通知 | $0.50 |
-| DynamoDB | 10GB + 100万WCU/RCU | $30 |
-| SES | 10万通 | $1 |
-| CloudWatch | ログ10GB | $5 |
+**調査のヒント**:
+1. CloudTrail でSSO関連イベントを確認
+2. ブラウザのCookieとキャッシュをクリア
+3. セッション設定を確認
 
-**合計**: 約 **$40/月**（約6,000円）
+<details>
+<summary>原因と解決策</summary>
+
+**原因1**: MFAデバイスの時刻ずれ
+```bash
+# TOTPは30秒の時刻ウィンドウを使用
+# デバイスの時刻同期を確認
+```
+
+**原因2**: セッションタイムアウト
+```bash
+# セッション設定の確認
+aws sso-admin describe-permission-set \
+  --instance-arn $INSTANCE_ARN \
+  --permission-set-arn $PERMISSION_SET_ARN \
+  --query 'PermissionSet.SessionDuration'
+```
+
+**原因3**: ブラウザのサードパーティCookie設定
+- シークレットモードでテスト
+- awsapps.comドメインのCookieを許可
+</details>
 
 ---
 
-## 12. 学習のポイント
+#### 問題3: SCIMプロビジョニングが失敗
 
-### 重要な概念の整理
+**症状**: 外部IdPからのユーザー同期が完了しない
 
-1. **イベント駆動アーキテクチャ**
-   - 疎結合で拡張性が高い
-   - 新しい消費者を簡単に追加
-   - 障害の分離
+**調査のヒント**:
+1. SCIM APIのエラーログを確認
+2. 属性マッピングを確認
+3. ネットワーク設定を確認
 
-2. **冪等性**
-   - 同じイベントを複数回処理しても結果が同じ
-   - DynamoDBの条件付き書き込み活用
-   - イベントIDでの重複チェック
+<details>
+<summary>原因と解決策</summary>
 
-3. **Fan-outパターン**
-   - 1つのイベントを複数の消費者に配信
-   - SNS + SQSの組み合わせ
-   - フィルタリングによる効率化
+**原因1**: SCIM APIトークンの有効期限切れ
+```bash
+# 新しいトークンを生成
+# IAM Identity Center コンソール → 設定 → プロビジョニング → トークンを再生成
+```
 
-### GCPとの比較
+**原因2**: 必須属性の欠落
+```json
+// SCIM リクエストに必要な属性
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+  "userName": "user@example.com",
+  "name": {
+    "givenName": "First",
+    "familyName": "Last"
+  },
+  "emails": [{
+    "value": "user@example.com",
+    "primary": true
+  }],
+  "displayName": "First Last",
+  "active": true
+}
+```
 
-| 概念 | AWS | GCP |
-|------|-----|-----|
-| イベントバス | EventBridge | Eventarc |
-| メッセージング | SNS/SQS | Pub/Sub |
-| サーバーレス関数 | Lambda | Cloud Functions |
-| NoSQL DB | DynamoDB | Firestore |
-| メール送信 | SES | SendGrid等 |
+**原因3**: IdP側のエラー
+- Okta/Azure AD のプロビジョニングログを確認
+- リトライ設定を調整
+</details>
+
+---
+
+### 6.3 設計課題
+
+#### 課題: ゼロトラストアーキテクチャへの拡張
+
+**シナリオ**: 経営層から「ゼロトラストセキュリティモデルに移行したい」という要望がありました。
+
+**検討事項**:
+1. デバイス信頼の検証（AWS Verified Access との連携）
+2. 継続的な認証（セッション中の再認証）
+3. コンテキストベースのアクセス制御
+4. マイクロセグメンテーション
+
+**設計案を作成してください**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                Zero Trust Architecture Design                    │
+│                                                                 │
+│  [ここに設計図を作成]                                            │
+│                                                                 │
+│  考慮点：                                                        │
+│  - 「Never trust, always verify」の原則                          │
+│  - デバイスポスチャの評価                                        │
+│  - 最小権限の原則の徹底                                          │
+│  - リアルタイムのリスク評価                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 7. 学習リソース
+
+### 公式ドキュメント
+- [IAM Identity Center User Guide](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)
+- [IAM Identity Center API Reference](https://docs.aws.amazon.com/singlesignon/latest/APIReference/welcome.html)
+- [AWS Organizations User Guide](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html)
+- [Terraform AWS SSO Admin Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssoadmin_permission_set)
+
+### ベストプラクティス
+- [AWS Security Best Practices for IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/security-best-practices.html)
+- [Multi-Account Strategy](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
+
+---
+
+## 8. 解答例
+
+### 課題1: Break Glass アカウント
+
+```hcl
+# break-glass.tf
+
+# Break Glass グループ
+resource "aws_identitystore_group" "break_glass" {
+  identity_store_id = local.identity_store_id
+  display_name      = "BreakGlass-Admins"
+  description       = "Emergency access administrators - use only in critical situations"
+}
+
+# Break Glass Permission Set
+resource "aws_ssoadmin_permission_set" "break_glass" {
+  name             = "BreakGlassAccess"
+  description      = "EMERGENCY USE ONLY - Full administrative access for critical incidents"
+  instance_arn     = local.instance_arn
+  session_duration = "PT1H"
+
+  tags = {
+    Purpose     = "emergency-access"
+    ManagedBy   = "terraform"
+    AlertOnUse  = "true"
+  }
+}
+
+resource "aws_ssoadmin_managed_policy_attachment" "break_glass_admin" {
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.break_glass.arn
+  managed_policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+# Break Glassの使用を検知するCloudWatch Alarm
+resource "aws_cloudwatch_log_metric_filter" "break_glass_usage" {
+  name           = "BreakGlassUsageFilter"
+  pattern        = "{ ($.eventName = AssumeRole) && ($.requestParameters.roleSessionName = \"*BreakGlass*\") }"
+  log_group_name = "aws-cloudtrail-logs"
+
+  metric_transformation {
+    name      = "BreakGlassUsageCount"
+    namespace = "Security/BreakGlass"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "break_glass_alert" {
+  alarm_name          = "BreakGlassAccessUsed"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "BreakGlassUsageCount"
+  namespace           = "Security/BreakGlass"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "CRITICAL: Break Glass access has been used"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+  ok_actions    = [aws_sns_topic.security_alerts.arn]
+}
+
+# SNS Topic for security alerts
+resource "aws_sns_topic" "security_alerts" {
+  name = "security-break-glass-alerts"
+}
+
+resource "aws_sns_topic_subscription" "security_email" {
+  topic_arn = aws_sns_topic.security_alerts.arn
+  protocol  = "email"
+  endpoint  = "security-team@techcorp.example.com"
+}
+
+# 使用記録用のDynamoDBテーブル
+resource "aws_dynamodb_table" "break_glass_log" {
+  name         = "break-glass-usage-log"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "sessionId"
+  range_key    = "timestamp"
+
+  attribute {
+    name = "sessionId"
+    type = "S"
+  }
+
+  attribute {
+    name = "timestamp"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "UserIdIndex"
+    hash_key        = "userId"
+    range_key       = "timestamp"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = {
+    Purpose = "break-glass-audit"
+  }
+}
+```
+
+### 課題3: 一時的アクセス権限の付与
+
+```hcl
+# temporary-access.tf
+
+# 一時アクセス申請用API Gateway
+resource "aws_apigatewayv2_api" "temp_access" {
+  name          = "temporary-access-api"
+  protocol_type = "HTTP"
+}
+
+# Step Functions ワークフロー定義
+resource "aws_sfn_state_machine" "temp_access_workflow" {
+  name     = "temporary-access-workflow"
+  role_arn = aws_iam_role.sfn_role.arn
+
+  definition = jsonencode({
+    Comment = "Temporary access request workflow"
+    StartAt = "ValidateRequest"
+    States = {
+      ValidateRequest = {
+        Type     = "Task"
+        Resource = aws_lambda_function.validate_request.arn
+        Next     = "NotifyApprover"
+        Catch = [{
+          ErrorEquals = ["ValidationError"]
+          Next        = "RequestDenied"
+        }]
+      }
+      NotifyApprover = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::sns:publish.waitForTaskToken"
+        Parameters = {
+          TopicArn = aws_sns_topic.approval_requests.arn
+          Message = {
+            "taskToken.$"  = "$$.Task.Token"
+            "requestId.$"  = "$.requestId"
+            "requester.$"  = "$.requester"
+            "reason.$"     = "$.reason"
+            "duration.$"   = "$.duration"
+            "permissions.$" = "$.permissions"
+          }
+        }
+        Next           = "CheckApproval"
+        TimeoutSeconds = 86400 # 24時間で自動拒否
+        Catch = [{
+          ErrorEquals = ["States.Timeout"]
+          Next        = "RequestExpired"
+        }]
+      }
+      CheckApproval = {
+        Type = "Choice"
+        Choices = [{
+          Variable      = "$.approved"
+          BooleanEquals = true
+          Next          = "GrantAccess"
+        }]
+        Default = "RequestDenied"
+      }
+      GrantAccess = {
+        Type     = "Task"
+        Resource = aws_lambda_function.grant_access.arn
+        Next     = "WaitForExpiry"
+      }
+      WaitForExpiry = {
+        Type           = "Wait"
+        TimestampPath = "$.expiryTime"
+        Next           = "RevokeAccess"
+      }
+      RevokeAccess = {
+        Type     = "Task"
+        Resource = aws_lambda_function.revoke_access.arn
+        End      = true
+      }
+      RequestDenied = {
+        Type     = "Task"
+        Resource = aws_lambda_function.notify_denial.arn
+        End      = true
+      }
+      RequestExpired = {
+        Type     = "Task"
+        Resource = aws_lambda_function.notify_expiry.arn
+        End      = true
+      }
+    }
+  })
+}
+
+# 権限付与Lambda
+resource "aws_lambda_function" "grant_access" {
+  filename         = "${path.module}/lambda/grant-access.zip"
+  function_name    = "temp-access-grant"
+  role             = aws_iam_role.lambda_temp_access.arn
+  handler          = "index.handler"
+  runtime          = "nodejs20.x"
+  timeout          = 60
+
+  environment {
+    variables = {
+      INSTANCE_ARN       = local.instance_arn
+      IDENTITY_STORE_ID  = local.identity_store_id
+    }
+  }
+}
+
+# Lambda実装例（JavaScript）
+# lambda/grant-access/index.js
+/*
+const { SSOAdminClient, CreateAccountAssignmentCommand } = require("@aws-sdk/client-sso-admin");
+
+exports.handler = async (event) => {
+  const client = new SSOAdminClient({});
+
+  const { userId, accountId, permissionSetArn, duration } = event;
+
+  // アカウント割り当ての作成
+  await client.send(new CreateAccountAssignmentCommand({
+    InstanceArn: process.env.INSTANCE_ARN,
+    TargetId: accountId,
+    TargetType: "AWS_ACCOUNT",
+    PermissionSetArn: permissionSetArn,
+    PrincipalType: "USER",
+    PrincipalId: userId,
+  }));
+
+  // 有効期限の計算
+  const expiryTime = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
+
+  return {
+    ...event,
+    expiryTime,
+    status: "granted"
+  };
+};
+*/
+```
+
+---
+
+## 9. 追加学習
+
+### IAM Identity Center の高度な機能
+
+1. **カスタムSAMLアプリケーション**
+   - 非AWSアプリケーションへのSSO
+   - カスタム属性マッピング
+
+2. **AWS Verified Access との連携**
+   - デバイス信頼の検証
+   - ゼロトラストネットワークアクセス
+
+3. **Service Catalog との統合**
+   - セルフサービスポータル
+   - 承認済みリソースのプロビジョニング
 
 ### 次のステップ
-1. リアルタイムダッシュボードの構築
-2. 機械学習による配送時間予測
-3. 異常検知アラートの実装
+- 課題38-39で学んだCognito認証との使い分けを理解
+- マルチリージョン展開の検討
+- AWS Control Tower との統合
+
+---
+
+## 10. 参考情報
+
+### GCPとの比較まとめ
+
+| 機能 | GCP | AWS |
+|------|-----|-----|
+| 企業SSO | Cloud Identity | IAM Identity Center |
+| マルチプロジェクトアクセス | Organization IAM | Account Assignments |
+| 権限テンプレート | Custom Roles | Permission Sets |
+| IdP連携 | Cloud Identity SAML | Identity Center SAML/SCIM |
+| ディレクトリ同期 | GCDS | AD Connector / SCIM |
+| 監査ログ | Cloud Audit Logs | CloudTrail |
+
+### セキュリティチェックリスト
+
+- [ ] MFAが全ユーザーで必須化されている
+- [ ] Permission Setで最小権限の原則が適用されている
+- [ ] セッション時間が適切に設定されている（本番は短く）
+- [ ] Break Glassアカウントが設定され、監視されている
+- [ ] CloudTrailで全SSOイベントが記録されている
+- [ ] 定期的なアクセス権レビューが実施されている
+- [ ] 退職者のアクセス無効化プロセスが確立されている
+
+---
+
+## 11. FAQ
+
+**Q: IAM Identity CenterとCognitoの使い分けは？**
+
+A:
+- **IAM Identity Center**: 従業員がAWSリソースにアクセスする場合（内部向け）
+- **Cognito**: アプリケーションのエンドユーザー認証（外部向け）
+
+両者は異なるユースケースのため、同じ組織で両方使用することが一般的です。
+
+**Q: Identity CenterのIdentity Storeと外部IdPどちらを使うべき？**
+
+A:
+- **Identity Store（ビルトイン）**: 小規模組織、AWSのみの環境
+- **外部IdP**: 既存の企業ディレクトリ（AD/Okta/Azure AD）がある場合
+
+既存のIdPがある場合は、SCIMで同期することで一元管理できます。
+
+**Q: Permission SetはどのAWSアカウントに作成される？**
+
+A: Permission Set自体はIAM Identity Center（管理アカウント）に存在しますが、アカウント割り当て時に各メンバーアカウントにIAMロールが自動作成されます。
+
+**Q: セッション時間の推奨値は？**
+
+A:
+- 本番環境: 1-4時間
+- 開発環境: 8時間
+- サンドボックス: 4時間
+- Break Glass: 1時間
+
+---
+
+## 12. 振り返りチェックリスト
+
+以下の項目を確認して、学習内容の定着度を確認してください：
+
+- [ ] IAM Identity Centerの基本概念（Identity Source, Permission Set, Account Assignment）を説明できる
+- [ ] Terraformでユーザー・グループを作成できる
+- [ ] 適切なPermission Setを設計・作成できる
+- [ ] アカウント割り当てを設定できる
+- [ ] ABAC（属性ベースアクセス制御）の設定ができる
+- [ ] 外部IdP連携の概念を理解している
+- [ ] Break Glassアカウントの設計ができる
+- [ ] 一時的アクセス権限の付与フローを設計できる
+- [ ] トラブルシューティングの基本手順を理解している

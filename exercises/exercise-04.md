@@ -1,18 +1,71 @@
-# 課題4: StyleMarket株式会社のECレビュー分析・インサイト抽出システム構築
+# 課題4: AWSコスト異常アラート - 請求書ショックを防ぐ
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟢 初級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | AI / データ分析 / EC |
-| 処理タイプ | バッチ / ストリーム |
+| 難易度 | 初級 |
+| カテゴリ | コスト管理 / FinOps |
+| 処理タイプ | バッチ（日次） |
 | 使用IaC | CloudFormation |
-| 所要時間 | 6〜7時間 |
+| 想定所要時間 | 2〜3時間 |
+
+---
+
+## 学習するAWSサービス
+
+この演習では以下のAWSサービスを実践的に学習します。
+
+### メインサービス
+
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **AWS Budgets** | 予算設定・アラート | 予算作成、閾値設定、通知アクション |
+| **AWS Cost Explorer** | コスト分析・可視化 | フィルタリング、グルーピング、予測 |
+| **Amazon SNS** | アラート通知 | 予算超過時の通知配信 |
+
+### 補助サービス
+
+| サービス | 役割 |
+|----------|------|
+| **AWS Cost Anomaly Detection** | 異常なコスト検出 |
+| **AWS Billing Console** | 請求情報の確認 |
+
+---
+
+## 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group billing(server)[Billing & Cost Management] in aws
+    group notification(server)[Notification] in aws
+
+    service budget(server)[AWS Budgets 月額予算] in billing
+    service anomaly(server)[Cost Anomaly Detection] in billing
+    service explorer(server)[Cost Explorer] in billing
+    service sns(server)[SNS コスト通知] in notification
+    service email(internet)[メール通知]
+    service slack(internet)[Slack通知]
+
+    budget:R --> L:sns
+    anomaly:R --> L:sns
+    sns:R --> L:email
+    sns:R --> L:slack
+```
+
+### 通知フロー
+
+```
+1. [AWS Budgets] 月額予算の50%, 80%, 100%到達時に通知
+2. [Cost Anomaly Detection] 通常と異なるコストパターンを検出時に通知
+3. [SNS] メール/Slackにアラートを配信
+```
 
 ---
 
@@ -20,65 +73,41 @@
 
 ### 企業プロフィール
 
-**StyleMarket株式会社**は、20〜30代女性をターゲットにしたアパレル・コスメのECプラットフォームを運営しています。
+**〇〇株式会社**は、AWSを使ってWebサービスを運営するスタートアップです。エンジニアが開発に集中するあまり、コスト管理がおろそかになり、月末の請求書を見て驚くことが多発しています。
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | EC（アパレル・コスメ） |
-| 設立 | 2018年 |
-| 従業員数 | 120名（うちMD15名、CS20名） |
-| 月間アクティブユーザー | 80万人 |
-| 取扱商品数 | 3万点 |
-| 取扱ブランド | 500ブランド |
-| 月間レビュー投稿数 | 10万件 |
-| 月商 | 15億円 |
-| 平均購入単価 | 8,000円 |
+| 業種 | IT / Webサービス |
+| 従業員数 | 10名（エンジニア6名） |
+| 月間AWS予算 | $500 |
+| 主な利用サービス | EC2, RDS, S3, Lambda |
 
 ### 現状の課題
 
-月間10万件のレビューが投稿されていますが、手動でのレビュー分析に限界があり、商品改善やトレンド把握に活かしきれていません。また、ネガティブレビューへの対応が遅れ、顧客満足度に影響を与えています。
+先月、開発環境のEC2インスタンスを停止し忘れ、月末に$800の請求が来て予算を大幅にオーバー。「気づいたら高額請求」が何度も発生しており、経営陣から改善を求められています。
 
 ### 数値で示された問題
 
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| レビュー分析担当 | 3名（MDチーム兼任） | 1名（監視のみ） |
-| 分析対象レビュー | 月1,000件（全体の1%） | 全件（10万件） |
-| ネガティブレビュー検出 | 翌日以降 | リアルタイム |
-| トレンドレポート作成 | 月1回（手作業5日） | 週1回（自動） |
-| 商品改善フィードバック | 四半期ごと | 週次 |
-| レビュー起因の返品率 | 8% | 5%以下 |
-
-### レビューの内訳分析（過去3ヶ月平均）
-
-| レビュー評価 | 割合 | 月間件数 |
-|--------------|------|----------|
-| ★5（非常に満足） | 35% | 35,000件 |
-| ★4（満足） | 30% | 30,000件 |
-| ★3（普通） | 20% | 20,000件 |
-| ★2（不満） | 10% | 10,000件 |
-| ★1（非常に不満） | 5% | 5,000件 |
-
-**ネガティブレビュー（★1-2）: 月15,000件**
-→ これらの早期検出と対応が急務
+| 予算超過の頻度 | 月1〜2回 | 0回 |
+| コスト異常の検知 | 月末に発覚 | リアルタイム |
+| 無駄なリソース | 把握できていない | 即日検知 |
 
 ### 解決したいこと
 
-1. 全レビューの自動感情分析（ポジティブ/ネガティブ/ニュートラル）
-2. ネガティブレビューのリアルタイム検出とアラート
-3. レビューからの商品改善点・品質課題の自動抽出
-4. カテゴリ/ブランド別のトレンド分析ダッシュボード
-5. 競合商品との比較インサイト生成
+1. 月額予算を設定し、超過しそうになったら通知が欲しい
+2. 異常なコスト増加を早期に検知したい
+3. サービス別・環境別にコストを把握したい
+4. 開発チーム全員がコスト意識を持てるようにしたい
 
 ### 成功指標（KPI）
 
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| レビュー分析カバー率 | 1% | 100% | 1ヶ月後 |
-| ネガティブ検出時間 | 24時間以上 | 5分以内 | 1ヶ月後 |
-| 感情分析精度 | - | 90%以上 | 2ヶ月後 |
-| レビュー起因返品率 | 8% | 5%以下 | 6ヶ月後 |
-| 分析工数 | 3名×20% | 1名×10% | 3ヶ月後 |
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| 予算超過 | 月1〜2回 | 0回 |
+| コスト可視性 | なし | サービス別・日別で把握 |
+| アラート設定 | なし | 50%, 80%, 100%で通知 |
 
 ---
 
@@ -88,68 +117,33 @@
 
 ### 技術的な学習ポイント
 
-1. **Amazon Comprehendの実践活用**
-   - 感情分析（Sentiment Analysis）
-   - エンティティ認識
-   - キーフレーズ抽出
-   - カスタム分類器
+1. **AWS Budgetsの設計と実装**
+   - コスト予算の作成
+   - 使用量予算の作成
+   - アラート閾値の設定
+   - SNS連携
 
-2. **Amazon Bedrockによる高度な分析**
-   - レビューからのインサイト抽出
-   - 商品改善提案の生成
-   - トレンドサマリー作成
+2. **Cost Explorerの活用**
+   - コストの可視化
+   - フィルタリング（サービス、タグ、リージョン）
+   - 予測機能
+   - レポートの保存
 
-3. **データパイプラインの構築**
-   - Kinesis Data Firehoseによるストリーム処理
-   - Lambda + DynamoDBによるリアルタイム処理
-   - S3 + Athenaによるバッチ分析
+3. **Cost Anomaly Detectionの設定**
+   - モニターの作成
+   - アラート閾値の設定
+   - 異常検出の仕組み理解
 
-4. **Amazon QuickSightによる可視化**
-   - ダッシュボード構築
-   - 自動更新設定
-   - 埋め込みダッシュボード
+4. **コスト配分タグの活用**
+   - タグ戦略の設計
+   - 環境別（dev/stg/prod）のコスト把握
+   - プロジェクト別のコスト配分
 
 ### 実務で活かせる知識
 
-- テキスト分析システムの設計パターン
-- ストリーム処理 vs バッチ処理の使い分け
-- BIダッシュボードの設計
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| NLP | Amazon Comprehend | Natural Language API |
-| 生成AI | Bedrock | Vertex AI |
-| ストリーム処理 | Kinesis | Pub/Sub + Dataflow |
-| BI | QuickSight | Looker / Data Studio |
-| データウェアハウス | Athena / Redshift | BigQuery |
-
----
-
-## 使用するAWSサービス
-
-### メインサービス
-
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon Comprehend | 感情分析・エンティティ抽出 | リアルタイム分析対応 |
-| Amazon Bedrock | インサイト生成・サマリー作成 | 高度な日本語理解 |
-| Amazon Kinesis Data Firehose | ストリーム取り込み | S3自動配信 |
-| AWS Lambda | リアルタイム処理 | イベント駆動 |
-| Amazon DynamoDB | リアルタイムデータ保存 | 高速読み書き |
-| Amazon S3 | データレイク | 長期保存・分析用 |
-| Amazon Athena | SQLクエリ分析 | サーバーレス分析 |
-| Amazon QuickSight | ダッシュボード | 可視化・共有 |
-
-### 補助サービス
-
-| サービス | 役割 |
-|----------|------|
-| Amazon SNS | ネガティブレビューアラート |
-| Amazon EventBridge | 定期バッチ実行 |
-| AWS Glue | データカタログ |
-| Amazon CloudWatch | 監視・ログ |
+- FinOpsの基本概念
+- コスト最適化のアプローチ
+- クラウドコストのガバナンス
 
 ---
 
@@ -157,322 +151,262 @@
 
 ### 必要な事前知識
 
-- AWSの基本操作（S3, Lambda, DynamoDB）
-- SQLの基礎
-- JSONの読み書き
-- BIダッシュボードの基本概念
+- AWSの基本的なサービス理解
+- AWSコンソールの基本操作
 
 ### 準備するもの
 
 1. **AWSアカウント**
-   - Bedrock有効化（Claude 3 Haiku/Sonnet）
-   - QuickSight有効化（Enterprise版推奨）
-   - 適切なIAM権限
+   - ルートアカウントまたは Billing 権限を持つIAMユーザー
+   - **注意**: Budgets設定にはBilling権限が必要
 
-2. **開発環境**
-   - AWS CLI v2
-   - Python 3.9以上
+2. **通知先**
+   - メールアドレス（SNS通知用）
+   - Slackワークスペース（オプション）
 
-3. **テストデータ**
-   - サンプルレビューデータ（JSON形式）
+### 必要なIAM権限
+
+以下の権限が必要です（事前に確認してください）：
+
+```
+- budgets:*
+- ce:* (Cost Explorer)
+- sns:*
+- iam:CreateServiceLinkedRole (初回のみ)
+```
+
+**注意**: IAMユーザーでBudgetsを操作する場合、ルートアカウントで「IAMアクセスのアクティブ化」が必要です。
 
 ---
 
-## アーキテクチャ概要
+## AWS Budgetsの種類
 
-### システム全体構成
-
-```mermaid
-flowchart TB
-    ECサイト["ECサイト"]
-    APIGateway["API Gateway"]
-    Firehose["Kinesis Data Firehose"]
-
-    subgraph RealtimeProcessing["リアルタイム処理"]
-        LambdaSentiment["Lambda: 感情分析"]
-        Comprehend["Comprehend"]
-        SNS["SNS → Slackアラート"]
-    end
-
-    subgraph DataLake["データレイク"]
-        S3Lake["S3: Data Lake"]
-        GlueCrawler["Glue Crawler"]
-        Athena["Athena: SQLクエリ"]
-        QuickSight["QuickSight: ダッシュボード"]
-    end
-
-    subgraph BatchProcessing["定期バッチ"]
-        EventBridge["EventBridge（日次）"]
-        LambdaInsight["Lambda: インサイト生成"]
-        Bedrock["Bedrock"]
-        S3Report["S3: レポート出力"]
-    end
-
-    ECサイト -->|レビュー投稿イベント| APIGateway
-    APIGateway --> Firehose
-    Firehose --> LambdaSentiment
-    LambdaSentiment --> Comprehend
-    Comprehend -->|ネガティブ検出| SNS
-    Firehose --> S3Lake
-    S3Lake --> GlueCrawler
-    GlueCrawler --> Athena
-    Athena --> QuickSight
-
-    EventBridge --> LambdaInsight
-    LambdaInsight --> Bedrock
-    Bedrock --> S3Report
-```
-
-### データフロー
-
-1. **リアルタイム処理**: レビュー投稿 → Firehose → Lambda（Comprehend）→ ネガティブ検出アラート
-2. **バッチ処理**: S3 → Athena → QuickSight（日次更新）
-3. **インサイト生成**: EventBridge → Lambda（Bedrock）→ 週次レポート
+| 予算タイプ | 説明 | ユースケース |
+|------------|------|--------------|
+| **コスト予算** | ドル金額ベースの予算 | 月額$500まで |
+| **使用量予算** | リソース使用量ベースの予算 | EC2 100時間まで |
+| **Savings Plans予算** | Savings Plansの使用率 | 80%以上活用 |
+| **予約予算** | RIの使用率・カバレッジ | RI活用の監視 |
 
 ---
 
 ## トラブルシューティング課題
 
-### 問題1: Comprehendで言語エラー
+### 問題1: Budgetsでアラートが届かない
 
 **症状:**
 ```
-An error occurred (UnsupportedLanguageException):
-Comprehend does not support the language of the input text
+予算の80%に達しているはずなのに、通知が届かない
 ```
 
 **ヒント:**
-1. 入力テキストの言語を確認
-2. 空文字やノイズのみのテキストでないか
-3. 言語コードが正しいか（ja）
+1. SNSサブスクリプションが確認済みか
+2. 予算の開始日が正しいか
+3. フィルター条件（サービス、タグ等）を確認
 
-**解決方法:**
-```python
-def analyze_sentiment_safe(text: str) -> dict:
-    # テキストの前処理
-    text = text.strip()
-    if len(text) < 10:
-        return {'sentiment': 'NEUTRAL', 'scores': {...}}
+<details>
+<summary>解決方法を見る</summary>
 
-    # 日本語かどうか簡易チェック
-    import re
-    if not re.search(r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]', text):
-        # 日本語が含まれない場合は英語として処理
-        language_code = 'en'
-    else:
-        language_code = 'ja'
-
-    response = comprehend.detect_sentiment(
-        Text=text[:5000],
-        LanguageCode=language_code
-    )
-    return {...}
-```
-
-### 問題2: Firehoseのデータ形式エラー
-
-**症状:**
-```
-Lambda transformation failed
-S3に保存されるデータが空または不正
-```
-
-**ヒント:**
-1. Lambda戻り値の形式を確認
-2. Base64エンコード/デコードを確認
-3. recordIdが正しく返されているか
-
-**解決方法:**
-```python
-# 正しい戻り値形式
-output_records.append({
-    'recordId': record['recordId'],  # 必須: 元のrecordIdを返す
-    'result': 'Ok',  # Ok, Dropped, ProcessingFailed のいずれか
-    'data': base64.b64encode(
-        (json.dumps(data) + '\n').encode('utf-8')
-    ).decode('utf-8')  # 必ず改行を追加
-})
-```
-
-### 問題3: QuickSightでデータが表示されない
-
-**症状:**
-```
-データセットの更新が反映されない
-SPICEのデータが古い
-```
-
-**ヒント:**
-1. SPICEの更新スケジュールを確認
-2. Athenaテーブルのパーティションを確認
-3. データソースの権限を確認
-
-**解決方法:**
+1. SNSサブスクリプションのステータスを確認：
 ```bash
-# Glue Crawlerを再実行してパーティション更新
-aws glue start-crawler --name stylemarket-reviews-crawler
-
-# QuickSightでSPICE更新
-# コンソール → データセット → 今すぐ更新
+aws sns list-subscriptions-by-topic --topic-arn your-topic-arn
 ```
+
+2. 予算の設定を確認：
+```bash
+aws budgets describe-budget \
+  --account-id your-account-id \
+  --budget-name your-budget-name
+```
+
+3. 予算の開始日が過去になっていることを確認。未来の日付だとトラッキングが始まりません。
+
+</details>
+
+### 問題2: Cost Explorerでデータが表示されない
+
+**症状:**
+```
+Cost Explorerを開いたが、「データがありません」と表示される
+```
+
+**ヒント:**
+1. Cost Explorerを有効化したか
+2. 有効化後、データが反映されるまで24時間かかる場合がある
+3. フィルター条件が厳しすぎないか
+
+<details>
+<summary>解決方法を見る</summary>
+
+1. Cost Explorerの有効化：
+   - AWSコンソール → Billing → Cost Explorer → Enable Cost Explorer
+
+2. 有効化直後はデータが空。最大24時間待つ必要があります。
+
+3. 新規アカウントの場合、数日間のデータ蓄積が必要な場合もあります。
+
+</details>
+
+### 問題3: タグがコスト配分に反映されない
+
+**症状:**
+```
+リソースにタグを付けたのに、Cost Explorerでタグ別フィルタに表示されない
+```
+
+**ヒント:**
+1. コスト配分タグとしてアクティブ化が必要
+2. アクティブ化後、反映まで最大24時間かかる
+
+<details>
+<summary>解決方法を見る</summary>
+
+1. Billing Console → Cost Allocation Tags
+2. 使用したいタグを選択して「Activate」
+3. 24時間後にCost Explorerで使用可能に
+
+```bash
+aws ce update-cost-allocation-tags-status \
+  --cost-allocation-tags-status TagKey=Environment,Status=Active
+```
+
+</details>
 
 ---
 
 ## 設計の考察ポイント
 
-### 1. リアルタイム処理とバッチ処理の使い分け
+### 1. 予算の粒度
 
-**考察ポイント:**
-- ネガティブレビュー検出はなぜリアルタイムが必要か
-- インサイト生成はなぜバッチで十分か
-- コストとレイテンシーのトレードオフ
+**考えてみよう:**
+- アカウント全体で1つの予算？サービス別に複数の予算？
+- 環境別（dev/stg/prod）に予算を分けるべき？
 
-### 2. Comprehend vs Bedrock の使い分け
+**アプローチ:**
+- まずはアカウント全体の予算から始める
+- 慣れてきたらサービス別、タグ別に細分化
+- マルチアカウント構成の場合はOU単位も検討
 
-**考察ポイント:**
-- Comprehend: 感情分析、エンティティ抽出（高速・低コスト）
-- Bedrock: 複雑な解釈、レポート生成（高精度・高コスト）
-- 組み合わせることで最適化
+### 2. 閾値の設定
 
-### 3. データレイクアーキテクチャ
+**考えてみよう:**
+- 50%, 80%, 100% の閾値は適切？
+- 予測ベースのアラートも必要？
 
-**考察ポイント:**
-- S3 + Athena + Glue の組み合わせ
-- パーティショニング戦略（年/月/日）
-- 圧縮形式の選択（GZIP vs Parquet）
-
-### 4. アラートの閾値設計
-
-**考察ポイント:**
-- 誤検知を防ぐ閾値の設定
-- 評価（★）と感情スコアの組み合わせ
-- アラート疲れを防ぐ工夫
-
-### 5. ダッシュボードの運用
-
-**考察ポイント:**
-- 更新頻度とSPICEコスト
-- 直接クエリ vs SPICE
-- 権限管理とアクセス制御
+**推奨設定:**
+- 50%: 参考情報（月半ばの状況確認）
+- 80%: Warning（対策検討開始）
+- 100%: Critical（即時対応）
+- 予測100%: 早期警告（月末に超過しそうな場合）
 
 ---
 
-## 発展課題（オプション）
+## 発展課題
 
-### 1. カスタム分類器の構築
-- レビューの自動カテゴリ分類
-- 商品不良/配送問題/価格等の自動タグ付け
-- Comprehend Custom Classificationの活用
+### 1. Slackへの通知連携
+- AWS Chatbot を使用してSlackチャンネルに通知
+- コストアラートをチームで共有
 
-### 2. 競合分析の追加
-- 外部レビューサイトのスクレイピング
-- 競合商品との比較分析
-- 市場トレンドレポート
+### 2. 自動停止アクション
+- Budgets Actions を使用
+- 予算超過時にEC2インスタンスを自動停止
 
-### 3. レコメンデーション連携
-- レビューに基づく商品レコメンド
-- Personalize との統合
-- パーソナライズされた商品提案
+### 3. コストレポートの自動化
+- Cost and Usage Report (CUR) を S3 に出力
+- QuickSight で可視化ダッシュボードを作成
 
-### 4. リアルタイムダッシュボード
-- Kinesis Data Analytics
-- リアルタイム集計
-- CloudWatch Dashboards連携
-
-### 5. 多言語対応
-- 海外ユーザーレビューの分析
-- 言語自動検出
-- 言語別感情分析
+### 4. タグ戦略の策定
+- 必須タグの定義（Environment, Project, Owner）
+- タグポリシーの適用（Organizations）
 
 ---
 
 ## 想定コストと削減方法
 
-### 月額概算コスト（月間10万件レビュー処理想定）
+### AWS Budgetsの料金
+
+| 項目 | 料金 |
+|------|------|
+| 最初の2つの予算 | **無料** |
+| 3つ目以降の予算 | $0.02/日/予算 |
+| Budgets Actions | 1アクションあたり$0.10 |
+
+### Cost Anomaly Detectionの料金
+
+| 項目 | 料金 |
+|------|------|
+| モニター | **無料** |
+| アラート | **無料** |
+
+### 月額概算コスト
 
 | サービス | 内訳 | 月額コスト |
 |----------|------|------------|
-| Amazon Comprehend | 10万件 × $0.0001/unit | $100 |
-| Amazon Bedrock | 4回/月 × Sonnet | $5 |
-| Kinesis Firehose | 10万件 × 5KB | $3 |
-| AWS Lambda | 10万回 × 5秒 | $5 |
-| Amazon S3 | 50GB + リクエスト | $2 |
-| Amazon Athena | 100GB/月スキャン | $5 |
-| Amazon DynamoDB | オンデマンド | $10 |
-| Amazon QuickSight | 1ユーザー | $24 |
-| AWS Glue | Crawler実行 | $1 |
-| CloudWatch | ログ・メトリクス | $5 |
-| **合計** | | **約$160（約24,000円）** |
+| AWS Budgets | 2予算 | 無料 |
+| Cost Anomaly Detection | 1モニター | 無料 |
+| SNS | 100通知/月 | 無料枠内 |
+| **合計** | | **$0（無料）** |
 
-### コスト削減のポイント
+---
 
-1. **Comprehendのバッチ処理**
-   - リアルタイム不要なレビューはバッチで処理
-   - StartSentimentDetectionJobの活用
-   - → 最大50%削減
+## 推奨するタグ戦略
 
-2. **S3のパーティショニング最適化**
-   - Athenaのスキャン量削減
-   - Parquet形式への変換
+### 必須タグ
 
-3. **QuickSightのライセンス**
-   - Reader（閲覧のみ）: $5/月
-   - 必要なユーザーのみAuthor
+| タグキー | 説明 | 例 |
+|----------|------|-----|
+| Environment | 環境識別 | dev, stg, prod |
+| Project | プロジェクト名 | web-app, data-pipeline |
+| Owner | 責任者 | team-a, user@example.com |
+| CostCenter | コストセンター | engineering, marketing |
 
-4. **DynamoDB TTLの活用**
-   - 古いデータの自動削除
-   - S3へのアーカイブ
+### タグ付けのベストプラクティス
 
-### リソース削除手順
+1. **一貫性を保つ**: `env` と `Environment` が混在しないように
+2. **自動化する**: CloudFormation/Terraform でデフォルトタグを設定
+3. **監査する**: AWS Config でタグ付けルールを強制
+
+---
+
+## クリーンアップチェックリスト
+
+演習終了後も、予算アラートは残しておくことを推奨しますが、削除する場合：
 
 ```bash
-# S3バケット
-aws s3 rm s3://stylemarket-reviews-${ACCOUNT_ID} --recursive
-aws s3 rb s3://stylemarket-reviews-${ACCOUNT_ID}
+# Budgetの削除
+aws budgets delete-budget \
+  --account-id your-account-id \
+  --budget-name your-budget-name
 
-# DynamoDB
-aws dynamodb delete-table --table-name stylemarket-reviews-realtime
+# SNSトピックの削除
+aws sns delete-topic --topic-arn your-topic-arn
 
-# Kinesis Firehose
-aws firehose delete-delivery-stream --delivery-stream-name stylemarket-reviews-stream-dev
-
-# SNS
-aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:stylemarket-negative-review-alert
-
-# Glue
-aws glue delete-crawler --name stylemarket-reviews-crawler
-aws glue delete-database --name stylemarket_reviews
-
-# EventBridge
-aws events remove-targets --rule stylemarket-weekly-insight --ids 1
-aws events delete-rule --name stylemarket-weekly-insight
-
-# Lambda
-aws lambda delete-function --function-name stylemarket-review-analyzer
-aws lambda delete-function --function-name stylemarket-insight-generator
-
-# QuickSight（コンソールから）
-# 分析、データセット、データソースを順に削除
-
-# CloudFormation
-aws cloudformation delete-stack --stack-name stylemarket-firehose
+# Cost Anomaly Detectionのモニター削除
+aws ce delete-anomaly-monitor --monitor-arn your-monitor-arn
 ```
+
+- [ ] AWS Budgets（残すことを推奨）
+- [ ] SNSトピック・サブスクリプション
+- [ ] Cost Anomaly Detection モニター
 
 ---
 
 ## 学習のポイント
 
-### 1. ストリーム処理 vs バッチ処理の設計判断
-リアルタイム性が必要な処理（ネガティブ検出アラート）とバッチで十分な処理（週次レポート）を明確に分け、適切なアーキテクチャを選択する。
+### 1. コスト管理は「設定して終わり」ではない
+一度設定したら放置せず、定期的に予算と実績を確認する習慣をつける。月次でコストレビューを行うのが理想。
 
-### 2. Amazon Comprehendの活用パターン
-感情分析、エンティティ抽出、キーフレーズ抽出など、NLPタスクに特化したサービスを理解し、適切に組み合わせる。
+### 2. 早期発見が最大のコスト削減
+問題が小さいうちに気づけば、影響も小さい。異常検出とアラートの組み合わせで、早期発見を実現。
 
-### 3. データレイクの基本設計
-S3 + Glue + Athena の組み合わせは、AWSデータ分析の基本パターン。パーティショニング、圧縮形式、データカタログの概念を習得する。
+### 3. 全員がコストを意識する文化
+開発者も自分が使っているリソースのコストを意識することで、無駄を減らせる。タグを使ってプロジェクト/チーム別にコストを可視化。
 
-### 4. BIダッシュボードの設計
-QuickSightによる可視化を通じて、ビジネスユーザーにインサイトを届ける方法を学ぶ。SPICE vs 直接クエリのトレードオフを理解する。
+---
 
-### 5. AIとルールベースの組み合わせ
-感情分析（AI）と評価スコア（ルール）を組み合わせることで、より正確な判定を実現する。単一の手法に依存しない設計を心がける。
+## 次のステップ
+
+この演習を終えたら、以下の演習に挑戦してみましょう：
+
+- [課題45: 社内イベント管理システム](exercise-45.md) - ECS + RDS でコンテナアプリケーションを構築
+- [課題34: マーケティングSaaSのAWSコスト最適化](exercise-34.md) - より本格的なコスト最適化

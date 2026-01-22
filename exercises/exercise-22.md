@@ -1,4 +1,4 @@
-# 課題22: 〇〇株式会社 SageMaker モデル基盤 - 需要予測モデルの構築とデプロイ
+# 課題22: グローバルWebサービスのDDoS対策
 
 **難易度: 🟡 中級**
 
@@ -8,600 +8,601 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | 機械学習 / SageMaker |
-| 処理タイプ | バッチ |
+| 難易度 | 初級〜中級 |
+| カテゴリ | セキュリティ |
+| 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 6-8時間 |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## 2. シナリオ
 
-### 企業プロファイル: 〇〇株式会社
+### 企業プロファイル
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   〇〇株式会社                                   │
-│                  小売チェーン運営企業                            │
-├─────────────────────────────────────────────────────────────────┤
-│  設立: 2010年    従業員: 3000名    本社: 大阪                    │
-│  事業: コンビニエンスストアチェーン（全国500店舗）              │
-│  年商: 800億円    SKU数: 3000品目    1日販売数: 200万個         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【現在の課題】                                                  │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                                                              ││
-│  │  ┌─────────────────────────────────────────────────────┐    ││
-│  │  │  発注業務の問題                                      │    ││
-│  │  │  ・各店舗の店長が経験と勘で発注量を決定             │    ││
-│  │  │  ・欠品率: 8%（機会損失 月間2億円）                 │    ││
-│  │  │  ・廃棄ロス率: 5%（月間4000万円）                   │    ││
-│  │  │  ・発注作業時間: 1店舗あたり2時間/日                │    ││
-│  │  └─────────────────────────────────────────────────────┘    ││
-│  │                                                              ││
-│  │  ┌─────────────────────────────────────────────────────┐    ││
-│  │  │  データはあるが活用できていない                      │    ││
-│  │  │  ・POSデータ: 3年分（10億レコード）                 │    ││
-│  │  │  ・気象データ: 連携済み                              │    ││
-│  │  │  ・イベント情報: 手動管理                            │    ││
-│  │  └─────────────────────────────────────────────────────┘    ││
-│  │                                                              ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【目指す姿】                                                    │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                                                              ││
-│  │         ┌─────────────────────────────────────┐             ││
-│  │         │    AI需要予測システム               │             ││
-│  │         │                                     │             ││
-│  │         │  ┌───────┐  ┌───────┐  ┌───────┐  │             ││
-│  │         │  │  POS  │  │ 気象  │  │ Event │  │             ││
-│  │         │  │ Data  │  │ Data  │  │ Data  │  │             ││
-│  │         │  └───┬───┘  └───┬───┘  └───┬───┘  │             ││
-│  │         │      └──────────┼──────────┘      │             ││
-│  │         │                 ▼                  │             ││
-│  │         │         ┌─────────────┐           │             ││
-│  │         │         │  SageMaker  │           │             ││
-│  │         │         │   Model     │           │             ││
-│  │         │         └──────┬──────┘           │             ││
-│  │         │                ▼                  │             ││
-│  │         │    商品×店舗×日 の需要予測        │             ││
-│  │         │    → 自動発注推奨                 │             ││
-│  │         │                                     │             ││
-│  │         └─────────────────────────────────────┘             ││
-│  │                                                              ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 項目 | 内容 |
+|------|------|
+| **企業名** | 〇〇株式会社 |
+| **業種** | グローバルSNS |
+| **従業員数** | 200名（エンジニア60名） |
+| **月間UU** | 500万人（グローバル） |
+| **リージョン** | 日本、US、EU |
+| **可用性目標** | 99.99% |
 
-### ビジネス要件と KPI
+### 現状の課題
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    プロジェクト KPI                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【予測精度目標】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  指標              │ 現状        │ 目標        │ 改善      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  MAPE（平均絶対    │ 手動: 25%   │ < 15%       │ 40%↓     ││
-│  │  パーセント誤差）  │             │             │           ││
-│  │  欠品率            │ 8%          │ < 3%        │ 62%↓     ││
-│  │  廃棄ロス率        │ 5%          │ < 2%        │ 60%↓     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【ビジネス効果目標】                                            │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目              │ 現状        │ 目標        │ 効果      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  機会損失削減      │ 2億円/月    │ 0.8億円/月  │ 1.2億円↓ ││
-│  │  廃棄ロス削減      │ 4000万/月   │ 1600万/月   │ 2400万↓  ││
-│  │  発注作業時間      │ 2時間/日/店 │ 30分/日/店  │ 75%↓     ││
-│  │  年間コスト削減    │ -           │ 約15億円    │ -         ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【システム要件】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ・推論レイテンシ: < 500ms（バッチ推論は許容）               ││
-│  │  ・モデル更新頻度: 週次再学習                                ││
-│  │  ・予測対象: 500店舗 × 3000SKU × 7日先                       ││
-│  │  ・1日あたり推論回数: 約1050万回（バッチ）                   ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+〇〇株式会社はグローバル展開するSNSサービスを運営しています。
+サービス可用性において以下の課題を抱えています：
+
+1. DDoS攻撃の増加
+   - 月に2-3回のDDoS攻撃を受けている
+   - 攻撃時にサービスが数時間停止
+   - 競合他社からの攻撃が疑われるケースも
+
+2. レイテンシの問題
+   - 海外ユーザーからのレスポンスが遅い
+   - 日本リージョンへの直接アクセス
+   - CDN未導入
+
+3. セキュリティ対策の不足
+   - WAFが未導入
+   - ボットアクセスの増加
+   - 不正アカウント作成の多発
+
+4. 運用負荷
+   - 攻撃時の手動対応
+   - 24/365の監視体制がない
+   - インシデント対応に時間がかかる
 ```
+
+### ビジネス目標
+
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| 可用性 | 99.5% | 99.99% |
+| DDoS攻撃時のダウンタイム | 2-3時間 | 0分 |
+| グローバルレイテンシ（P50） | 500ms | 100ms |
+| ボットトラフィック率 | 30% | 5%以下 |
+| 攻撃検知時間 | 30分 | 即時 |
 
 ---
 
-## 3. 学習目標
+## 3. 達成目標（ゴール）
 
-### 習得スキル
+### 主要な学習成果
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       学習目標マップ                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【主要スキル】                                                  │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. SageMaker基礎                                           ││
-│  │     ├── SageMaker Studio / Notebooks                        ││
-│  │     ├── 組み込みアルゴリズム（XGBoost, DeepAR等）           ││
-│  │     ├── Training Job / Processing Job                       ││
-│  │     └── Model / Endpoint / Batch Transform                  ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  2. モデル開発ライフサイクル                                ││
-│  │     ├── データ前処理（SageMaker Processing）                ││
-│  │     ├── 特徴量エンジニアリング                              ││
-│  │     ├── ハイパーパラメータチューニング                      ││
-│  │     └── モデル評価・検証                                    ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  3. モデルデプロイ                                          ││
-│  │     ├── リアルタイム推論エンドポイント                      ││
-│  │     ├── バッチ変換（Batch Transform）                       ││
-│  │     ├── サーバーレス推論                                    ││
-│  │     └── マルチモデルエンドポイント                          ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  4. CloudFormationによるML基盤構築                          ││
-│  │     ├── SageMaker Domain / Studio                           ││
-│  │     ├── S3バケット設計                                      ││
-│  │     ├── IAMロール設計                                       ││
-│  │     └── VPCネットワーク設計                                 ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【副次スキル】                                                  │
-│  ・時系列予測の基礎知識                                          │
-│  ・Feature Storeの活用                                           │
-│  ・Model Registry                                                │
-│  ・コスト最適化                                                  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+この課題を完了すると、以下ができるようになります：
+
+1. Amazon CloudFrontによるグローバル配信
+   - エッジロケーションの活用
+   - キャッシュ戦略の設計
+   - オリジン保護
+
+2. AWS Shieldによる DDoS 保護
+   - Shield Standard の自動保護
+   - Shield Advanced の高度な保護
+   - DDoS Response Team (DRT) との連携
+
+3. AWS WAFによるアプリケーション保護
+   - ボット対策
+   - レート制限
+   - 地理的制限
+
+4. Amazon Route 53による耐障害性DNS
+   - ヘルスチェック
+   - フェイルオーバールーティング
+   - GeoDNS
 ```
 
-### GCPとの対応関係
+### 合格基準
 
-| AWS サービス | GCP 対応サービス | 主な違い |
-|-------------|-----------------|---------|
-| SageMaker | Vertex AI | 統合ML プラットフォーム |
-| SageMaker Studio | Vertex AI Workbench | ノートブック環境 |
-| SageMaker Endpoints | Vertex AI Predictions | モデルサービング |
-| SageMaker Processing | Dataflow / Dataproc | データ処理 |
+| 項目 | 基準 |
+|------|------|
+| CloudFront | グローバルにコンテンツが配信されること |
+| Shield | DDoS攻撃が自動的に緩和されること |
+| WAF | 悪意のあるトラフィックがブロックされること |
+| Route53 | DNS障害時にフェイルオーバーすること |
+| 可用性 | 攻撃シミュレーション時もサービス継続すること |
 
 ---
 
 ## 4. 使用するAWSサービス
 
+### コア技術スタック
+
+```yaml
+エッジセキュリティ:
+  - Amazon CloudFront: グローバルCDN
+  - AWS Shield Standard: 基本DDoS保護（無料）
+  - AWS Shield Advanced: 高度なDDoS保護
+  - AWS WAF: Webアプリケーション保護
+
+DNS:
+  - Amazon Route 53: マネージドDNS
+  - Route 53 Health Checks: ヘルスチェック
+  - Route 53 Traffic Flow: 高度なルーティング
+
+オリジン:
+  - Application Load Balancer: ロードバランサ
+  - Amazon S3: 静的コンテンツ
+  - AWS Global Accelerator: 固定IP・最適化ルーティング（オプション）
+
+監視・対応:
+  - Amazon CloudWatch: メトリクス・ダッシュボード
+  - AWS Firewall Manager: 一元管理
+  - Amazon SNS: アラート通知
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    使用AWSサービス一覧                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【コアサービス】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス          │ 用途                    │ 重要度      ││
-│  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  SageMaker         │ ML開発・デプロイ        │ ★★★★★      ││
-│  │  S3                │ データ・モデル保存      │ ★★★★★      ││
-│  │  CloudFormation    │ インフラ定義            │ ★★★★★      ││
-│  │  IAM               │ アクセス制御            │ ★★★★☆      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【支援サービス】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス          │ 用途                    │ 重要度      ││
-│  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  CloudWatch        │ 監視・ログ              │ ★★★★☆      ││
-│  │  EventBridge       │ スケジュール実行        │ ★★★☆☆      ││
-│  │  Lambda            │ 推論トリガー            │ ★★★☆☆      ││
-│  │  Step Functions    │ ML パイプライン         │ ★★★☆☆      ││
-│  │  ECR               │ カスタムコンテナ        │ ★★☆☆☆      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| CDN | CloudFront | Cloud CDN |
+| DDoS保護 | Shield | Cloud Armor |
+| WAF | AWS WAF | Cloud Armor WAF |
+| DNS | Route 53 | Cloud DNS |
+| Anycast | Global Accelerator | Cloud Load Balancing |
+
+---
+
+## 5. 前提条件
+
+### 技術要件
+
+```bash
+# 必要なCLIツール
+aws --version          # 2.x
+
+# AWS設定
+aws configure
+export AWS_REGION=ap-northeast-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+```
+
+### 事前準備
+
+```bash
+# ドメイン設定
+# socialconnect.example.com を Route 53 で管理済み
+
+# 既存リソース
+# - ALB (オリジン)
+# - S3バケット (静的コンテンツ)
+# - ACM証明書 (us-east-1)
 ```
 
 ---
 
-## 5. 前提条件と事前準備
+## 6. トラブルシューティングチャレンジ
 
-### 必要な環境
+### Challenge 1: CloudFrontキャッシュがヒットしない
 
-```bash
-# AWS CLI バージョン確認
-aws --version
-# aws-cli/2.x.x 以上
+```
+問題:
+キャッシュヒット率が10%以下で、ほとんどのリクエストがオリジンに到達している。
 
-# Python環境
-python3 --version
-# Python 3.9以上
+メトリクス:
+- CacheHitRate: 8%
+- OriginRequests: 90%
 
-# 必要なPythonパッケージ
-pip install boto3 sagemaker pandas numpy scikit-learn
+調査項目:
+1. キャッシュポリシー設定
+2. Varyヘッダー
+3. クエリストリング
 ```
 
-### AWS環境の準備
+<details>
+<summary>解決のヒント</summary>
 
 ```bash
-# 環境変数設定
-export AWS_REGION=ap-northeast-1
-export PROJECT_NAME=smartretail
-export ENVIRONMENT=dev
+# 1. キャッシュポリシー確認
+aws cloudfront get-cache-policy --id POLICY_ID
 
-# 作業ディレクトリ作成
-mkdir -p ~/smartretail-sagemaker/{cfn,notebooks,scripts,data}
-cd ~/smartretail-sagemaker
-```
+# 2. オリジンのレスポンスヘッダー確認
+curl -I https://example.com/api/posts | grep -i cache
 
-### IAMポリシー（必要な権限）
+# Cache-Control: no-store が原因の可能性
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "sagemaker:*",
-        "s3:*",
-        "ecr:*",
-        "cloudwatch:*",
-        "logs:*",
-        "iam:PassRole",
-        "iam:CreateServiceLinkedRole",
-        "cloudformation:*",
-        "ec2:*",
-        "kms:*"
-      ],
-      "Resource": "*"
+# 3. クエリストリングの影響確認
+# ?timestamp=xxx のような動的パラメータがキャッシュを無効化
+
+# 解決策:
+# a) Cache-Control ヘッダーの適切な設定
+# オリジンで: Cache-Control: public, max-age=300
+
+# b) クエリストリングのホワイトリスト設定
+# 必要なクエリパラメータのみをキャッシュキーに含める
+
+# c) キャッシュポリシーの最適化
+aws cloudfront create-cache-policy --cache-policy-config '{
+    "Name": "OptimizedCachePolicy",
+    "MinTTL": 1,
+    "MaxTTL": 86400,
+    "DefaultTTL": 300,
+    "ParametersInCacheKeyAndForwardedToOrigin": {
+        "EnableAcceptEncodingGzip": true,
+        "EnableAcceptEncodingBrotli": true,
+        "HeadersConfig": {
+            "HeaderBehavior": "none"
+        },
+        "CookiesConfig": {
+            "CookieBehavior": "none"
+        },
+        "QueryStringsConfig": {
+            "QueryStringBehavior": "whitelist",
+            "QueryStrings": {
+                "Items": ["page", "limit"]
+            }
+        }
     }
-  ]
+}'
+```
+</details>
+
+### Challenge 2: WAFがレジティメートなボットをブロック
+
+```
+問題:
+Google botやBing botがWAFにブロックされ、
+SEOに悪影響が出ている。
+
+WAFログ:
+terminatingRuleId: AWSManagedRulesBotControlRuleSet
+action: BLOCK
+labels: ["awswaf:managed:aws:bot-control:bot:verified"]
+
+調査項目:
+1. ボット制御ルールの設定
+2. ラベルマッチング
+3. 例外設定
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. 検証済みボットを許可する例外ルールを追加
+
+# WAF Web ACLに新しいルールを追加（優先度を上げる）
+{
+    "Name": "AllowVerifiedBots",
+    "Priority": 0,
+    "Action": {"Allow": {}},
+    "Statement": {
+        "LabelMatchStatement": {
+            "Scope": "LABEL",
+            "Key": "awswaf:managed:aws:bot-control:bot:verified"
+        }
+    },
+    "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "AllowVerifiedBotsMetric"
+    }
+}
+
+# 2. 特定のUser-Agentを許可
+{
+    "Name": "AllowGoogleBot",
+    "Priority": 1,
+    "Action": {"Allow": {}},
+    "Statement": {
+        "ByteMatchStatement": {
+            "SearchString": "Googlebot",
+            "FieldToMatch": {
+                "SingleHeader": {"Name": "user-agent"}
+            },
+            "TextTransformations": [
+                {"Priority": 0, "Type": "LOWERCASE"}
+            ],
+            "PositionalConstraint": "CONTAINS"
+        }
+    },
+    "VisibilityConfig": {...}
+}
+
+# 3. ボット制御ルールのモード変更
+# COMMON → TARGETED に変更して、悪意のあるボットのみブロック
+```
+</details>
+
+### Challenge 3: Shield Advanced でコスト保護が機能しない
+
+```
+問題:
+大規模DDoS攻撃を受け、CloudFrontとALBのデータ転送料金が
+大幅に増加したが、Shield Advancedのコスト保護が適用されない。
+
+請求:
+- CloudFront データ転送: $50,000
+- ALB データ転送: $10,000
+- Shield Advanced: $3,000
+
+調査項目:
+1. コスト保護の条件
+2. 保護対象リソースの設定
+3. DRT への連絡
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# Shield Advancedのコスト保護を受けるための条件:
+
+# 1. リソースが保護対象として登録されていること
+aws shield list-protections
+
+# 2. 攻撃がShieldによって検知されていること
+aws shield list-attacks --start-time "2024-01-01T00:00:00Z" --end-time "2024-01-31T23:59:59Z"
+
+# 3. WAFがAssociateされていること（L7攻撃の場合）
+aws wafv2 get-web-acl-for-resource \
+    --resource-arn arn:aws:cloudfront::xxx:distribution/yyy
+
+# コスト保護申請手順:
+# a) AWS サポートケースを開く
+# b) 以下の情報を提供:
+#    - Shield 攻撃ID
+#    - 影響を受けたリソースのARN
+#    - 異常なコストが発生した期間
+#    - コスト増加の証拠（請求書）
+
+# c) DRTに連絡（プロアクティブエンゲージメント有効時）
+aws shield describe-subscription
+# ProactiveEngagementStatus: ENABLED であることを確認
+
+# 注意: コスト保護は攻撃が正当にDDoS攻撃として認定された場合のみ適用
+# スケーリングによる正常なトラフィック増加は対象外
+```
+</details>
+
+---
+
+## 7. 設計考慮ポイント
+
+### Shield Standard vs Advanced
+
+```yaml
+Shield Standard (無料):
+  保護対象:
+    - CloudFront
+    - Route 53
+    - Global Accelerator
+  保護内容:
+    - Layer 3/4 DDoS攻撃の自動緩和
+    - SYN floods, UDP floods, Reflection attacks
+  制限:
+    - 可視性なし
+    - コスト保護なし
+    - DRTサポートなし
+
+Shield Advanced ($3,000/月 + WAF費用):
+  追加保護:
+    - ALB, NLB, EIP, EC2
+  追加機能:
+    - リアルタイム攻撃可視性
+    - DDoS Response Team (24/7)
+    - コスト保護
+    - WAF無料（Shield関連）
+    - Health-based detection
+  適用ケース:
+    - ミッションクリティカル
+    - 高頻度の攻撃
+    - SLA要件あり
+
+選択基準:
+  月間UU > 100万 または
+  ダウンタイムコスト > $10,000/時間
+  → Shield Advanced を推奨
+```
+
+### グローバル配信戦略
+
+```
+エッジロケーション最適化:
+
+┌─────────────────────────────────────────────────────────────┐
+│                    Price Class 選択                         │
+├─────────────────────────────────────────────────────────────┤
+│ PriceClass_All        : 全リージョン (最高パフォーマンス)    │
+│ PriceClass_200        : 北米、欧州、アジア、中東、アフリカ   │
+│ PriceClass_100        : 北米、欧州のみ (最低コスト)          │
+└─────────────────────────────────────────────────────────────┘
+
+推奨:
+- グローバルサービス → PriceClass_All
+- 日本中心 + 一部海外 → PriceClass_200
+- 開発環境 → PriceClass_100
+```
+
+---
+
+## 8. 発展課題（オプション）
+
+### 上級チャレンジ1: Global Acceleratorによる最適化
+
+```bash
+# AWS Global Accelerator設定
+# 固定IPアドレスとAnycastルーティング
+
+aws globalaccelerator create-accelerator \
+    --name example-accelerator \
+    --ip-address-type IPV4 \
+    --enabled
+
+# リスナー作成
+aws globalaccelerator create-listener \
+    --accelerator-arn arn:aws:globalaccelerator::xxx:accelerator/yyy \
+    --port-ranges '[{"FromPort":443,"ToPort":443}]' \
+    --protocol TCP
+
+# エンドポイントグループ作成（複数リージョン）
+aws globalaccelerator create-endpoint-group \
+    --listener-arn arn:aws:globalaccelerator::xxx:accelerator/yyy/listener/zzz \
+    --endpoint-group-region ap-northeast-1 \
+    --endpoint-configurations '[{"EndpointId":"arn:aws:elasticloadbalancing:...","Weight":100}]' \
+    --traffic-dial-percentage 100 \
+    --health-check-path "/health" \
+    --health-check-interval-seconds 10
+```
+
+### 上級チャレンジ2: 多層キャッシング戦略
+
+```yaml
+# CloudFront + Origin Shield + ALB + ElastiCache
+
+Layer 1: CloudFront Edge
+  - 静的コンテンツ: 24時間キャッシュ
+  - 動的コンテンツ: 5分キャッシュ
+  - キャッシュヒット率目標: 80%
+
+Layer 2: Origin Shield
+  - リージョナルエッジキャッシュの一元化
+  - オリジンへのリクエスト削減: 50%
+
+Layer 3: Application Cache (ElastiCache)
+  - API レスポンスキャッシュ
+  - セッションストア
+  - TTL: 1-5分
+
+結果:
+  - オリジンへの到達率: 10%以下
+  - レイテンシ改善: 80%
+```
+
+### 上級チャレンジ3: カオスエンジニアリング
+
+```python
+# DDoS攻撃シミュレーション（AWS FISを使用）
+# 注意: 本番環境では事前にAWSサポートに連絡が必要
+
+# FIS実験テンプレート
+{
+    "description": "Simulate high traffic load",
+    "targets": {
+        "alb": {
+            "resourceType": "aws:elasticloadbalancing:loadbalancer",
+            "resourceArns": ["arn:aws:elasticloadbalancing:..."],
+            "selectionMode": "ALL"
+        }
+    },
+    "actions": {
+        "inject-fault": {
+            "actionId": "aws:fis:inject-api-throttle-error",
+            "parameters": {
+                "duration": "PT5M",
+                "percentage": "50"
+            },
+            "targets": {
+                "LoadBalancers": "alb"
+            }
+        }
+    },
+    "stopConditions": [
+        {
+            "source": "aws:cloudwatch:alarm",
+            "value": "arn:aws:cloudwatch:...:alarm:emergency-stop"
+        }
+    ],
+    "roleArn": "arn:aws:iam::xxx:role/FISRole"
 }
 ```
 
 ---
 
-## 6. アーキテクチャ設計
+## 9. コスト見積もり
 
-### ML基盤全体像
+### 月額コスト概算
 
-```mermaid
-architecture-beta
-    group aws(cloud)[AWS Cloud]
+| サービス | スペック | 月額コスト |
+|----------|----------|------------|
+| CloudFront | 10TB転送 + 1億リクエスト | $1,200 |
+| Shield Advanced | 基本料金 | $3,000 |
+| WAF | Web ACL + ルール + ボット制御 | $50 |
+| Route 53 | ホステッドゾーン + クエリ | $10 |
+| ヘルスチェック | 3つ | $2 |
+| CloudWatch | ログ・メトリクス | $30 |
+| **合計** | | **約 $4,292/月** |
 
-    group data_layer(server)[Data Layer] in aws
-    service pos(database)[POS Data RDS/S3] in data_layer
-    service weather(server)[Weather Data API to S3] in data_layer
-    service event(disk)[Event Data Manual to S3] in data_layer
-    service datalake(disk)[S3 Data Lake raw/processed/features] in data_layer
+### Shield Advancedなしの場合
 
-    group ml_layer(server)[ML Layer] in aws
-    service studio(server)[SageMaker Studio Jupyter Notebooks] in ml_layer
-    service processing(server)[Processing Job 前処理] in ml_layer
-    service training(server)[Training Job モデル学習] in ml_layer
-    service registry(database)[Model Registry モデル管理] in ml_layer
-
-    group inference_layer(server)[Inference Layer] in aws
-    service batch(server)[Batch Transform 日次バッチ予測] in inference_layer
-    service endpoint(server)[Real-time Endpoint オンデマンド] in inference_layer
-    service s3results(disk)[S3 Results 予測結果] in inference_layer
-    service apigw(internet)[API Gateway 予測API] in inference_layer
-
-    pos:B --> T:datalake
-    weather:B --> T:datalake
-    event:B --> T:datalake
-    datalake:B --> T:studio
-    studio:B --> T:processing
-    processing:R --> L:training
-    training:B --> T:registry
-    registry:B --> T:batch
-    registry:B --> T:endpoint
-    batch:B --> T:s3results
-    endpoint:B --> T:apigw
 ```
+Shield Standard (無料) の場合:
+- CloudFront: $1,200
+- WAF: $50
+- Route 53: $12
+- CloudWatch: $30
+合計: 約 $1,292/月
 
-### データフロー設計
+差額: $3,000/月
 
-#### 入力データ
+判断基準:
+- DDoS攻撃によるダウンタイムコスト
+- ブランド毀損のリスク
+- SLA要件
 
-| データソース | 形式 | 更新頻度 | サイズ |
-|-------------|------|---------|--------|
-| POSトランザクション | CSV/Parquet | 日次 | 10GB/日 |
-| 商品マスタ | CSV | 週次 | 10MB |
-| 店舗マスタ | CSV | 月次 | 1MB |
-| 気象データ | JSON→CSV | 日次 | 100MB |
-| イベントカレンダー | CSV | 週次 | 1MB |
-
-#### 特徴量設計
-
-| カテゴリ | 特徴量例 |
-|---------|---------|
-| 時間特徴 | 曜日, 月, 祝日フラグ, 給料日フラグ |
-| ラグ特徴 | 過去7日/14日/28日の販売数 |
-| ローリング統計 | 7日/14日移動平均, 標準偏差 |
-| 商品特徴 | カテゴリ, 価格帯, 新商品フラグ |
-| 店舗特徴 | 立地タイプ, 面積, 客層 |
-| 気象特徴 | 気温, 降水確率, 天気カテゴリ |
-| イベント特徴 | 近隣イベント, 店舗イベント |
-
-#### 出力データ
-
-```mermaid
-flowchart LR
-    input[店舗ID × 商品ID × 予測日] --> model[予測モデル]
-    model --> output[予測販売数<br/>+ 信頼区間 上限/下限<br/>+ 推奨発注数]
+500万UU × 広告収入 $0.01/UU = $50,000/月
+1時間ダウンタイム = $2,000+ の損失
+→ Shield Advanced の投資対効果は高い
 ```
 
 ---
 
-## 7. トラブルシューティング演習
+## 10. 学習のポイント
 
-### 演習7-1: モデル精度の劣化
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 7-1                      │
-│                  モデル精度の劣化                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  本番稼働後3ヶ月で、予測精度が徐々に低下している。              │
-│  MAPEが当初15%だったが、現在は25%まで悪化。                     │
-│                                                                  │
-│  【観測データ】                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  時期        │ MAPE  │ 特記事項                            ││
-│  ├─────────────┼───────┼─────────────────────────────────────┤│
-│  │  1ヶ月目    │ 15%   │ 正常                                ││
-│  │  2ヶ月目    │ 18%   │ 新商品50品追加                      ││
-│  │  3ヶ月目    │ 25%   │ 夏季セール開始                      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. 精度劣化の原因を分析してください                             │
-│  2. データドリフト検出の仕組みを設計してください                 │
-│  3. モデル再学習の自動化を提案してください                       │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 演習7-2: 推論エンドポイントのレイテンシ問題
+### 今回学んだこと
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 7-2                      │
-│              推論レイテンシの問題                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  リアルタイム推論エンドポイントのレイテンシが                    │
-│  SLO（500ms）を超えるケースが増加している。                     │
-│                                                                  │
-│  【メトリクス】                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ・平均レイテンシ: 300ms                                    ││
-│  │  ・P99レイテンシ: 1200ms                                    ││
-│  │  ・モデル読み込み時間: 800ms                                ││
-│  │  ・コールドスタート発生率: 15%                              ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. レイテンシ問題の根本原因を特定してください                   │
-│  2. コールドスタート対策を提案してください                       │
-│  3. Serverless Inferenceの適用を検討してください                 │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+1. CloudFrontによるグローバル配信
+   - エッジロケーションの活用
+   - キャッシュ戦略
+   - オリジン保護
+
+2. AWS ShieldによるDDoS保護
+   - Standard vs Advanced
+   - 自動緩和
+   - DRTサポート
+
+3. AWS WAFによるL7保護
+   - マネージドルール
+   - ボット制御
+   - レート制限
+
+4. Route 53による高可用性DNS
+   - ヘルスチェック
+   - フェイルオーバー
+   - GeoDNS
+```
+
+### GCPとの比較まとめ
+
+| 観点 | AWS | GCP |
+|------|-----|-----|
+| CDN | CloudFront (450+ PoPs) | Cloud CDN |
+| DDoS | Shield (Standard無料) | Cloud Armor |
+| 専門サポート | DRT (Shield Advanced) | なし（標準サポート内） |
+| 価格モデル | 月額固定 + 従量 | 従量課金のみ |
+
+### 次のステップ
+
+```
+1. 発展学習:
+   - AWS Global Accelerator
+   - CloudFront Functions/Lambda@Edge
+   - Origin Shield
+
+2. 実務応用:
+   - 攻撃シミュレーション訓練
+   - インシデントレスポンス計画
+   - SLA設計
+
+3. 認定資格:
+   - AWS Certified Security - Specialty
+   - AWS Certified Advanced Networking - Specialty
 ```
 
 ---
 
-## 8. 設計課題
-
-### 設計課題8-1: マルチモデル戦略
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      設計課題 8-1                                │
-│                 マルチモデル戦略                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【課題】                                                        │
-│  商品カテゴリごとに異なるモデルを使い分ける                      │
-│  マルチモデル戦略を設計してください。                            │
-│                                                                  │
-│  【要件】                                                        │
-│  ・飲料/食品/日用品/菓子で異なるモデル                          │
-│  ・各モデルは独立して更新可能                                    │
-│  ・推論時にカテゴリに応じて適切なモデルを選択                    │
-│  ・コスト効率の良いエンドポイント設計                            │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. マルチモデルエンドポイントの設計                             │
-│  2. モデルルーティングロジック                                   │
-│  3. CloudFormationテンプレート                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 設計課題8-2: A/Bテスト基盤
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      設計課題 8-2                                │
-│                   A/Bテスト基盤                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【課題】                                                        │
-│  新しいモデルバージョンを安全にデプロイするための                │
-│  A/Bテスト基盤を設計してください。                               │
-│                                                                  │
-│  【要件】                                                        │
-│  ・トラフィックの10%を新モデルに振り分け                        │
-│  ・モデル間の精度比較を自動化                                    │
-│  ・問題発生時の自動ロールバック                                  │
-│  ・統計的有意性の判定                                            │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. A/Bテストアーキテクチャ図                                    │
-│  2. トラフィック分割設定                                         │
-│  3. 評価ダッシュボード設計                                       │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 9. 発展課題
-
-### 発展課題9-1: Feature Store の活用
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      発展課題 9-1                               │
-│                 Feature Store の活用                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【シナリオ】                                                    │
-│  特徴量の管理と再利用を効率化するため、                          │
-│  SageMaker Feature Storeを導入したい。                           │
-│                                                                  │
-│  【技術要件】                                                    │
-│  ・オフラインストア（学習用）とオンラインストア（推論用）       │
-│  ・特徴量のバージョン管理                                        │
-│  ・リアルタイム特徴量取得（<10ms）                              │
-│  ・特徴量の共有と再利用                                          │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. Feature Group設計                                            │
-│  2. 特徴量パイプライン                                           │
-│  3. CloudFormationテンプレート                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 10. 学習のまとめ
-
-### 学習チェックリスト
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     学習チェックリスト                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【SageMaker基礎】                                               │
-│  □ SageMaker Studioの環境構築ができる                           │
-│  □ Processing Jobでデータ前処理ができる                         │
-│  □ Training Jobでモデル訓練ができる                             │
-│  □ Batch Transformでバッチ推論ができる                          │
-│                                                                  │
-│  【モデル開発】                                                  │
-│  □ 組み込みアルゴリズム（XGBoost等）を使用できる                │
-│  □ ハイパーパラメータチューニングができる                       │
-│  □ モデル評価指標を適切に選択できる                             │
-│  □ Model Registryを活用できる                                   │
-│                                                                  │
-│  【デプロイ】                                                    │
-│  □ リアルタイムエンドポイントを構築できる                       │
-│  □ Auto Scalingを設定できる                                     │
-│  □ Data Captureを設定できる                                     │
-│  □ A/Bテスト環境を構築できる                                    │
-│                                                                  │
-│  【CloudFormation】                                              │
-│  □ SageMaker Domainを構築できる                                 │
-│  □ IAMロールを適切に設計できる                                  │
-│  □ VPCエンドポイントを設定できる                                │
-│  □ エンドポイントをIaCで管理できる                              │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 11. コスト見積もり
-
-### 想定コスト（月額）
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      コスト見積もり                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【開発環境】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  SageMaker Studio        │ 40時間/月       │ $12            ││
-│  │  Training Job (m5.xl)    │ 10時間/月       │ $2.30          ││
-│  │  Processing Job          │ 5時間/月        │ $1.15          ││
-│  │  S3 Storage              │ 50GB            │ $1.15          ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $17         ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【本番環境想定】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Endpoint (ml.m5.large)  │ 2台 × 24h       │ $210           ││
-│  │  Batch Transform (週次)  │ 4回 × 2時間     │ $18            ││
-│  │  Training Job (週次)     │ 4回 × 3時間     │ $28            ││
-│  │  S3 Storage              │ 500GB           │ $11.50         ││
-│  │  CloudWatch              │ ログ・メトリクス│ $15            ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $283        ││
-│  │                          │                 │ (約 ¥42,000)   ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【コスト最適化のポイント】                                      │
-│  ・Spot Instancesの活用（Training: 最大90%削減）                │
-│  ・Serverless Inferenceの検討（低トラフィック時）                │
-│  ・適切なインスタンスサイズ選定                                  │
-│  ・不要なリソースの自動停止                                      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## リソースのクリーンアップ
-
-```bash
-# エンドポイント削除
-aws sagemaker delete-endpoint \
-  --endpoint-name smartretail-demand-forecast-dev
-
-aws sagemaker delete-endpoint-config \
-  --endpoint-config-name smartretail-demand-forecast-config-dev
-
-aws sagemaker delete-model \
-  --model-name smartretail-demand-forecast-dev
-
-# CloudFormationスタック削除
-aws cloudformation delete-stack --stack-name smartretail-sagemaker-domain-dev
-aws cloudformation delete-stack --stack-name smartretail-storage-iam-dev
-aws cloudformation delete-stack --stack-name smartretail-network-dev
-
-# S3バケット削除（中身がある場合は先に空にする）
-aws s3 rb s3://smartretail-ml-data-dev-${ACCOUNT_ID} --force
-aws s3 rb s3://smartretail-ml-models-dev-${ACCOUNT_ID} --force
-
-echo "Cleanup completed!"
-```
-
----
-
-**次の課題**: [課題37: 〇〇株式会社 MLOpsパイプライン](exercise-37.md)
-
-**前の課題**: [課題35: ShopNow Chaos Engineering](exercise-35.md)

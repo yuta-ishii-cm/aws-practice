@@ -1,6 +1,6 @@
-# 課題23: CreditAI MLOpsパイプライン - モデル開発から本番運用までの自動化
+# 課題23: MedConnect Cognito認証基盤 - 医療情報プラットフォームの認証システム
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,64 +8,60 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | MLOps / 機械学習パイプライン |
-| 処理タイプ | バッチ |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-8時間 |
+| 難易度 | 初級〜中級 |
+| カテゴリ | 認証・認可 / セキュリティ |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
 ## 2. ビジネスシナリオ
 
-### 企業プロファイル: CreditAI株式会社
+### 企業プロファイル: MedConnect株式会社
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     CreditAI株式会社                             │
-│                    与信審査AIプラットフォーム                    │
+│                    MedConnect株式会社                            │
+│                  医療情報プラットフォーム                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  設立: 2020年    従業員: 50名    本社: 東京                      │
-│  事業: 金融機関向け与信審査AI SaaS                              │
-│  顧客: 銀行・クレジットカード会社30社                           │
-│  年間審査件数: 500万件    API呼び出し: 1日20万件                │
+│  設立: 2021年    従業員: 30名    本社: 東京                      │
+│  事業: 医療機関向けオンライン診療プラットフォーム               │
+│  ユーザー: 医師5000名、患者30万人、医療機関500施設              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【現在のML開発プロセス】                                        │
+│  【プラットフォーム概要】                                        │
 │  ┌────────────────────────────────────────────────────────────┐│
 │  │                                                              ││
-│  │   Data Scientist                 ML Engineer                ││
-│  │   ┌─────────────┐               ┌─────────────┐            ││
-│  │   │ Jupyter     │   手動で      │ 本番環境    │            ││
-│  │   │ Notebook    │───引き渡し───►│ デプロイ    │            ││
-│  │   │ でモデル開発│               │             │            ││
-│  │   └─────────────┘               └─────────────┘            ││
+│  │   ┌─────────┐    ┌─────────┐    ┌─────────┐              ││
+│  │   │  患者   │    │  医師   │    │ 管理者  │              ││
+│  │   │ アプリ  │    │ ポータル│    │ 画面    │              ││
+│  │   └────┬────┘    └────┬────┘    └────┬────┘              ││
+│  │        │              │              │                    ││
+│  │        └──────────────┼──────────────┘                    ││
+│  │                       ▼                                    ││
+│  │              ┌─────────────────┐                          ││
+│  │              │   認証基盤      │                          ││
+│  │              │  (構築が必要)   │                          ││
+│  │              └────────┬────────┘                          ││
+│  │                       │                                    ││
+│  │              ┌────────▼────────┐                          ││
+│  │              │   バックエンド   │                          ││
+│  │              │   API群         │                          ││
+│  │              └─────────────────┘                          ││
 │  │                                                              ││
-│  │   【問題点】                                                 ││
-│  │   ・開発から本番デプロイまで2週間                           ││
-│  │   ・手動作業によるミス発生                                  ││
-│  │   ・モデルのバージョン管理が不十分                          ││
-│  │   ・再現性の欠如（どの学習データで訓練したか不明）          ││
-│  │   ・モデル監視が手動                                        ││
-│  │   ・規制対応（説明可能性）の工数大                          ││
 │  └────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【目指す姿】                                                    │
+│  【認証要件】                                                    │
 │  ┌────────────────────────────────────────────────────────────┐│
-│  │                    MLOps パイプライン                        ││
-│  │                                                              ││
-│  │  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐    ││
-│  │  │Data │─►│Train│─►│Eval │─►│Reg  │─►│Deploy│─►│Monit│    ││
-│  │  │Prep │  │     │  │     │  │ister│  │     │  │or   │    ││
-│  │  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘    ││
-│  │     │         │         │         │         │       │      ││
-│  │     └─────────┴─────────┴─────────┴─────────┴───────┘      ││
-│  │                         自動化                               ││
-│  │                                                              ││
-│  │  ・コードプッシュから本番デプロイまで4時間                  ││
-│  │  ・完全自動化されたパイプライン                             ││
-│  │  ・全モデルのバージョン管理と追跡                           ││
-│  │  ・自動モデル監視とドリフト検出                             ││
+│  │  ユーザー種別    │ 認証方式               │ セキュリティ  ││
+│  ├──────────────────┼────────────────────────┼───────────────┤│
+│  │  患者            │ メール/パスワード      │ MFA推奨       ││
+│  │                  │ + ソーシャルログイン   │               ││
+│  │  医師            │ メール/パスワード      │ MFA必須       ││
+│  │                  │ + 医師免許番号確認     │               ││
+│  │  管理者          │ メール/パスワード      │ MFA必須       ││
+│  │                  │ + IP制限              │ + 監査ログ    ││
 │  └────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -75,27 +71,30 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    金融規制対応要件                              │
+│                    医療情報セキュリティ要件                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【モデルガバナンス要件】                                        │
+│  【個人情報保護法・医療情報ガイドライン対応】                    │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. モデルの追跡可能性（Traceability）                       ││
-│  │     ・どのデータで学習したか                                ││
-│  │     ・どのハイパーパラメータを使用したか                    ││
-│  │     ・いつ、誰が承認したか                                  ││
+│  │  1. 認証強度                                                ││
+│  │     ・医療従事者は多要素認証必須                            ││
+│  │     ・パスワードポリシー: 12文字以上、複雑性要件            ││
+│  │     ・セッションタイムアウト: 30分                          ││
 │  │                                                              ││
-│  │  2. 説明可能性（Explainability）                            ││
-│  │     ・審査結果の理由を説明できること                        ││
-│  │     ・SHAP値やFeature Importanceの記録                      ││
+│  │  2. アクセス制御                                            ││
+│  │     ・役割ベースのアクセス制御（RBAC）                      ││
+│  │     ・最小権限の原則                                        ││
+│  │     ・担当患者のみアクセス可能                              ││
 │  │                                                              ││
-│  │  3. 公平性（Fairness）                                      ││
-│  │     ・差別的バイアスがないことの検証                        ││
-│  │     ・定期的な公平性監査                                    ││
+│  │  3. 監査証跡                                                ││
+│  │     ・全ログイン試行の記録                                  ││
+│  │     ・アクセスログの7年間保存                               ││
+│  │     ・異常アクセスの検知                                    ││
 │  │                                                              ││
-│  │  4. 監査証跡（Audit Trail）                                 ││
-│  │     ・全ての判断の記録                                      ││
-│  │     ・7年間の保存義務                                       ││
+│  │  4. データ保護                                              ││
+│  │     ・通信の暗号化（TLS 1.2以上）                           ││
+│  │     ・トークンの安全な管理                                  ││
+│  │     ・個人情報の匿名化                                      ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -108,26 +107,24 @@
 │                    プロジェクト KPI                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【開発効率目標】                                                │
+│  【セキュリティ目標】                                            │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  指標              │ 現状        │ 目標        │ 改善      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  デプロイリード    │ 2週間       │ 4時間       │ 98%↓     ││
-│  │  タイム            │             │             │           ││
-│  │  デプロイ頻度      │ 月1回       │ 週2回       │ 8倍↑     ││
-│  │  手動作業時間      │ 40時間/回   │ 2時間/回    │ 95%↓     ││
-│  │  ロールバック時間  │ 4時間       │ 15分        │ 94%↓     ││
+│  │  指標              │ 目標        │ 基準                    ││
+│  ├────────────────────┼─────────────┼─────────────────────────┤│
+│  │  MFA有効化率       │ > 95%       │ 医療従事者は100%        ││
+│  │  不正ログイン検知  │ < 1分       │ 自動ブロック            ││
+│  │  パスワード漏洩対応│ < 15分      │ 強制リセット            ││
+│  │  監査ログ保存期間  │ 7年         │ 規制要件                ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【品質目標】                                                    │
+│  【ユーザー体験目標】                                            │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  指標              │ 現状        │ 目標        │ 基準      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  モデル精度(AUC)   │ 0.82        │ > 0.85      │ 本番必須  ││
-│  │  推論レイテンシ    │ 500ms       │ < 200ms     │ P99       ││
-│  │  エンドポイント    │ 99.5%       │ 99.95%      │ SLO       ││
-│  │  可用性            │             │             │           ││
-│  │  ドリフト検出時間  │ 7日         │ < 1日       │ 自動      ││
+│  │  指標              │ 目標        │ 現状の課題              ││
+│  ├────────────────────┼─────────────┼─────────────────────────┤│
+│  │  ログイン成功率    │ > 99%       │ -                       ││
+│  │  ログイン時間      │ < 3秒       │ -                       ││
+│  │  パスワードリセット│ セルフサービス │ 現在は手動            ││
+│  │  サポート問い合わせ│ 50%削減     │ 認証関連が多い          ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -147,42 +144,36 @@
 │  【主要スキル】                                                  │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. SageMaker Pipelines                                     ││
-│  │     ├── パイプライン定義（Python SDK）                      ││
-│  │     ├── ステップの種類と使い分け                            ││
-│  │     ├── 条件分岐とパラメータ化                              ││
-│  │     └── パイプラインの実行と監視                            ││
+│  │  1. Amazon Cognito基礎                                      ││
+│  │     ├── User Pool（ユーザー管理）                           ││
+│  │     ├── Identity Pool（一時認証情報）                       ││
+│  │     ├── 認証フロー（OAuth 2.0 / OIDC）                      ││
+│  │     └── トークン（ID/Access/Refresh）                       ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  2. モデルレジストリとバージョン管理                        ││
-│  │     ├── Model Package Group                                 ││
-│  │     ├── モデルの承認ワークフロー                            ││
-│  │     ├── メタデータ管理                                      ││
-│  │     └── リネージュ追跡                                      ││
+│  │  2. セキュリティ設定                                        ││
+│  │     ├── パスワードポリシー                                  ││
+│  │     ├── MFA（TOTP / SMS）                                   ││
+│  │     ├── 高度なセキュリティ機能                              ││
+│  │     └── Lambda トリガー                                     ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  3. モデル監視                                              ││
-│  │     ├── SageMaker Model Monitor                             ││
-│  │     ├── データ品質監視                                      ││
-│  │     ├── モデル品質監視                                      ││
-│  │     └── バイアスドリフト検出                                ││
+│  │  3. API Gateway統合                                         ││
+│  │     ├── Cognito Authorizer                                  ││
+│  │     ├── スコープベースアクセス制御                          ││
+│  │     ├── カスタム認可                                        ││
+│  │     └── APIキー管理                                         ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  4. CI/CD for ML                                            ││
-│  │     ├── CodePipeline / CodeBuild                            ││
-│  │     ├── GitOps ワークフロー                                 ││
-│  │     ├── 自動テスト戦略                                      ││
-│  │     └── ブルー/グリーンデプロイ                             ││
+│  │  4. CloudFormationによる構築                                ││
+│  │     ├── User Pool定義                                       ││
+│  │     ├── App Client設定                                      ││
+│  │     ├── API Gateway統合                                     ││
+│  │     └── Lambda トリガー設定                                 ││
 │  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【副次スキル】                                                  │
-│  ・Terraform によるMLOps基盤構築                                 │
-│  ・EventBridge によるイベント駆動                               │
-│  ・説明可能AI（SageMaker Clarify）                              │
-│  ・コスト最適化                                                  │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -191,10 +182,9 @@
 
 | AWS サービス | GCP 対応サービス | 主な違い |
 |-------------|-----------------|---------|
-| SageMaker Pipelines | Vertex AI Pipelines | Kubeflow ベース |
-| Model Registry | Vertex AI Model Registry | モデル管理 |
-| Model Monitor | Vertex AI Model Monitoring | ドリフト検出 |
-| SageMaker Clarify | Vertex Explainable AI | 説明可能性 |
+| Cognito User Pool | Identity Platform | ユーザー管理 |
+| Cognito Identity Pool | なし (IAM直接) | 一時認証情報 |
+| API Gateway + Cognito | API Gateway + Firebase Auth | API認可 |
 
 ---
 
@@ -205,34 +195,25 @@
 │                    使用AWSサービス一覧                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【MLOpsコア】                                                   │
+│  【コアサービス】                                                │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス              │ 用途                  │ 重要度    ││
-│  ├────────────────────────┼───────────────────────┼───────────┤│
-│  │  SageMaker Pipelines   │ MLパイプライン        │ ★★★★★    ││
-│  │  SageMaker Model Reg.  │ モデル管理            │ ★★★★★    ││
-│  │  SageMaker Model Mon.  │ モデル監視            │ ★★★★☆    ││
-│  │  SageMaker Clarify     │ 説明可能性・公平性    │ ★★★★☆    ││
-│  │  SageMaker Experiments │ 実験管理              │ ★★★☆☆    ││
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  Cognito User Pool │ ユーザー認証管理        │ ★★★★★      ││
+│  │  Cognito Identity  │ AWS認証情報発行         │ ★★★☆☆      ││
+│  │  API Gateway       │ API認可                 │ ★★★★★      ││
+│  │  Lambda            │ カスタム処理            │ ★★★★☆      ││
+│  │  CloudFormation    │ インフラ定義            │ ★★★★★      ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【CI/CD】                                                       │
+│  【支援サービス】                                                │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス              │ 用途                  │ 重要度    ││
-│  ├────────────────────────┼───────────────────────┼───────────┤│
-│  │  CodeCommit / GitHub   │ ソースコード管理      │ ★★★★☆    ││
-│  │  CodePipeline          │ CI/CDオーケストレーション│ ★★★★★ ││
-│  │  CodeBuild             │ ビルド・テスト        │ ★★★★☆    ││
-│  │  EventBridge           │ イベント駆動          │ ★★★☆☆    ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【インフラ】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  Terraform             │ IaC                   │ ★★★★★    ││
-│  │  S3                    │ データ・アーティファクト│ ★★★★★   ││
-│  │  IAM                   │ アクセス制御          │ ★★★★☆    ││
-│  │  CloudWatch            │ ログ・監視            │ ★★★★☆    ││
-│  │  SNS                   │ 通知                  │ ★★★☆☆    ││
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  CloudWatch Logs   │ 認証ログ                │ ★★★★☆      ││
+│  │  SNS               │ MFA SMS送信             │ ★★★☆☆      ││
+│  │  SES               │ メール送信              │ ★★★☆☆      ││
+│  │  WAF               │ API保護                 │ ★★★☆☆      ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -245,20 +226,13 @@
 ### 必要な環境
 
 ```bash
-# Terraform バージョン確認
-terraform --version
-# Terraform v1.5.0 以上
-
 # AWS CLI バージョン確認
 aws --version
 # aws-cli/2.x.x 以上
 
-# Python環境
-python3 --version
-# Python 3.9以上
-
-# 必要なPythonパッケージ
-pip install sagemaker boto3 pandas scikit-learn
+# Node.js（Lambda関数用）
+node --version
+# v18.x 以上
 ```
 
 ### AWS環境の準備
@@ -266,132 +240,113 @@ pip install sagemaker boto3 pandas scikit-learn
 ```bash
 # 環境変数設定
 export AWS_REGION=ap-northeast-1
-export PROJECT_NAME=creditai
+export PROJECT_NAME=medconnect
 export ENVIRONMENT=dev
 
 # 作業ディレクトリ作成
-mkdir -p ~/creditai-mlops/{terraform,pipelines,scripts,tests}
-cd ~/creditai-mlops
+mkdir -p ~/medconnect-cognito/{cfn,lambda,scripts}
+cd ~/medconnect-cognito
 ```
 
 ---
 
 ## 6. アーキテクチャ設計
 
-### MLOpsパイプライン全体像
+### 認証基盤全体像
 
 ```mermaid
 architecture-beta
-    group aws(cloud)[AWS Cloud]
+    group medconnect(cloud)[MedConnect 認証基盤]
 
-    group source_build(server)[Source and Build] in aws
-    service github(internet)[GitHub Code] in source_build
-    service codebuild(server)[CodeBuild Lint/Test] in source_build
-    service s3artifact(disk)[S3 Artifact Package] in source_build
+    group clients(server)[Client Applications] in medconnect
+    group cognito(server)[Amazon Cognito] in medconnect
+    group api(server)[API Gateway] in medconnect
 
-    group sagemaker_pipelines(server)[SageMaker Pipelines] in aws
-    service dataprep(server)[Data Prep] in sagemaker_pipelines
-    service train(server)[Train] in sagemaker_pipelines
-    service eval(server)[Eval] in sagemaker_pipelines
-    service clarify(server)[Clarify Bias] in sagemaker_pipelines
-    service condition(server)[Condition AUC and Bias Check] in sagemaker_pipelines
-    service register(database)[Register Model] in sagemaker_pipelines
+    service patient_app(internet)[患者App Mobile] in clients
+    service doctor_portal(internet)[医師Portal Web] in clients
+    service admin_console(internet)[管理画面 Web] in clients
 
-    group deployment(server)[Deployment] in aws
-    service registry(database)[Model Registry Pending Approval] in deployment
-    service approval(server)[Manual/Auto Approval] in deployment
-    service staging(server)[Deploy to Staging] in deployment
-    service integration_test(server)[Integration Test] in deployment
-    service production(server)[Deploy to Production Blue/Green] in deployment
+    service userpool(server)[User Pool] in cognito
+    service users(database)[Users 患者・医師・管理者] in cognito
+    service groups(database)[Groups patients・doctors・admins] in cognito
+    service mfa(server)[MFA TOTP・SMS] in cognito
+    service app_clients(server)[App Clients] in cognito
+    service triggers(server)[Lambda Triggers PreSignUp・PostAuth] in cognito
 
-    group monitoring(server)[Monitoring] in aws
-    service data_quality(server)[Data Quality] in monitoring
-    service model_quality(server)[Model Quality] in monitoring
-    service bias_drift(server)[Bias Drift] in monitoring
-    service cloudwatch(server)[CloudWatch Alarm] in monitoring
-    service sns(internet)[SNS/PagerDuty] in monitoring
+    service authorizer(server)[Cognito Authorizer Token検証] in api
+    service endpoints(server)[API Endpoints /patients /doctors /admin] in api
 
-    github:R --> L:codebuild
-    codebuild:R --> L:s3artifact
-    s3artifact:B --> T:dataprep
-    dataprep:R --> L:train
-    train:R --> L:eval
-    eval:R --> L:clarify
-    clarify:B --> T:condition
-    condition:B --> T:register
-    register:B --> T:registry
-    registry:B --> T:approval
-    approval:R --> L:staging
-    staging:B --> T:integration_test
-    integration_test:B --> T:production
-    production:B --> T:data_quality
-    data_quality:R --> L:model_quality
-    model_quality:R --> L:bias_drift
-    bias_drift:B --> T:cloudwatch
-    cloudwatch:R --> L:sns
+    patient_app:B --> T:userpool
+    doctor_portal:B --> T:userpool
+    admin_console:B --> T:userpool
+    userpool:B --> T:authorizer
+    authorizer:B --> T:endpoints
 ```
+
+**User Pool 構成:**
+- Users: 患者、医師、管理者
+- Groups: patients, doctors, admins
+- MFA: TOTP, SMS
+
+**App Clients:** patient-app (Mobile), doctor-portal (Web), admin-console (Web)
+
+**Lambda Triggers:** PreSignUp (医師免許確認), PostAuthentication (ログイン監査), CustomMessage (メールカスタマイズ)
 
 ---
 
 ## 8. トラブルシューティング演習
 
-### 演習8-1: パイプライン失敗
+### 演習8-1: MFA設定の問題
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              トラブルシューティング演習 8-1                      │
-│                  パイプライン失敗                                │
+│                  MFA設定の問題                                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【状況】                                                        │
-│  SageMaker Pipelineの実行が「TrainModel」ステップで              │
-│  失敗している。                                                  │
+│  医師ユーザーがMFAを設定しようとしているが、                     │
+│  「MFA設定が利用できません」というエラーが表示される。           │
 │                                                                  │
-│  【エラーログ】                                                  │
+│  【エラーメッセージ】                                            │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ClientError: Data download failed for channel 'train'.     ││
-│  │  Please ensure that the role has s3:GetObject permission    ││
-│  │  for the following resources:                               ││
-│  │  s3://creditai-ml-artifacts-dev-xxx/processing/train/       ││
+│  │  InvalidParameterException: User pool does not have         ││
+│  │  MFA enabled                                                ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【課題】                                                        │
-│  1. エラーの原因を特定してください                               │
-│  2. IAMポリシーを修正してください                                │
-│  3. パイプラインを再実行して成功を確認してください               │
+│  1. MFAが有効になっていない原因を特定してください                │
+│  2. CloudFormationテンプレートを修正してください                 │
+│  3. 既存ユーザーへの影響を確認してください                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 演習8-2: モデルドリフト検出
+### 演習8-2: トークンの検証エラー
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              トラブルシューティング演習 8-2                      │
-│                  モデルドリフト検出                              │
+│                トークン検証エラー                                │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【状況】                                                        │
-│  Model Monitorからデータドリフトアラートが発生した。             │
-│  推論精度の低下が懸念される。                                    │
+│  有効なはずのアクセストークンでAPI呼び出しをしているが、         │
+│  401 Unauthorizedエラーが返される。                              │
 │                                                                  │
-│  【モニタリングレポート】                                        │
+│  【エラーログ】                                                  │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  Feature: annual_income                                     ││
-│  │  Baseline mean: 450,000                                     ││
-│  │  Current mean: 520,000                                      ││
-│  │  Drift score: 0.35 (threshold: 0.2)                         ││
+│  │  API Gateway execution log:                                 ││
+│  │  Unauthorized request: JWT token expired                    ││
 │  │                                                              ││
-│  │  Feature: employment_years                                  ││
-│  │  Baseline distribution: Normal                              ││
-│  │  Current distribution: Bimodal                              ││
-│  │  Drift score: 0.42 (threshold: 0.2)                         ││
+│  │  Token exp claim: 1704067200 (2024-01-01 00:00:00)          ││
+│  │  Current time: 1704153600 (2024-01-02 00:00:00)             ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
 │  【課題】                                                        │
-│  1. ドリフトの原因を分析してください                             │
-│  2. 対応方針（再学習 or モデル調整）を決定してください           │
-│  3. 自動再学習トリガーの設計を検討してください                   │
+│  1. トークン期限切れの原因を確認してください                     │
+│  2. リフレッシュトークンによる更新処理を実装してください         │
+│  3. クライアント側のトークン管理を改善してください               │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -400,28 +355,28 @@ architecture-beta
 
 ## 9. 設計課題
 
-### 設計課題9-1: Feature Store統合
+### 設計課題9-1: ソーシャルログイン対応
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      設計課題 9-1                                │
-│                 Feature Store統合                                │
+│                 ソーシャルログイン対応                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【課題】                                                        │
-│  SageMaker Feature Storeを導入し、特徴量の                       │
-│  管理と再利用を効率化してください。                              │
+│  患者向けアプリにGoogleとAppleでのソーシャルログインを           │
+│  追加してください。                                              │
 │                                                                  │
 │  【要件】                                                        │
-│  ・オンラインストア（推論時のリアルタイム取得）                  │
-│  ・オフラインストア（学習時のバッチ取得）                        │
-│  ・特徴量のバージョン管理とリネージュ                            │
-│  ・複数モデル間での特徴量共有                                    │
+│  ・Google / Apple Sign-Inの統合                                  │
+│  ・既存メールユーザーとのアカウントリンク                        │
+│  ・ソーシャルログインユーザーの属性マッピング                    │
+│  ・MFA要件の調整（ソーシャルログインはMFA不要）                  │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. Feature Group設計                                            │
-│  2. 特徴量取り込みパイプライン                                   │
-│  3. Terraformテンプレート                                        │
+│  1. Identity Provider設定                                        │
+│  2. 属性マッピング設計                                           │
+│  3. CloudFormationテンプレート                                   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -430,28 +385,28 @@ architecture-beta
 
 ## 10. 発展課題
 
-### 発展課題10-1: マルチモデルA/Bテスト
+### 発展課題10-1: リスクベース認証
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                      発展課題 10-1                               │
-│               マルチモデルA/Bテスト                              │
+│                 リスクベース認証                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  【シナリオ】                                                    │
-│  新しいアルゴリズム（LightGBM）のモデルを                        │
-│  本番環境で段階的に検証したい。                                  │
+│  不正アクセスを検知し、リスクレベルに応じて                      │
+│  追加認証を要求する仕組みを実装したい。                          │
 │                                                                  │
 │  【技術要件】                                                    │
-│  ・トラフィックの10%を新モデルに振り分け                        │
-│  ・リアルタイムの精度比較                                        │
-│  ・統計的有意性の自動判定                                        │
-│  ・勝者モデルへの自動切り替え                                    │
+│  ・Cognitoの高度なセキュリティ機能の活用                        │
+│  ・異常なログインパターンの検出                                  │
+│  ・リスクスコアに基づくMFA要求                                  │
+│  ・ブロックリスト/許可リストの管理                              │
 │                                                                  │
 │  【成果物】                                                      │
-│  1. A/Bテストアーキテクチャ                                      │
-│  2. Production Variantの設定                                     │
-│  3. 自動判定Lambdaの実装                                         │
+│  1. リスク評価ロジック設計                                       │
+│  2. Lambda トリガー実装                                          │
+│  3. 監視ダッシュボード                                           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -467,29 +422,27 @@ architecture-beta
 │                     学習チェックリスト                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【SageMaker Pipelines】                                         │
-│  □ パイプラインをPython SDKで定義できる                         │
-│  □ 各種ステップ（Processing, Training等）を使い分けられる       │
-│  □ 条件分岐とパラメータ化ができる                               │
-│  □ パイプラインのデバッグができる                               │
+│  【Cognito基礎】                                                 │
+│  □ User Pool / Identity Pool の違いを説明できる                 │
+│  □ OAuth 2.0 / OIDC フローを理解した                            │
+│  □ ID/Access/Refresh トークンの役割を説明できる                 │
+│  □ App Clientの設定ができる                                     │
 │                                                                  │
-│  【Model Registry】                                              │
-│  □ Model Package Groupを作成できる                              │
-│  □ モデルのバージョン管理ができる                               │
-│  □ 承認ワークフローを設定できる                                 │
-│  □ モデルメタデータを管理できる                                 │
+│  【セキュリティ】                                                │
+│  □ パスワードポリシーを適切に設定できる                         │
+│  □ MFAを設定できる                                              │
+│  □ Lambda トリガーを実装できる                                  │
+│  □ 監査ログを設定できる                                         │
 │                                                                  │
-│  【Model Monitor】                                               │
-│  □ Data Quality監視を設定できる                                 │
-│  □ Model Quality監視を設定できる                                │
-│  □ ベースラインを作成できる                                     │
-│  □ アラートを設定できる                                         │
+│  【API Gateway統合】                                             │
+│  □ Cognito Authorizerを設定できる                               │
+│  □ スコープベースのアクセス制御ができる                         │
+│  □ グループベースのアクセス制御ができる                         │
 │                                                                  │
-│  【CI/CD】                                                       │
-│  □ CodePipelineでMLパイプラインを統合できる                     │
-│  □ 自動テスト戦略を設計できる                                   │
-│  □ Blue/Greenデプロイを実装できる                               │
-│  □ ロールバック戦略を設計できる                                 │
+│  【CloudFormation】                                              │
+│  □ User Poolを定義できる                                        │
+│  □ App Clientを定義できる                                       │
+│  □ Lambda トリガーを統合できる                                  │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -505,35 +458,31 @@ architecture-beta
 │                      コスト見積もり                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  【開発環境】                                                    │
+│  【Cognito料金】                                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  SageMaker Pipelines     │ 10実行/月       │ $5             ││
-│  │  Training Jobs           │ 20時間/月       │ $5             ││
-│  │  Processing Jobs         │ 10時間/月       │ $2             ││
-│  │  CodePipeline            │ 1パイプライン   │ $1             ││
-│  │  CodeBuild               │ 100分/月        │ $0.50          ││
-│  │  S3 Storage              │ 50GB            │ $1.15          ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $15         ││
+│  │  ・最初の50,000 MAU: 無料                                   ││
+│  │  ・50,001〜100,000 MAU: $0.0055/MAU                         ││
+│  │  ・100,001以上: $0.0046/MAU                                 ││
+│  │  ・高度なセキュリティ: $0.05/MAU                            ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                  │
-│  【本番環境想定】                                                │
+│  【想定コスト（MAU 35,000）】                                    │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │  項目                    │ 数量            │ 月額（USD）    ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Endpoint (ml.m5.large)  │ 2台 × 24h       │ $210           ││
-│  │  Model Monitor           │ 720時間         │ $72            ││
-│  │  SageMaker Pipelines     │ 8実行/月        │ $40            ││
-│  │  Training Jobs (週次)    │ 16時間/月       │ $4             ││
-│  │  CodePipeline            │ 1パイプライン   │ $1             ││
-│  │  S3 Storage              │ 500GB           │ $11.50         ││
-│  │  CloudWatch              │ ログ・メトリクス│ $20            ││
+│  │  Cognito基本料金         │ 35,000 MAU      │ $0 (無料枠内)  ││
+│  │  高度なセキュリティ      │ 35,000 MAU      │ $1,750         ││
+│  │  SMS MFA                 │ 5,000通/月      │ $40            ││
+│  │  API Gateway             │ 1M リクエスト   │ $3.50          ││
+│  │  Lambda                  │ 500K 呼び出し   │ $0.10          ││
+│  │  CloudWatch Logs         │ 10GB            │ $5.00          ││
 │  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $359        ││
-│  │                          │                 │ (約 ¥54,000)   ││
+│  │  小計                    │                 │ 約 $1,800      ││
+│  │                          │                 │ (約 ¥270,000)  ││
 │  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ※高度なセキュリティを無効にすると大幅にコスト削減可能          │
+│  ※開発環境では $5/月 程度                                       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -543,23 +492,18 @@ architecture-beta
 ## リソースのクリーンアップ
 
 ```bash
-# Terraformリソース削除
-cd ~/creditai-mlops/terraform
-terraform destroy -auto-approve
+# CloudFormationスタック削除
+aws cloudformation delete-stack --stack-name medconnect-api-gateway-dev
+aws cloudformation delete-stack --stack-name medconnect-cognito-dev
 
-# SageMakerリソースの手動削除（エンドポイント等）
-aws sagemaker delete-endpoint --endpoint-name creditai-production-endpoint
-aws sagemaker delete-endpoint-config --endpoint-config-name creditai-endpoint-config-dev
-
-# S3バケット削除
-aws s3 rb s3://creditai-ml-data-dev-${ACCOUNT_ID} --force
-aws s3 rb s3://creditai-ml-artifacts-dev-${ACCOUNT_ID} --force
+# 削除完了を待機
+aws cloudformation wait stack-delete-complete --stack-name medconnect-cognito-dev
 
 echo "Cleanup completed!"
 ```
 
 ---
 
-**次の課題**: [課題38: MedConnect Cognito認証基盤](exercise-38.md)
+**次の課題**: [課題39: TeamHub マルチテナント認証](exercise-39.md)
 
-**前の課題**: [課題36: SmartRetail SageMakerモデル基盤](exercise-36.md)
+**前の課題**: [課題37: CreditAI MLOpsパイプライン](exercise-37.md)

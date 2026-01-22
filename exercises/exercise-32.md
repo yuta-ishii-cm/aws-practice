@@ -1,4 +1,4 @@
-# 課題32: TechCorp - IAM Identity Center (AWS SSO) 構築
+# 課題32: 小売業のデータウェアハウス構築
 
 **難易度: 🟡 中級**
 
@@ -9,748 +9,718 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | 認証・認可 / セキュリティ |
-| 処理タイプ | リアルタイム |
+| カテゴリ | データ基盤 |
+| 処理タイプ | バッチ |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 5-6時間 |
+| 想定所要時間 | 6-7時間 |
 
 ---
 
 ## 2. シナリオ
 
-ITコンサルティング会社「TechCorp株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
-
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| 企業名 | TechCorp株式会社 |
-| 業種 | ITコンサルティング |
-| 従業員数 | 500名 |
-| AWSアカウント数 | 15アカウント（開発/本番/共有サービス等） |
-| 部門数 | 6部門（開発、インフラ、セキュリティ、営業、管理、経営） |
-| 課題 | 複数アカウントへのアクセス管理の複雑化、セキュリティ強化 |
+| **企業名** | ShopSmart株式会社 |
+| **業種** | 小売チェーン（総合スーパー） |
+| **従業員数** | 3,000名（本部100名、店舗2,900名） |
+| **店舗数** | 全国150店舗 |
+| **月間売上** | 50億円 |
+| **日次トランザクション** | 300万件 |
+| **SKU数** | 5万点 |
 
-### 達成目標（white hat KPI）
+### 現状の課題
 
-| KPI | 目標値 | 測定方法 |
-|-----|--------|----------|
-| SSO認証成功率 | 99.9% | CloudWatch メトリクス |
-| アクセス権プロビジョニング | < 5分 | 権限変更の反映時間 |
-| セキュリティコンプライアンス | 100% | MFA必須、監査ログ完全性 |
-| 運用負荷削減 | 80%削減 | アカウント管理作業時間 |
+```
+ShopSmart株式会社は全国展開する総合スーパーチェーンです。
+データ活用において以下の課題を抱えています：
+
+1. データの分散
+   - 各店舗のPOSデータが店舗サーバーに分散
+   - 本部への日次連携に遅延が発生
+   - 在庫データと売上データの不整合
+
+2. レポート作成の非効率
+   - Excelベースの手作業レポート
+   - 月次決算に1週間かかる
+   - 経営層への報告が遅い
+
+3. 分析の限界
+   - 店舗横断の分析ができない
+   - 顧客購買行動の把握が困難
+   - 需要予測ができない
+
+4. データ品質の問題
+   - 店舗ごとのデータ形式が異なる
+   - マスタデータの不整合
+   - 欠損データの把握が困難
+```
+
+### ビジネス目標
+
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| データ反映時間 | 翌日午後 | 当日午前6時 |
+| 月次決算レポート | 1週間 | 翌営業日 |
+| 分析対応時間 | 2-3日 | 1時間以内（セルフサービス） |
+| データ品質スコア | 不明 | 95%以上 |
+| 分析カバレッジ | 売上のみ | 売上・在庫・顧客・トレンド |
 
 ---
 
-## 2. アーキテクチャ図
+## 3. 達成目標（ゴール）
+
+### 主要な学習成果
+
+```
+この課題を完了すると、以下ができるようになります：
+
+1. Amazon Redshiftによるデータウェアハウス構築
+   - Redshift Serverlessの設定と運用
+   - スタースキーマのデータモデリング
+   - クエリパフォーマンス最適化
+
+2. AWS Glueによるデータパイプライン
+   - ETLジョブの設計と実装
+   - Data Catalogによるメタデータ管理
+   - 増分ロードの実装
+
+3. dbtによるデータ変換
+   - dbtプロジェクトの構築
+   - モデルの階層化（staging/intermediate/marts）
+   - テストとドキュメント生成
+
+4. 経営ダッシュボードの構築
+   - QuickSightでのBI構築
+   - KPIダッシュボードの設計
+   - セルフサービス分析の実現
+```
+
+### 合格基準
+
+| 項目 | 基準 |
+|------|------|
+| DWH構築 | Redshiftにスタースキーマでテーブルが構築されていること |
+| ETL | Glueで日次データパイプラインが動作すること |
+| dbt | dbtモデルでマートテーブルが生成されること |
+| ダッシュボード | QuickSightで経営ダッシュボードが表示されること |
+| パフォーマンス | 主要クエリが30秒以内に完了すること |
+
+---
+
+## 4. 使用するAWSサービス
+
+### コア技術スタック
+
+```yaml
+データウェアハウス:
+  - Amazon Redshift Serverless: サーバーレスDWH
+  - Amazon Redshift Spectrum: S3データ直接クエリ
+
+データ統合:
+  - AWS Glue: ETL、データカタログ
+  - AWS Glue DataBrew: データプロファイリング
+  - Amazon S3: データレイク
+
+データ変換:
+  - dbt (data build tool): SQL変換、テスト、ドキュメント
+  - dbt Cloud / dbt Core: 実行環境
+
+可視化:
+  - Amazon QuickSight: BIダッシュボード
+  - Amazon Athena: アドホッククエリ
+
+オーケストレーション:
+  - AWS Step Functions: ワークフロー管理
+  - Amazon EventBridge: スケジュール実行
+  - Amazon MWAA (Airflow): 複雑なワークフロー（オプション）
+
+監視:
+  - Amazon CloudWatch: メトリクス・ログ
+  - AWS Glue Data Quality: データ品質監視
+```
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| DWH | Redshift | BigQuery |
+| ETL | Glue | Dataflow / Dataproc |
+| 変換ツール | dbt (両対応) | dbt (両対応) |
+| BI | QuickSight | Looker |
+| スキーマ管理 | Glue Data Catalog | Data Catalog |
+
+---
+
+## 5. 前提条件
+
+### 技術要件
+
+```bash
+# 必要なCLIツール
+aws --version          # 2.x
+python --version       # 3.9+
+dbt --version          # 1.7+
+psql --version         # 14+
+
+# AWS設定
+aws configure
+export AWS_REGION=ap-northeast-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+```
+
+### 事前準備
+
+```bash
+# dbtのインストール
+pip install dbt-redshift
+
+# プロジェクト構造
+shopsmart-dwh/
+├── dbt_project/
+│   ├── dbt_project.yml
+│   ├── profiles.yml
+│   ├── models/
+│   │   ├── staging/
+│   │   ├── intermediate/
+│   │   └── marts/
+│   ├── tests/
+│   ├── macros/
+│   └── seeds/
+├── glue_jobs/
+│   ├── extract_pos_data.py
+│   └── load_to_redshift.py
+├── terraform/
+│   └── main.tf
+└── dashboards/
+    └── quicksight/
+```
+
+---
+
+## 6. アーキテクチャ図
+
+### 全体構成
 
 ```mermaid
 architecture-beta
-    group techcorp(cloud)[TechCorp IAM Identity Center]
+    group datasources(cloud)[Data Sources]
+    group aws(cloud)[AWS Cloud]
+    group datalake(disk)[Data Lake] in aws
+    group etl(server)[ETL Layer] in aws
+    group dwh(database)[Data Warehouse] in aws
+    group bi(server)[BI Layer] in aws
 
-    group idp(server)[External Identity Provider] in techcorp
-    group idc(server)[AWS IAM Identity Center] in techcorp
-    group org(cloud)[AWS Organizations] in techcorp
+    service pos(server)[店舗POS システム] in datasources
+    service inventory_sys(server)[在庫管理 システム] in datasources
+    service customer_sys(server)[顧客管理 システム] in datasources
+    service external(server)[外部データ 天気・競合] in datasources
 
-    service external_idp(server)[Azure AD / Okta / Google SAML 2.0 / SCIM] in idp
+    service s3_raw(disk)[S3 Data Lake Raw Zone] in datalake
+    service glue_catalog(database)[Glue Data Catalog] in etl
+    service glue_etl(server)[Glue ETL] in etl
 
-    service identity_store(database)[Identity Store Users & Groups] in idc
-    service permission_sets(server)[Permission Sets] in idc
+    service redshift(database)[Redshift Serverless] in dwh
+    service staging(database)[Schema: staging] in dwh
+    service intermediate(database)[Schema: intermediate] in dwh
+    service marts(database)[Schema: marts] in dwh
 
-    service mgmt_acct(server)[Management Account] in org
-    service security_ou(server)[Security OU] in org
-    service workloads_ou(server)[Workloads OU] in org
-    service sandbox_ou(server)[Sandbox OU] in org
+    service quicksight(server)[Amazon QuickSight] in bi
 
-    service security_acct(server)[Security Account] in org
-    service log_archive(server)[Log Archive Account] in org
-    service prod_acct(server)[Production Account] in org
-    service stg_acct(server)[Staging Account] in org
-    service dev_acct(server)[Development Account] in org
-    service sandbox_dev(server)[Sandbox-Dev Account] in org
-
-    service access_portal(internet)[Access Portal] in techcorp
-
-    external_idp:B --> T:identity_store
-    identity_store:B --> T:permission_sets
-    permission_sets:B --> T:mgmt_acct
-    mgmt_acct:B --> T:security_ou
-    mgmt_acct:B --> T:workloads_ou
-    mgmt_acct:B --> T:sandbox_ou
-    permission_sets:R --> L:access_portal
+    pos:B --> T:s3_raw
+    inventory_sys:B --> T:s3_raw
+    customer_sys:B --> T:s3_raw
+    external:B --> T:s3_raw
+    s3_raw:R --> L:glue_etl
+    glue_etl:R --> L:glue_catalog
+    glue_catalog:B --> T:redshift
+    staging:B --> T:intermediate
+    intermediate:B --> T:marts
+    marts:B --> T:quicksight
 ```
 
-**Identity Store Groups:**
-- 開発部門 (80 users) / インフラ部門 (40 users) / セキュリティ部門 (20 users)
-- 営業部門 (200 users) / 管理部門 (100 users) / 経営層 (60 users)
+**Redshift Serverless 設定:**
+- Workgroup: shopsmart-analytics
+- Namespace: shopsmart-dwh
+- Base Capacity: 32 RPU
 
-**Permission Sets:**
-- AdministratorPS (Full Admin) / DeveloperPS (Dev Resources) / ReadOnlyPS (View Only)
-- SecurityAuditPS / NetworkAdminPS / BillingViewerPS
+**dbt Schema 構成:**
+- **staging**: stg_pos_transactions, stg_inventory, stg_customers
+- **intermediate**: int_daily_sales, int_product_performance, int_customer_segments
+- **marts**: Dimension Tables (dim_date, dim_store, dim_product, dim_customer, dim_time) + Fact Tables (fct_sales, fct_inventory, fct_customer_activity)
 
-**Access Portal:** https://techcorp.awsapps.com/start
+**QuickSight Dashboards:**
+- 売上概要 / 店舗別分析 / 商品分析 / 在庫分析 / 顧客分析 / トレンド
 
-### アクセス管理マトリクス
+### データパイプラインフロー
 
-| 部門 | Production | Staging | Development | Sandbox | Security |
-|------|------------|---------|-------------|---------|----------|
-| 開発部門 | Developer, ReadOnly | Admin | Admin | Admin | - |
-| インフラ部門 | Admin, Network | Admin, Network | Admin, Network | Admin | ReadOnly |
-| セキュリティ部門 | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | Admin |
-| 営業部門 | - | - | - | - | - |
-| 管理部門 | Billing, ReadOnly | Billing | - | - | - |
-| 経営層 | ReadOnly, Billing | ReadOnly | ReadOnly | - | ReadOnly |
-
----
-
-## 3. 前提知識
-
-### 3.1 IAM Identity Center の概念
-
-GCPでのアイデンティティ管理経験がある方向けの比較：
-
-| 観点 | GCP | AWS |
-|------|-----|-----|
-| SSO基盤 | Cloud Identity | IAM Identity Center |
-| IdP連携 | Cloud Identity + SAML | Identity Center + SAML/SCIM |
-| 権限管理 | IAM Roles | Permission Sets |
-| ディレクトリ | Cloud Identity Directory | Identity Center Directory |
-| マルチプロジェクト | Project IAM Bindings | Account Assignments |
-
-### 3.2 IAM Identity Center の主要概念
-
-```mermaid
-flowchart TB
-    subgraph concepts[IAM Identity Center Core Concepts]
-        subgraph identity[1. Identity Source]
-            builtin[Identity Center Directory<br/>Built-in]
-            ad[Active Directory<br/>Connector]
-            external[External IdP<br/>Okta, Azure AD]
-        end
-
-        subgraph permission[2. Permission Set]
-            ps_desc[AWSアカウントで使用する権限の集合]
-            ps_example[例: DeveloperPermissionSet]
-            ps_example --> managed[AWS管理ポリシー: PowerUserAccess]
-            ps_example --> custom[カスタムポリシー: DenyIAMChanges]
-            ps_example --> session[セッション時間: 8時間]
-        end
-
-        subgraph assignment[3. Account Assignment]
-            formula[User/Group + Permission Set + AWS Account]
-            example[例: Developers Group + DeveloperPS + Development Account<br/>→ 開発グループが開発アカウントにDeveloper権限でアクセス]
-        end
-
-        subgraph portal[4. Access Portal]
-            portal_desc[ユーザーがSSOでログインするWebポータル<br/>割り当てられたアカウント・ロールの一覧表示<br/>マネジメントコンソール or CLI認証情報の取得]
-            portal_url[URL例: https://d-1234567890.awsapps.com/start]
-        end
-    end
-
-    identity --> permission
-    permission --> assignment
-    assignment --> portal
 ```
+1. データ抽出（毎日 AM 2:00）
+   店舗POS → S3 Raw Zone (Parquet形式)
 
-**📝 補足**: 本課題では Built-in Directory を使用します。
+2. Glue ETL（AM 3:00）
+   S3 Raw → クレンジング → S3 Processed
 
----
+3. Redshift ロード（AM 4:00）
+   S3 Processed → Redshift Staging Tables
 
-## 6. 課題
+4. dbt 変換（AM 5:00）
+   Staging → Intermediate → Marts
+   + テスト実行
+   + ドキュメント生成
 
-### 6.1 ハンズオン課題
-
-#### 課題1: 緊急アクセス用 Break Glass アカウント（難易度：初級）
-
-**目標**: 緊急時用の高権限アカウントを設定する
-
-**要件**:
-- 緊急時のみ使用する管理者アカウント
-- 使用時にアラート通知
-- 使用履歴の完全な監査ログ
-
-**実装ポイント**:
-```hcl
-# Break Glass用のPermission Set
-resource "aws_ssoadmin_permission_set" "break_glass" {
-  name             = "BreakGlassAccess"
-  description      = "Emergency access - use only in critical situations"
-  instance_arn     = local.instance_arn
-  session_duration = "PT1H" # 緊急アクセスは1時間に制限
-}
-
-# 使用時のCloudWatch Alarm設定
-# ...
+5. QuickSight 更新（AM 6:00）
+   SPICE データセットリフレッシュ
 ```
 
 ---
 
-#### 課題2: 外部IdP（Okta）との連携（難易度：中級）
+## 8. トラブルシューティングチャレンジ
 
-**目標**: OktaをIdentity Providerとして設定し、SCIM自動同期を構成する
+### Challenge 1: Redshiftクエリが遅い
 
-**要件**:
-- SAML 2.0による認証連携
-- SCIMによるユーザー・グループの自動プロビジョニング
-- 属性マッピングの設定
-
-**設定手順の概要**:
-1. Okta側でAWS IAM Identity Centerアプリケーションを追加
-2. SAMLメタデータの交換
-3. SCIM APIトークンの発行
-4. 属性マッピングの設定
-
----
-
-#### 課題3: 一時的アクセス権限の付与（難易度：中級〜上級）
-
-**目標**: 限定的な期間だけ追加権限を付与する仕組みを作る
-
-**要件**:
-- 申請・承認ワークフロー
-- 自動的な権限の付与・削除
-- 監査証跡の記録
-
-**実装アプローチ**:
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              Temporary Access Workflow                          │
-│                                                                 │
-│  1. 申請  →  2. 承認  →  3. 権限付与  →  4. 自動削除           │
-│     │           │            │              │                   │
-│     ▼           ▼            ▼              ▼                   │
-│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐         │
-│  │API GW   │ │Step     │ │Lambda    │ │EventBridge   │         │
-│  │+ Lambda │ │Functions│ │+ SSO API │ │Scheduled     │         │
-│  └─────────┘ └─────────┘ └──────────┘ └──────────────┘         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+問題:
+店舗別売上レポートクエリが5分以上かかる。
+
+クエリ:
+SELECT s.store_name, SUM(f.net_amount)
+FROM marts.fct_sales f
+JOIN marts.dim_store s ON f.store_key = s.store_key
+WHERE f.date_key BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY 1;
+
+EXPLAIN結果:
+- Seq Scan on fct_sales (rows=50,000,000)
+- 大量のディスクI/O
+
+調査項目:
+1. テーブル設計（DISTKEY, SORTKEY）
+2. 統計情報
+3. クエリプラン
 ```
-
----
-
-### 6.2 トラブルシューティング課題
-
-#### 問題1: Permission Set が反映されない
-
-**症状**: Permission Setを更新したが、ユーザーの権限に反映されない
-
-**調査のヒント**:
-1. Permission Setのプロビジョニング状態を確認
-2. アカウント割り当ての状態を確認
-3. IAMロールの更新状態を確認
 
 <details>
-<summary>原因と解決策</summary>
+<summary>解決のヒント</summary>
 
-**原因**: Permission Setの変更後、アカウントへの再プロビジョニングが必要
+```sql
+-- 1. テーブル設計の確認
+SELECT "table", diststyle, sortkey1
+FROM svv_table_info
+WHERE schema = 'marts';
 
-```bash
-# Permission Setのプロビジョニング状態確認
-aws sso-admin list-permission-sets-provisioned-to-account \
-  --instance-arn $INSTANCE_ARN \
-  --account-id $ACCOUNT_ID
+-- 2. DISTKEY/SORTKEYの最適化
+ALTER TABLE marts.fct_sales
+ALTER DISTSTYLE KEY DISTKEY (store_key);
 
-# 手動でプロビジョニング実行
-aws sso-admin provision-permission-set \
-  --instance-arn $INSTANCE_ARN \
-  --permission-set-arn $PERMISSION_SET_ARN \
-  --target-type ALL_PROVISIONED_ACCOUNTS
+ALTER TABLE marts.fct_sales
+ALTER SORTKEY (date_key, store_key);
 
-# プロビジョニングステータスの確認
-aws sso-admin describe-permission-set-provisioning-status \
-  --instance-arn $INSTANCE_ARN \
-  --provision-request-id $REQUEST_ID
+-- 3. 統計情報更新
+ANALYZE marts.fct_sales;
+
+-- 4. テーブル最適化（VACUUM）
+VACUUM FULL marts.fct_sales;
+
+-- 5. クエリの書き換え（日付フィルタを先に）
+WITH filtered_sales AS (
+    SELECT store_key, net_amount
+    FROM marts.fct_sales
+    WHERE date_key >= '2024-01-01' AND date_key < '2024-02-01'
+)
+SELECT s.store_name, SUM(fs.net_amount)
+FROM filtered_sales fs
+JOIN marts.dim_store s ON fs.store_key = s.store_key
+GROUP BY 1;
+
+-- 6. マテリアライズドビューの活用
+CREATE MATERIALIZED VIEW mv_monthly_store_sales AS
+SELECT
+    date_trunc('month', date_key) as month,
+    store_key,
+    SUM(net_amount) as total_sales
+FROM marts.fct_sales
+GROUP BY 1, 2;
+```
+</details>
+
+### Challenge 2: dbtモデルのテストが失敗する
+
+```
+問題:
+fct_salesのstore_key参照整合性テストが失敗する。
+一部のトランザクションのstore_keyがdim_storeに存在しない。
+
+エラー:
+Failure in test relationships_fct_sales_store_key__store_key__ref_dim_store_
+Got 1523 results, configured to fail if != 0
+
+調査項目:
+1. ソースデータの確認
+2. ETL処理の確認
+3. マスタデータの整合性
 ```
 
-**Terraformでの対策**:
-```hcl
-# プロビジョニングのトリガー（null_resource使用）
-resource "null_resource" "provision_permission_set" {
-  triggers = {
-    permission_set_arn = aws_ssoadmin_permission_set.developer.arn
-    inline_policy      = md5(aws_ssoadmin_permission_set_inline_policy.developer_deny_iam.inline_policy)
-  }
+<details>
+<summary>解決のヒント</summary>
 
-  provisioner "local-exec" {
-    command = <<-EOF
-      aws sso-admin provision-permission-set \
-        --instance-arn ${local.instance_arn} \
-        --permission-set-arn ${aws_ssoadmin_permission_set.developer.arn} \
-        --target-type ALL_PROVISIONED_ACCOUNTS
-    EOF
-  }
-}
+```sql
+-- 1. 問題のあるレコードを特定
+SELECT DISTINCT f.store_key
+FROM marts.fct_sales f
+LEFT JOIN marts.dim_store s ON f.store_key = s.store_key
+WHERE s.store_key IS NULL;
+
+-- 2. ソースデータを確認
+SELECT DISTINCT store_id
+FROM staging.stg_pos_transactions
+WHERE store_id NOT IN (SELECT store_id FROM staging.stg_stores);
+
+-- 3. dbtテストを条件付きに変更（schema.yml）
+- name: store_key
+  tests:
+    - relationships:
+        to: ref('dim_store')
+        field: store_key
+        config:
+          where: "store_key != 'UNKNOWN'"
+
+-- 4. 不明な店舗を扱うサロゲートキー追加
+-- dim_store.sql に追加
+UNION ALL
+SELECT
+    'UNKNOWN' as store_key,
+    'UNKNOWN' as store_id,
+    'Unknown Store' as store_name,
+    'Unknown' as region,
+    ...
+
+-- 5. fct_sales.sql でCOALESCE
+SELECT
+    ...
+    COALESCE(t.store_id, 'UNKNOWN') as store_key,
+    ...
+```
+</details>
+
+### Challenge 3: 日次パイプラインがタイムアウト
+
+```
+問題:
+Glue ETLジョブがタイムアウトし、dbt実行まで到達しない。
+朝6時のダッシュボード更新に間に合わない。
+
+ログ:
+- Glue job duration: 4時間（タイムアウト）
+- S3へのParquet書き込みで停滞
+
+データ量:
+- 日次トランザクション: 300万件
+- ファイルサイズ: 5GB
+
+調査項目:
+1. Glueジョブの設定
+2. Spark設定
+3. パーティショニング
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```python
+# 1. Glueジョブのワーカー数を増やす
+aws glue update-job \
+    --job-name shopsmart-extract-pos \
+    --job-update '{
+        "NumberOfWorkers": 20,
+        "WorkerType": "G.2X"
+    }'
+
+# 2. Sparkパーティション最適化
+# glue_jobs/daily_pos_etl.py
+spark.conf.set("spark.sql.shuffle.partitions", "200")
+spark.conf.set("spark.default.parallelism", "200")
+
+# 3. 書き込み時のパーティション数を制御
+pos_cleaned.repartition(100).write \
+    .format("parquet") \
+    .mode("overwrite") \
+    .save(output_path)
+
+# 4. Glueブックマークで増分処理
+# すでにロード済みのデータをスキップ
+
+# 5. COPY コマンドに変更（Glue → S3 → COPY）
+# Redshiftへの直接書き込みより高速
+
+COPY staging.stg_pos_transactions
+FROM 's3://shopsmart-datalake/processed/pos/'
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
+FORMAT AS PARQUET;
+
+# 6. 並列処理を分割
+# 店舗グループごとに並列実行
 ```
 </details>
 
 ---
 
-#### 問題2: SSOログインでエラーが発生
+## 9. 設計考慮ポイント
 
-**症状**: アクセスポータルでログイン後、「An error occurred」と表示される
+### データモデリング戦略
 
-**調査のヒント**:
-1. CloudTrail でSSO関連イベントを確認
-2. ブラウザのCookieとキャッシュをクリア
-3. セッション設定を確認
+```yaml
+スタースキーマ vs スノーフレークスキーマ:
 
-<details>
-<summary>原因と解決策</summary>
+スタースキーマ（本課題で採用）:
+  特徴:
+    - ファクトテーブルを中心にディメンションが直接結合
+    - JOINが少なくクエリがシンプル
+    - Redshiftに最適（カラムナーストレージ）
+  適用ケース:
+    - 定型レポート
+    - BI ダッシュボード
+    - アドホック分析
 
-**原因1**: MFAデバイスの時刻ずれ
-```bash
-# TOTPは30秒の時刻ウィンドウを使用
-# デバイスの時刻同期を確認
+スノーフレークスキーマ:
+  特徴:
+    - ディメンションが正規化
+    - ストレージ効率が良い
+    - 更新が容易
+  適用ケース:
+    - マスタデータの頻繁な更新
+    - 複雑な階層構造
+
+SCD (Slowly Changing Dimensions):
+  Type 1: 上書き更新
+  Type 2: 履歴保持（有効期間管理）
+  Type 3: 限定的な履歴（現在値 + 前回値）
 ```
 
-**原因2**: セッションタイムアウト
-```bash
-# セッション設定の確認
-aws sso-admin describe-permission-set \
-  --instance-arn $INSTANCE_ARN \
-  --permission-set-arn $PERMISSION_SET_ARN \
-  --query 'PermissionSet.SessionDuration'
-```
+### Redshift最適化
 
-**原因3**: ブラウザのサードパーティCookie設定
-- シークレットモードでテスト
-- awsapps.comドメインのCookieを許可
-</details>
+```sql
+-- テーブル設計のベストプラクティス
 
----
+-- ファクトテーブル
+CREATE TABLE marts.fct_sales (
+    transaction_id VARCHAR(32) NOT NULL ENCODE zstd,
+    date_key DATE NOT NULL ENCODE az64,
+    store_key VARCHAR(10) NOT NULL ENCODE zstd,
+    customer_key VARCHAR(12) NOT NULL ENCODE zstd,
+    net_amount DECIMAL(12,2) NOT NULL ENCODE az64,
+    ...
+)
+DISTSTYLE KEY
+DISTKEY (store_key)  -- 頻繁にJOINするキー
+SORTKEY (date_key, store_key);  -- 範囲クエリ用
 
-#### 問題3: SCIMプロビジョニングが失敗
+-- ディメンションテーブル
+CREATE TABLE marts.dim_store (
+    store_key VARCHAR(10) NOT NULL,
+    ...
+)
+DISTSTYLE ALL;  -- 小さいテーブルは全ノードに配布
 
-**症状**: 外部IdPからのユーザー同期が完了しない
-
-**調査のヒント**:
-1. SCIM APIのエラーログを確認
-2. 属性マッピングを確認
-3. ネットワーク設定を確認
-
-<details>
-<summary>原因と解決策</summary>
-
-**原因1**: SCIM APIトークンの有効期限切れ
-```bash
-# 新しいトークンを生成
-# IAM Identity Center コンソール → 設定 → プロビジョニング → トークンを再生成
-```
-
-**原因2**: 必須属性の欠落
-```json
-// SCIM リクエストに必要な属性
-{
-  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-  "userName": "user@example.com",
-  "name": {
-    "givenName": "First",
-    "familyName": "Last"
-  },
-  "emails": [{
-    "value": "user@example.com",
-    "primary": true
-  }],
-  "displayName": "First Last",
-  "active": true
-}
-```
-
-**原因3**: IdP側のエラー
-- Okta/Azure AD のプロビジョニングログを確認
-- リトライ設定を調整
-</details>
-
----
-
-### 6.3 設計課題
-
-#### 課題: ゼロトラストアーキテクチャへの拡張
-
-**シナリオ**: 経営層から「ゼロトラストセキュリティモデルに移行したい」という要望がありました。
-
-**検討事項**:
-1. デバイス信頼の検証（AWS Verified Access との連携）
-2. 継続的な認証（セッション中の再認証）
-3. コンテキストベースのアクセス制御
-4. マイクロセグメンテーション
-
-**設計案を作成してください**:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                Zero Trust Architecture Design                    │
-│                                                                 │
-│  [ここに設計図を作成]                                            │
-│                                                                 │
-│  考慮点：                                                        │
-│  - 「Never trust, always verify」の原則                          │
-│  - デバイスポスチャの評価                                        │
-│  - 最小権限の原則の徹底                                          │
-│  - リアルタイムのリスク評価                                      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+-- エンコーディング自動選択
+ANALYZE COMPRESSION marts.fct_sales;
 ```
 
 ---
 
-## 7. 学習リソース
+## 10. 発展課題
 
-### 公式ドキュメント
-- [IAM Identity Center User Guide](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)
-- [IAM Identity Center API Reference](https://docs.aws.amazon.com/singlesignon/latest/APIReference/welcome.html)
-- [AWS Organizations User Guide](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html)
-- [Terraform AWS SSO Admin Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssoadmin_permission_set)
+### 上級チャレンジ1: 需要予測モデル統合
 
-### ベストプラクティス
-- [AWS Security Best Practices for IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/security-best-practices.html)
-- [Multi-Account Strategy](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
+```python
+# Amazon SageMaker + Redshift ML
 
----
+# Redshiftから直接機械学習モデルを呼び出し
+CREATE MODEL demand_forecast_model
+FROM (
+    SELECT
+        store_id,
+        product_id,
+        transaction_date,
+        SUM(quantity) as daily_sales,
+        AVG(SUM(quantity)) OVER (
+            PARTITION BY store_id, product_id
+            ORDER BY transaction_date
+            ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
+        ) as rolling_avg_7d
+    FROM staging.stg_transaction_items ti
+    JOIN staging.stg_pos_transactions t ON ti.transaction_id = t.transaction_id
+    GROUP BY 1, 2, 3
+)
+TARGET daily_sales
+FUNCTION predict_demand
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftMLRole'
+SETTINGS (
+    S3_BUCKET 'shopsmart-ml-artifacts',
+    MAX_RUNTIME 3600
+);
 
-## 8. 解答例
-
-### 課題1: Break Glass アカウント
-
-```hcl
-# break-glass.tf
-
-# Break Glass グループ
-resource "aws_identitystore_group" "break_glass" {
-  identity_store_id = local.identity_store_id
-  display_name      = "BreakGlass-Admins"
-  description       = "Emergency access administrators - use only in critical situations"
-}
-
-# Break Glass Permission Set
-resource "aws_ssoadmin_permission_set" "break_glass" {
-  name             = "BreakGlassAccess"
-  description      = "EMERGENCY USE ONLY - Full administrative access for critical incidents"
-  instance_arn     = local.instance_arn
-  session_duration = "PT1H"
-
-  tags = {
-    Purpose     = "emergency-access"
-    ManagedBy   = "terraform"
-    AlertOnUse  = "true"
-  }
-}
-
-resource "aws_ssoadmin_managed_policy_attachment" "break_glass_admin" {
-  instance_arn       = local.instance_arn
-  permission_set_arn = aws_ssoadmin_permission_set.break_glass.arn
-  managed_policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-}
-
-# Break Glassの使用を検知するCloudWatch Alarm
-resource "aws_cloudwatch_log_metric_filter" "break_glass_usage" {
-  name           = "BreakGlassUsageFilter"
-  pattern        = "{ ($.eventName = AssumeRole) && ($.requestParameters.roleSessionName = \"*BreakGlass*\") }"
-  log_group_name = "aws-cloudtrail-logs"
-
-  metric_transformation {
-    name      = "BreakGlassUsageCount"
-    namespace = "Security/BreakGlass"
-    value     = "1"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "break_glass_alert" {
-  alarm_name          = "BreakGlassAccessUsed"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
-  metric_name         = "BreakGlassUsageCount"
-  namespace           = "Security/BreakGlass"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 0
-  alarm_description   = "CRITICAL: Break Glass access has been used"
-  treat_missing_data  = "notBreaching"
-
-  alarm_actions = [aws_sns_topic.security_alerts.arn]
-  ok_actions    = [aws_sns_topic.security_alerts.arn]
-}
-
-# SNS Topic for security alerts
-resource "aws_sns_topic" "security_alerts" {
-  name = "security-break-glass-alerts"
-}
-
-resource "aws_sns_topic_subscription" "security_email" {
-  topic_arn = aws_sns_topic.security_alerts.arn
-  protocol  = "email"
-  endpoint  = "security-team@techcorp.example.com"
-}
-
-# 使用記録用のDynamoDBテーブル
-resource "aws_dynamodb_table" "break_glass_log" {
-  name         = "break-glass-usage-log"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "sessionId"
-  range_key    = "timestamp"
-
-  attribute {
-    name = "sessionId"
-    type = "S"
-  }
-
-  attribute {
-    name = "timestamp"
-    type = "S"
-  }
-
-  attribute {
-    name = "userId"
-    type = "S"
-  }
-
-  global_secondary_index {
-    name            = "UserIdIndex"
-    hash_key        = "userId"
-    range_key       = "timestamp"
-    projection_type = "ALL"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  tags = {
-    Purpose = "break-glass-audit"
-  }
-}
+-- 予測実行
+SELECT
+    store_id,
+    product_id,
+    predict_demand(rolling_avg_7d) as predicted_demand
+FROM ...;
 ```
 
-### 課題3: 一時的アクセス権限の付与
+### 上級チャレンジ2: リアルタイムダッシュボード
 
-```hcl
-# temporary-access.tf
+```yaml
+# Redshift Streaming Ingestion
 
-# 一時アクセス申請用API Gateway
-resource "aws_apigatewayv2_api" "temp_access" {
-  name          = "temporary-access-api"
-  protocol_type = "HTTP"
-}
+-- Kinesis からのリアルタイム取り込み
+CREATE EXTERNAL SCHEMA kinesis_schema
+FROM KINESIS
+IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftKinesisRole';
 
-# Step Functions ワークフロー定義
-resource "aws_sfn_state_machine" "temp_access_workflow" {
-  name     = "temporary-access-workflow"
-  role_arn = aws_iam_role.sfn_role.arn
+CREATE MATERIALIZED VIEW mv_realtime_sales
+AUTO REFRESH YES AS
+SELECT
+    ApproximateArrivalTimestamp as event_time,
+    json_extract_path_text(kinesis_data, 'store_id') as store_id,
+    json_extract_path_text(kinesis_data, 'total_amount')::decimal as amount
+FROM kinesis_schema.pos_stream
+WHERE is_valid_json(kinesis_data);
 
-  definition = jsonencode({
-    Comment = "Temporary access request workflow"
-    StartAt = "ValidateRequest"
-    States = {
-      ValidateRequest = {
-        Type     = "Task"
-        Resource = aws_lambda_function.validate_request.arn
-        Next     = "NotifyApprover"
-        Catch = [{
-          ErrorEquals = ["ValidationError"]
-          Next        = "RequestDenied"
-        }]
-      }
-      NotifyApprover = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::sns:publish.waitForTaskToken"
-        Parameters = {
-          TopicArn = aws_sns_topic.approval_requests.arn
-          Message = {
-            "taskToken.$"  = "$$.Task.Token"
-            "requestId.$"  = "$.requestId"
-            "requester.$"  = "$.requester"
-            "reason.$"     = "$.reason"
-            "duration.$"   = "$.duration"
-            "permissions.$" = "$.permissions"
-          }
-        }
-        Next           = "CheckApproval"
-        TimeoutSeconds = 86400 # 24時間で自動拒否
-        Catch = [{
-          ErrorEquals = ["States.Timeout"]
-          Next        = "RequestExpired"
-        }]
-      }
-      CheckApproval = {
-        Type = "Choice"
-        Choices = [{
-          Variable      = "$.approved"
-          BooleanEquals = true
-          Next          = "GrantAccess"
-        }]
-        Default = "RequestDenied"
-      }
-      GrantAccess = {
-        Type     = "Task"
-        Resource = aws_lambda_function.grant_access.arn
-        Next     = "WaitForExpiry"
-      }
-      WaitForExpiry = {
-        Type           = "Wait"
-        TimestampPath = "$.expiryTime"
-        Next           = "RevokeAccess"
-      }
-      RevokeAccess = {
-        Type     = "Task"
-        Resource = aws_lambda_function.revoke_access.arn
-        End      = true
-      }
-      RequestDenied = {
-        Type     = "Task"
-        Resource = aws_lambda_function.notify_denial.arn
-        End      = true
-      }
-      RequestExpired = {
-        Type     = "Task"
-        Resource = aws_lambda_function.notify_expiry.arn
-        End      = true
-      }
-    }
-  })
-}
+-- 5分間隔で自動リフレッシュ
+ALTER MATERIALIZED VIEW mv_realtime_sales
+AUTO REFRESH YES
+INTERVAL 5 MINUTES;
+```
 
-# 権限付与Lambda
-resource "aws_lambda_function" "grant_access" {
-  filename         = "${path.module}/lambda/grant-access.zip"
-  function_name    = "temp-access-grant"
-  role             = aws_iam_role.lambda_temp_access.arn
-  handler          = "index.handler"
-  runtime          = "nodejs20.x"
-  timeout          = 60
+### 上級チャレンジ3: データメッシュアーキテクチャ
 
-  environment {
-    variables = {
-      INSTANCE_ARN       = local.instance_arn
-      IDENTITY_STORE_ID  = local.identity_store_id
-    }
-  }
-}
+```yaml
+# ドメイン別データプロダクト
 
-# Lambda実装例（JavaScript）
-# lambda/grant-access/index.js
-/*
-const { SSOAdminClient, CreateAccountAssignmentCommand } = require("@aws-sdk/client-sso-admin");
+Domains:
+  - Sales Domain:
+      Owner: 営業本部
+      Data Products:
+        - fct_sales (Platinum)
+        - dim_store (Gold)
+        - daily_sales_summary (Silver)
+      SLA: 99.9%
+      Freshness: 6時間以内
 
-exports.handler = async (event) => {
-  const client = new SSOAdminClient({});
+  - Inventory Domain:
+      Owner: 物流部門
+      Data Products:
+        - fct_inventory
+        - dim_product
+        - stock_alerts
+      SLA: 99.5%
+      Freshness: 1時間以内
 
-  const { userId, accountId, permissionSetArn, duration } = event;
+  - Customer Domain:
+      Owner: マーケティング部
+      Data Products:
+        - dim_customer
+        - customer_segments
+        - purchase_history
+      SLA: 99.0%
+      Freshness: 24時間以内
 
-  // アカウント割り当ての作成
-  await client.send(new CreateAccountAssignmentCommand({
-    InstanceArn: process.env.INSTANCE_ARN,
-    TargetId: accountId,
-    TargetType: "AWS_ACCOUNT",
-    PermissionSetArn: permissionSetArn,
-    PrincipalType: "USER",
-    PrincipalId: userId,
-  }));
-
-  // 有効期限の計算
-  const expiryTime = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
-
-  return {
-    ...event,
-    expiryTime,
-    status: "granted"
-  };
-};
-*/
+Data Contracts:
+  - Schema versioning
+  - Quality SLAs
+  - Access policies
 ```
 
 ---
 
-## 9. 追加学習
+## 11. コスト見積もり
 
-### IAM Identity Center の高度な機能
+### 月額コスト概算
 
-1. **カスタムSAMLアプリケーション**
-   - 非AWSアプリケーションへのSSO
-   - カスタム属性マッピング
+| サービス | スペック | 月額コスト |
+|----------|----------|------------|
+| Redshift Serverless | 32 RPU × 200時間/月 | $960 |
+| S3 | 1TB (データレイク) | $24 |
+| Glue ETL | 100 DPU時間/月 | $44 |
+| Glue Data Catalog | 100万オブジェクト | $1 |
+| QuickSight | 5 Author + 50 Reader | $275 |
+| Step Functions | 10,000実行/月 | $3 |
+| CloudWatch | ログ・メトリクス | $20 |
+| **合計** | | **約 $1,327/月** |
 
-2. **AWS Verified Access との連携**
-   - デバイス信頼の検証
-   - ゼロトラストネットワークアクセス
+### コスト最適化
 
-3. **Service Catalog との統合**
-   - セルフサービスポータル
-   - 承認済みリソースのプロビジョニング
+```
+1. Redshift Serverless の使用量最適化:
+   - 営業時間のみ高RPU
+   - 夜間・週末は最小RPU
+   - 想定削減: 30%
 
-### 次のステップ
-- 課題38-39で学んだCognito認証との使い分けを理解
-- マルチリージョン展開の検討
-- AWS Control Tower との統合
+2. クエリ最適化:
+   - マテリアライズドビュー活用
+   - 適切なDISTKEY/SORTKEY
+   - キャッシュ活用
+
+3. ストレージ最適化:
+   - S3 ライフサイクル
+   - 不要データのアーカイブ
+   - Parquet圧縮
+```
 
 ---
 
-## 10. 参考情報
+## 12. 学習のポイント
+
+### 今回学んだこと
+
+```
+1. Redshift Serverless
+   □ ワークグループとネームスペースの設定
+   □ RPUベースの課金モデル
+   □ 外部スキーマ（Spectrum）の活用
+
+2. dbt (data build tool)
+   □ staging/intermediate/martsの階層化
+   □ テストとドキュメント生成
+   □ 増分処理の実装
+
+3. データモデリング
+   □ スタースキーマの設計
+   □ ディメンションとファクトの分離
+   □ SCD（緩やかに変化するディメンション）
+
+4. データパイプライン
+   □ Glue ETLでのデータ統合
+   □ Step Functionsでのオーケストレーション
+   □ データ品質管理
+```
 
 ### GCPとの比較まとめ
 
-| 機能 | GCP | AWS |
-|------|-----|-----|
-| 企業SSO | Cloud Identity | IAM Identity Center |
-| マルチプロジェクトアクセス | Organization IAM | Account Assignments |
-| 権限テンプレート | Custom Roles | Permission Sets |
-| IdP連携 | Cloud Identity SAML | Identity Center SAML/SCIM |
-| ディレクトリ同期 | GCDS | AD Connector / SCIM |
-| 監査ログ | Cloud Audit Logs | CloudTrail |
+| 観点 | AWS (Redshift + dbt) | GCP (BigQuery + dbt) |
+|------|---------------------|---------------------|
+| 課金モデル | RPU時間課金 | スキャン量課金 |
+| パフォーマンス | 専用リソース | 自動スケール |
+| ETL | Glue | Dataflow |
+| 運用複雑さ | 中 | 低 |
+| カスタマイズ性 | 高 | 中 |
 
-### セキュリティチェックリスト
+### 次のステップ
 
-- [ ] MFAが全ユーザーで必須化されている
-- [ ] Permission Setで最小権限の原則が適用されている
-- [ ] セッション時間が適切に設定されている（本番は短く）
-- [ ] Break Glassアカウントが設定され、監視されている
-- [ ] CloudTrailで全SSOイベントが記録されている
-- [ ] 定期的なアクセス権レビューが実施されている
-- [ ] 退職者のアクセス無効化プロセスが確立されている
+```
+1. 発展学習:
+   - Amazon Redshift RA3 インスタンス
+   - Redshift ML での機械学習
+   - AWS Data Exchange
 
----
+2. 実務応用:
+   - 経営ダッシュボードの高度化
+   - 需要予測との連携
+   - リアルタイムデータ統合
 
-## 11. FAQ
-
-**Q: IAM Identity CenterとCognitoの使い分けは？**
-
-A:
-- **IAM Identity Center**: 従業員がAWSリソースにアクセスする場合（内部向け）
-- **Cognito**: アプリケーションのエンドユーザー認証（外部向け）
-
-両者は異なるユースケースのため、同じ組織で両方使用することが一般的です。
-
-**Q: Identity CenterのIdentity Storeと外部IdPどちらを使うべき？**
-
-A:
-- **Identity Store（ビルトイン）**: 小規模組織、AWSのみの環境
-- **外部IdP**: 既存の企業ディレクトリ（AD/Okta/Azure AD）がある場合
-
-既存のIdPがある場合は、SCIMで同期することで一元管理できます。
-
-**Q: Permission SetはどのAWSアカウントに作成される？**
-
-A: Permission Set自体はIAM Identity Center（管理アカウント）に存在しますが、アカウント割り当て時に各メンバーアカウントにIAMロールが自動作成されます。
-
-**Q: セッション時間の推奨値は？**
-
-A:
-- 本番環境: 1-4時間
-- 開発環境: 8時間
-- サンドボックス: 4時間
-- Break Glass: 1時間
-
----
-
-## 12. 振り返りチェックリスト
-
-以下の項目を確認して、学習内容の定着度を確認してください：
-
-- [ ] IAM Identity Centerの基本概念（Identity Source, Permission Set, Account Assignment）を説明できる
-- [ ] Terraformでユーザー・グループを作成できる
-- [ ] 適切なPermission Setを設計・作成できる
-- [ ] アカウント割り当てを設定できる
-- [ ] ABAC（属性ベースアクセス制御）の設定ができる
-- [ ] 外部IdP連携の概念を理解している
-- [ ] Break Glassアカウントの設計ができる
-- [ ] 一時的アクセス権限の付与フローを設計できる
-- [ ] トラブルシューティングの基本手順を理解している
+3. 認定資格:
+   - AWS Certified Data Analytics - Specialty
+   - dbt Certification
+```

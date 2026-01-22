@@ -1,6 +1,6 @@
-# 課題24: AgriTech株式会社のセンサーデータ集計・異常検知レポート自動生成システム構築
+# 課題24: StreamNow株式会社の動画エンコーディングパイプライン構築
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,11 +8,11 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | バッチ処理 / データ基盤 / IoT / 農業テック |
-| 処理タイプ | バッチ / ETL |
-| 使用IaC | Terraform |
-| 所要時間 | 7〜9時間 |
+| 難易度 | 初級〜中級 |
+| カテゴリ | バッチ処理 / メディア / コンテンツ配信 |
+| 処理タイプ | バッチ / イベント駆動 |
+| 使用IaC | CloudFormation |
+| 所要時間 | 5〜6時間 |
 
 ---
 
@@ -20,62 +20,78 @@
 
 ### 企業プロフィール
 
-**AgriTech株式会社**は、スマート農業ソリューションを提供するアグリテックスタートアップです。
+**StreamNow株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | アグリテック（スマート農業） |
-| 設立 | 2018年 |
-| 従業員数 | 45名 |
-| 契約農家数 | 500件 |
-| センサー設置箇所 | 全国1,000箇所 |
-| 監視対象作物 | 米、野菜、果樹 |
-| 日次データ量 | 約10GB |
-| 年間売上 | 5億円 |
-| サービス内容 | 環境監視、生育予測、収穫時期最適化 |
+| 業種 | 動画配信（OTT） |
+| 設立 | 2019年 |
+| 従業員数 | 80名 |
+| 月間アクティブユーザー | 50万人 |
+| 有料会員数 | 30万人 |
+| 月商 | 3億円 |
+| コンテンツ数 | 2,000本 |
+| 月間新規コンテンツ | 500本 |
+| 対応デバイス | Web、iOS、Android、Smart TV、Fire TV |
 
 ### 現状の課題
 
-全国1,000箇所に設置したセンサーから毎日大量のデータが送られてきますが、データの集計・分析が追いつかず、異常検知が遅れたり、農家への有益なレポートを提供できていません。
+コンテンツ制作会社から納品されるマスター動画（4K ProRes形式）を、各デバイス向けに手動でエンコードしています。エンコード作業がボトルネックとなり、コンテンツの配信開始が遅延しています。
 
 ### 数値で示された問題
 
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 日次データ量 | 10GB | 変わらず |
-| センサーポイント | 1,000箇所 | 拡大予定（2,000箇所） |
-| データ収集間隔 | 5分 | 変わらず |
-| 日次レコード数 | 約1,000万件 | - |
-| データ分析担当 | 3名 | 1名（監視のみ） |
-| 異常検知遅延 | 6時間以上 | 1時間以内 |
-| 日次レポート配信 | 手動（翌日夕方） | 自動（翌日朝9時） |
+| 月間エンコード動画数 | 500本 | 変わらず |
+| 1本あたりエンコード時間 | 4時間 | 30分以内 |
+| エンコード担当者 | 2名専任 | 0名（自動化） |
+| 配信開始リードタイム | 48時間 | 4時間以内 |
+| エンコードエラー率 | 5% | 1%以下 |
+| 出力フォーマット数 | 8種類 | 12種類以上 |
 
-### センサーデータの内訳
+### 現状のエンコードワークフロー
 
-| センサー種別 | 測定項目 | 収集頻度 | 異常検知対象 |
-|--------------|----------|----------|--------------|
-| 気象センサー | 気温、湿度、降水量、日照 | 5分 | 霜・高温警報 |
-| 土壌センサー | 土壌水分、pH、EC（電気伝導度） | 10分 | 乾燥・過湿 |
-| 環境センサー | CO2濃度、風速 | 15分 | 換気異常 |
-| 生育モニター | 葉色、茎径 | 1時間 | 生育不良 |
+```
+1. 制作会社からマスター動画をHDD/クラウドで受領
+2. 担当者がローカルPCにダウンロード（30分〜1時間）
+3. Adobe Media Encoderで各フォーマットにエンコード（2〜3時間）
+4. 目視で品質チェック（30分）
+5. CDNにアップロード（30分）
+6. メタデータ登録
+→ 合計: 4〜5時間/本
+```
+
+### 必要な出力フォーマット
+
+| プロファイル | 解像度 | ビットレート | 対象デバイス |
+|--------------|--------|--------------|--------------|
+| 4K UHD | 3840×2160 | 15Mbps | 4K TV |
+| 1080p High | 1920×1080 | 8Mbps | Smart TV, PC |
+| 1080p | 1920×1080 | 5Mbps | PC, Tablet |
+| 720p | 1280×720 | 3Mbps | Mobile WiFi |
+| 480p | 854×480 | 1.5Mbps | Mobile 4G |
+| 360p | 640×360 | 0.8Mbps | Mobile 3G |
+| Audio Only | - | 128kbps | バックグラウンド再生 |
+
++ HLS/DASH 両対応
 
 ### 解決したいこと
 
-1. 日次10GBのセンサーデータを効率的にETL処理
-2. 異常値の自動検知とアラート通知
-3. 農家ごとの日次レポート自動生成
-4. 過去データとの比較分析（前年同期比等）
-5. スケーラブルなデータ基盤の構築
+1. マスター動画アップロード後の自動エンコード
+2. 複数フォーマットへの並列エンコード
+3. 配信開始リードタイムの大幅短縮
+4. エンコード品質の一貫性確保
+5. 自動品質チェック・エラー通知
 
 ### 成功指標（KPI）
 
 | KPI | 現状 | 目標 | 達成期限 |
 |-----|------|------|----------|
-| ETL処理時間 | 6時間 | 1時間以内 | 1ヶ月後 |
-| 異常検知遅延 | 6時間 | 1時間以内 | 1ヶ月後 |
-| レポート配信 | 翌日夕方 | 翌日朝9時 | 1ヶ月後 |
-| データ分析工数 | 3名×8時間/日 | 1名×2時間/日 | 2ヶ月後 |
-| スケーラビリティ | 1,000箇所 | 5,000箇所対応可 | 3ヶ月後 |
+| エンコード時間/本 | 4時間 | 30分以内 | 1ヶ月後 |
+| 配信リードタイム | 48時間 | 4時間以内 | 1ヶ月後 |
+| 自動化率 | 0% | 95%以上 | 2ヶ月後 |
+| エンコードエラー率 | 5% | 1%以下 | 1ヶ月後 |
+| 人的工数 | 160時間/月 | 10時間/月 | 2ヶ月後 |
 
 ---
 
@@ -85,40 +101,37 @@
 
 ### 技術的な学習ポイント
 
-1. **AWS Step Functionsによる複雑なワークフロー**
-   - 並列処理（Parallel/Map state）
-   - 条件分岐（Choice state）
-   - エラーハンドリング
+1. **AWS Elemental MediaConvertの実践活用**
+   - ジョブテンプレートの設計
+   - 出力グループ（HLS, DASH）の設定
+   - カスタムプリセット作成
 
-2. **AWS Glueによるデータ処理**
-   - Glue Jobの作成と実行
-   - データカタログの活用
-   - パーティショニング戦略
+2. **AWS Batchによる大規模バッチ処理**
+   - コンピューティング環境の設計
+   - ジョブ定義とジョブキュー
+   - スポットインスタンス活用
 
-3. **Amazon Athenaによるサーバーレス分析**
-   - SQLクエリ最適化
-   - パーティション pruning
-   - CTAS（Create Table As Select）
+3. **S3イベント駆動アーキテクチャ**
+   - S3 → Lambda → MediaConvert
+   - Step Functionsによるワークフロー
 
-4. **データレイクアーキテクチャ**
-   - Raw/Processed/Curated 層
-   - Parquet形式への変換
-   - データライフサイクル管理
+4. **CloudFrontによるコンテンツ配信**
+   - HLS/DASH配信設定
+   - キャッシュ戦略
 
 ### 実務で活かせる知識
 
-- 大規模データのETLパイプライン設計
-- 時系列データの分析パターン
-- IoTデータ基盤の構築
+- 動画配信プラットフォームの構築
+- メディア処理パイプラインの設計
+- コスト最適化（スポットインスタンス）
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| ETL | Glue | Dataflow / Dataproc |
-| データウェアハウス | Athena / Redshift | BigQuery |
-| データカタログ | Glue Data Catalog | Data Catalog |
-| ワークフロー | Step Functions | Cloud Workflows / Composer |
+| 動画変換 | MediaConvert | Transcoder API |
+| バッチ処理 | AWS Batch | Cloud Run Jobs / Batch |
+| CDN | CloudFront | Cloud CDN |
 | ストレージ | S3 | Cloud Storage |
 
 ---
@@ -129,21 +142,21 @@
 
 | サービス | 役割 | 選定理由 |
 |----------|------|----------|
-| AWS Step Functions | ワークフローオーケストレーション | 複雑なETL制御 |
-| AWS Glue | データ変換・ETL | サーバーレスETL |
-| Amazon Athena | SQLクエリ分析 | サーバーレス分析 |
-| Amazon S3 | データレイク | 大容量、低コスト |
-| AWS Lambda | 軽量処理・通知 | イベント駆動 |
+| AWS Elemental MediaConvert | 動画エンコード | 高品質、多フォーマット対応 |
+| AWS Batch | 大規模並列処理（前処理用） | スポット対応、コスト効率 |
+| Amazon S3 | 入力/出力ストレージ | 大容量、イベント通知 |
+| AWS Lambda | オーケストレーション | イベント駆動 |
+| AWS Step Functions | ワークフロー管理 | 可視化、エラー処理 |
+| Amazon CloudFront | コンテンツ配信 | グローバル配信 |
 
 ### 補助サービス
 
 | サービス | 役割 |
 |----------|------|
-| Amazon SNS | 異常アラート通知 |
-| Amazon SES | レポートメール配信 |
+| Amazon DynamoDB | ジョブ状態管理 |
+| Amazon SNS | 完了/エラー通知 |
 | Amazon CloudWatch | 監視・ログ |
-| Amazon EventBridge | スケジュール実行 |
-| AWS Glue Data Catalog | メタデータ管理 |
+| AWS Secrets Manager | APIキー管理 |
 
 ---
 
@@ -152,23 +165,21 @@
 ### 必要な事前知識
 
 - AWSの基本操作（S3, Lambda）
-- SQLの基礎〜中級
-- Pythonの基礎
-- ETLの基本概念
+- 動画フォーマットの基本（コーデック、コンテナ）
+- HLS/DASHの基本概念
 
 ### 準備するもの
 
 1. **AWSアカウント**
-   - Glue, Athenaへのアクセス権限
+   - MediaConvertへのアクセス権限
    - 適切なIAM権限
 
 2. **開発環境**
-   - Terraform v1.5以上
    - AWS CLI v2
    - Python 3.9以上
 
 3. **テストデータ**
-   - サンプルセンサーデータ（CSV/JSON）
+   - サンプル動画ファイル（MP4, 1分程度）
 
 ---
 
@@ -176,283 +187,274 @@
 
 ### システム全体構成
 
-```mermaid
-flowchart TB
-    subgraph DataIngestion["データ収集"]
-        IoTSensor["IoTセンサー"]
-        IoTCore["IoT Core"]
-        S3Raw["S3: Raw Data"]
-    end
+```
+[制作会社]
+    ↓ マスター動画アップロード
+[S3: 入力バケット]
+    ↓ S3イベント
+[Lambda: トリガー]
+    ↓
+[Step Functions: エンコードワークフロー]
+    ├── [MediaConvert: 動画エンコード]
+    │     ├── HLS出力（7プロファイル）
+    │     └── DASH出力（7プロファイル）
+    │
+    ├── [Lambda: サムネイル生成]
+    │
+    └── [Lambda: メタデータ更新]
+            ↓
+[S3: 出力バケット]
+    ↓
+[CloudFront: CDN配信]
+    ↓
+[視聴者]
 
-    EventBridge["EventBridge<br/>（毎日 AM 1:00）"]
-
-    subgraph StepFunctions["Step Functions: DailyETLWorkflow"]
-        Step1["[1] Glue Job: データ変換<br/>Raw → Processed (Parquet変換)"]
-        Step2["[2] Athena: 異常検知クエリ<br/>閾値超過データ抽出"]
-        Step3["[3] Lambda: 異常アラート送信<br/>SNS経由で農家に通知"]
-        Step4["[4] Athena: 日次集計クエリ<br/>センサーごとの統計"]
-        Step5["[5] Lambda: レポート生成<br/>S3にレポート出力"]
-        Step6["[6] Lambda: レポート配信<br/>SES経由でメール送信"]
-    end
-
-    subgraph DataLakeStructure["データレイク構成"]
-        Raw["Raw:<br/>s3://bucket/raw/year=YYYY/month=MM/day=DD/"]
-        Processed["Processed:<br/>s3://bucket/processed/year=YYYY/month=MM/day=DD/"]
-        Curated["Curated:<br/>s3://bucket/curated/daily_stats/"]
-        Reports["Reports:<br/>s3://bucket/reports/YYYY-MM-DD/"]
-    end
-
-    IoTSensor --> IoTCore
-    IoTCore --> S3Raw
-    S3Raw --> EventBridge
-    EventBridge --> StepFunctions
-    Step1 --> Step2
-    Step2 --> Step3
-    Step3 --> Step4
-    Step4 --> Step5
-    Step5 --> Step6
-
-    Step1 -.-> Processed
-    Step4 -.-> Curated
-    Step5 -.-> Reports
+[DynamoDB: ジョブ状態管理]
+[SNS: 完了/エラー通知]
 ```
 
-### 処理フロー
+### エンコードフロー
 
-1. **データ収集**: IoT Coreからのデータが5分間隔でS3 Rawに蓄積
-2. **ETL起動**: EventBridgeが毎日AM1時にStep Functionsを起動
-3. **データ変換**: GlueがRaw（JSON）→ Processed（Parquet）に変換
-4. **異常検知**: Athenaで閾値超過データを抽出
-5. **アラート**: 異常データがあれば農家にSNS通知
-6. **集計**: Athenaで日次統計を計算
-7. **レポート生成**: Lambdaでレポート作成
-8. **配信**: SESで農家にメール送信
+1. **アップロード**: 制作会社がS3にマスター動画をアップロード
+2. **トリガー**: S3イベントでLambdaが起動
+3. **ワークフロー**: Step Functionsで処理開始
+4. **エンコード**: MediaConvertで複数フォーマットに変換
+5. **後処理**: サムネイル生成、メタデータ登録
+6. **通知**: 完了通知を送信
+7. **配信**: CloudFront経由で配信開始
 
 ---
 
 ## トラブルシューティング課題
 
-### 問題1: Glue Jobが失敗
+### 問題1: MediaConvertジョブがエラー終了
 
 **症状:**
 ```
-An error occurred while calling o87.pyWriteDynamicFrame
-OutOfMemoryError: Java heap space
+MediaConvert job status: ERROR
+"Unable to open input file"
 ```
 
 **ヒント:**
-1. ワーカー数・タイプを確認
-2. データ量に対して適切か
-3. パーティションの絞り込みができているか
+1. 入力ファイルのS3パスが正しいか確認
+2. MediaConvertロールのS3権限を確認
+3. 入力ファイルが破損していないか確認
 
 **解決方法:**
-```hcl
-# ワーカー増強
-resource "aws_glue_job" "transform_sensor_data" {
-  # ...
-  number_of_workers = 5   # 2から5に
-  worker_type       = "G.2X"  # G.1XからG.2Xに
+```bash
+# IAMロールのポリシー確認
+aws iam list-attached-role-policies --role-name StreamNowMediaConvertRole
+
+# S3アクセステスト
+aws s3 ls s3://streamnow-master-${ACCOUNT_ID}/uploads/
+
+# MediaConvert用の追加ポリシー
+aws iam attach-role-policy \
+  --role-name StreamNowMediaConvertRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### 問題2: HLSマニフェストが正しく生成されない
+
+**症状:**
+```
+index.m3u8が存在しない
+プレイヤーで再生できない
+```
+
+**ヒント:**
+1. OutputGroupSettingsのDestinationを確認
+2. HlsGroupSettingsの設定を確認
+3. 出力ファイル一覧を確認
+
+**解決方法:**
+```python
+# 正しいHLS設定
+"HlsGroupSettings": {
+    "SegmentLength": 6,
+    "MinSegmentLength": 0,
+    "Destination": f"s3://{OUTPUT_BUCKET}/hls/{content_id}/",
+    "ManifestCompression": "NONE",
+    "DirectoryStructure": "SINGLE_DIRECTORY",
+    "OutputSelection": "MANIFESTS_AND_SEGMENTS"  # これを追加
 }
 ```
 
-### 問題2: Athenaクエリが遅い
+### 問題3: CloudFrontでCORSエラー
 
 **症状:**
 ```
-クエリに5分以上かかる
-スキャンデータ量が大きい
+Access-Control-Allow-Origin エラー
+動画プレイヤーで再生できない
 ```
 
 **ヒント:**
-1. パーティション指定ができているか確認
-2. Parquet形式になっているか確認
-3. 必要なカラムのみSELECTしているか
+1. S3のCORS設定を確認
+2. CloudFrontのResponse Headers Policyを確認
+3. ブラウザのキャッシュをクリア
 
 **解決方法:**
-```sql
--- パーティションを明示的に指定
-WHERE year = '2024' AND month = '01' AND day = '15'
-
--- 必要なカラムのみ選択
-SELECT sensor_id, temperature, humidity
-FROM processed_sensor_data
--- SELECT * は避ける
-```
-
-### 問題3: Step Functionsがタイムアウト
-
-**症状:**
-```
-States.Timeout エラー
-Glue Jobの完了を待てない
-```
-
-**ヒント:**
-1. Glue Job実行時間を確認
-2. Step Functions Standardのタイムアウト設定
-3. 同期呼び出し（.sync）を確認
-
-**解決方法:**
-```json
-// タイムアウト延長
-{
-  "Type": "Task",
-  "Resource": "arn:aws:states:::glue:startJobRun.sync",
-  "TimeoutSeconds": 3600,  // 1時間に設定
-  // ...
-}
+```bash
+# CloudFront Response Headers Policy設定
+# コンソールから:
+# 1. CloudFront → ディストリビューション → Behaviors
+# 2. Response headers policy: SimpleCORS または カスタムポリシー
+# 3. Access-Control-Allow-Origin: *
+# 4. Access-Control-Allow-Methods: GET, HEAD, OPTIONS
 ```
 
 ---
 
 ## 設計の考察ポイント
 
-### 1. データレイクのレイヤー設計
+### 1. MediaConvert vs 自前エンコード（FFmpeg）
 
 **考察ポイント:**
-- Raw → Processed → Curated の3層構造
-- 各層の目的と保持期間
-- 形式の選択（JSON → Parquet）
+- MediaConvert: マネージド、スケーラブル、品質保証
+- FFmpeg on EC2/ECS: 柔軟性、カスタマイズ性
+- コスト比較（長時間動画の場合）
 
-### 2. パーティショニング戦略
-
-**考察ポイント:**
-- 年/月/日 でのパーティショニング
-- クエリパターンとの整合性
-- パーティション数の管理
-
-### 3. ETLツールの選択
+### 2. 出力フォーマットの選定
 
 **考察ポイント:**
-- Glue vs Lambda vs EMR
-- データ量とコストのバランス
-- 開発生産性
+- HLS vs DASH（デバイスカバレッジ）
+- ビットレートラダーの設計
+- ABR（Adaptive Bitrate）の最適化
 
-### 4. リアルタイム vs バッチ
-
-**考察ポイント:**
-- 異常検知をリアルタイムにする必要性
-- Kinesis + Lambda の検討
-- コストと緊急性のトレードオフ
-
-### 5. コスト最適化
+### 3. 並列処理のアプローチ
 
 **考察ポイント:**
-- S3ライフサイクルポリシー
-- Glue DPU の最適化
-- Athena のスキャン量削減
+- MediaConvert単独 vs AWS Batch併用
+- チャンク分割エンコード
+- コスト効率とスループットのバランス
+
+### 4. CDN配信の最適化
+
+**考察ポイント:**
+- CloudFrontのキャッシュ戦略
+- セグメントサイズと初回再生時間
+- リージョン配置（エッジロケーション）
+
+### 5. DRMとセキュリティ
+
+**考察ポイント:**
+- 有料コンテンツの保護
+- Widevine / FairPlay対応
+- 署名付きURL / Cookie
 
 ---
 
 ## 発展課題（オプション）
 
-### 1. リアルタイム異常検知
-- Kinesis Data Streams + Lambda
-- 5分以内の検知
-- 即時アラート
+### 1. DRM対応（SPEKE）
+- AWS Elemental MediaPackage連携
+- Widevine / FairPlay / PlayReady
+- ライセンスサーバー統合
 
-### 2. 機械学習による予測
-- SageMaker連携
-- 収穫時期予測
-- 病害予測
+### 2. ライブ配信対応
+- MediaLive + MediaPackage
+- ライブ to VODワークフロー
+- 低遅延配信（LL-HLS）
 
-### 3. ダッシュボード構築
-- QuickSight連携
-- リアルタイムモニタリング
-- 農家向けポータル
+### 3. コンテンツモデレーション
+- Rekognition Video連携
+- 不適切コンテンツの自動検出
+- 年齢制限の自動判定
 
-### 4. データ品質管理
-- Glue Data Quality
-- 自動データ検証
-- 品質スコアリング
+### 4. 字幕・多言語対応
+- Transcribe連携（自動字幕）
+- Translate連携（翻訳）
+- WebVTT埋め込み
 
-### 5. マルチリージョン対応
-- 災害対策
-- S3レプリケーション
-- グローバル展開
+### 5. 視聴分析
+- CloudFrontログ分析
+- Athena + QuickSight
+- コンテンツ人気度ダッシュボード
 
 ---
 
 ## 想定コストと削減方法
 
-### 月額概算コスト（日次10GB処理想定）
+### 月額概算コスト（月間500本 × 平均30分処理想定）
 
 | サービス | 内訳 | 月額コスト |
 |----------|------|------------|
-| AWS Glue | 2 DPU × 30分 × 30日 | $13 |
-| Amazon Athena | 300GB/月スキャン | $15 |
-| Amazon S3 | 300GB（Raw+Processed）| $7 |
+| MediaConvert | 500本 × 30分 × 5出力 = 1,250時間 | $625 |
+| Amazon S3 | 入力500GB + 出力2TB | $55 |
 | AWS Lambda | 処理関数実行 | $5 |
-| Step Functions | 30ワークフロー | $0.75 |
-| Amazon SNS | 通知 | $1 |
-| Amazon SES | メール配信 | $1 |
-| CloudWatch | ログ | $5 |
-| **合計** | | **約$48（約7,200円）** |
+| Step Functions | 500ワークフロー | $0.15 |
+| CloudFront | 5TB転送 | $425 |
+| DynamoDB | オンデマンド | $2 |
+| SNS | 通知 | $0.50 |
+| CloudWatch | ログ | $10 |
+| **合計** | | **約$1,123（約168,000円）** |
 
 ### コスト削減のポイント
 
-1. **Athena最適化**
-   - Parquet + Snappy圧縮
-   - パーティション pruning
-   - → スキャン量70%削減
+1. **MediaConvertの最適化**
+   - On-Demand vs Reserved Capacity
+   - 品質レベルの調整（SINGLE_PASS vs MULTI_PASS）
+   - → 最大30%削減
 
-2. **S3ライフサイクル**
-   - Raw: 30日後Glacier
-   - Processed: 90日後IA
-   - → ストレージコスト50%削減
+2. **S3ストレージクラス**
+   - 入力: Standard（一時）→ 処理後削除
+   - 出力: Intelligent-Tiering
+   - → ストレージコスト40%削減
 
-3. **Glue Job最適化**
-   - Auto Scaling
-   - ジョブブックマーク（増分処理）
-   - → 処理時間50%削減
+3. **CloudFront Reserved Capacity**
+   - 年間契約で割引
+   - → 配信コスト最大30%削減
 
-4. **スポットインスタンス**
-   - Glue Flex実行
-   - → Glueコスト30%削減
+4. **不要解像度の削除**
+   - 4K対応が不要なら4K出力を削除
+   - → MediaConvertコスト削減
 
 ### リソース削除手順
 
 ```bash
+# CloudFront（コンソールから無効化→削除）
+
+# S3
+aws s3 rm s3://streamnow-master-${ACCOUNT_ID} --recursive
+aws s3 rm s3://streamnow-output-${ACCOUNT_ID} --recursive
+aws s3 rb s3://streamnow-master-${ACCOUNT_ID}
+aws s3 rb s3://streamnow-output-${ACCOUNT_ID}
+
+# DynamoDB
+aws dynamodb delete-table --table-name streamnow-encoding-jobs
+
 # Step Functions
 aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
 
-# Glue
-aws glue delete-job --job-name agritech-transform-sensor-data
-aws glue delete-table --database-name agritech_sensor_data --name raw_sensor_data
-aws glue delete-table --database-name agritech_sensor_data --name processed_sensor_data
-aws glue delete-database --name agritech_sensor_data
-
 # Lambda
-aws lambda delete-function --function-name agritech-anomaly-alert
-aws lambda delete-function --function-name agritech-generate-report
-aws lambda delete-function --function-name agritech-send-report
+aws lambda delete-function --function-name streamnow-trigger
+aws lambda delete-function --function-name streamnow-start-encoding
+aws lambda delete-function --function-name streamnow-check-encoding
+aws lambda delete-function --function-name streamnow-finalize
 
-# S3（データ削除後）
-aws s3 rm s3://agritech-data-lake-dev-${ACCOUNT_ID} --recursive
-aws s3 rb s3://agritech-data-lake-dev-${ACCOUNT_ID}
-
-# SNS/SES
+# SNS
 aws sns delete-topic --topic-arn arn:aws:sns:...
 
-# Terraform
-terraform destroy -auto-approve
+# IAM
+aws iam detach-role-policy --role-name StreamNowMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+aws iam delete-role --role-name StreamNowMediaConvertRole
 ```
 
 ---
 
 ## 学習のポイント
 
-### 1. データレイクアーキテクチャの基本
-Raw → Processed → Curated の3層構造で、データの鮮度・品質・用途に応じた管理を行う。各層で適切な形式（JSON, Parquet）を選択。
+### 1. MediaConvertの基本
+AWS の動画変換サービスとして、入力 → 出力グループ → 出力の構造を理解する。HLS/DASH などのストリーミングフォーマットの基本も押さえる。
 
-### 2. Glueによるサーバーレス ETL
-Apache Spark ベースの ETL をサーバーレスで実行。データカタログによるメタデータ管理、ジョブブックマークによる増分処理が特徴。
+### 2. イベント駆動アーキテクチャ
+S3イベント → Lambda → Step Functions の流れは、バッチ処理の典型パターン。非同期処理の状態管理方法を学ぶ。
 
-### 3. Athenaによるサーバーレス分析
-S3上のデータに直接SQLを実行。Parquet形式とパーティショニングによりスキャン量を削減し、コストと性能を最適化。
+### 3. ABR（Adaptive Bitrate）の概念
+ネットワーク状況に応じて品質を切り替えるストリーミング技術。ビットレートラダーの設計がユーザー体験に直結する。
 
-### 4. Step Functionsによる複雑なワークフロー
-Parallel state で並列処理、Choice state で条件分岐を実装。Glueの同期呼び出し（.sync）でジョブ完了を待機。
+### 4. CDN配信の基礎
+CloudFront によるグローバル配信、キャッシュ戦略、CORSの設定など、コンテンツ配信の基本を習得する。
 
-### 5. IoT/農業データの特性理解
-時系列データの特性、異常値の定義、季節変動を考慮した分析が重要。ドメイン知識とデータエンジニアリングの両方が必要。
+### 5. ワークフローの可視化
+Step Functions でエンコード処理を可視化することで、進捗確認やエラー対応が容易になる。長時間バッチ処理では特に重要。

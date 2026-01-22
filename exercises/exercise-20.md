@@ -1,6 +1,6 @@
-# 課題20: テックマニュファクチャリング株式会社の設備異常検知AIモデル運用基盤構築
+# 課題20: スタートアップのAWS基盤設計（Organizations + Landing Zone）
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,487 +8,949 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | AI / IoT / 製造業 / MLOps |
-| 処理タイプ | リアルタイム / バッチ |
+| 難易度 | 初級〜中級 |
+| カテゴリ | マルチアカウント戦略・ガバナンス |
+| 処理タイプ | バッチ |
 | 使用IaC | Terraform |
-| 所要時間 | 8〜10時間 |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
-## 2. シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロフィール
-
-**テックマニュファクチャリング株式会社**は、精密機器部品を製造する中堅製造業企業です。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | 精密機器製造 |
-| 設立 | 1985年 |
-| 従業員数 | 450名 |
-| 工場数 | 3拠点（埼玉、名古屋、福岡） |
-| 生産設備数 | 50台（CNC旋盤、プレス機、射出成形機等） |
-| 年間売上 | 120億円 |
-| 主要顧客 | 自動車部品メーカー、家電メーカー |
-| 稼働率目標 | 95%以上 |
+### 企業プロファイル
+- **企業名**: DevBoost株式会社
+- **業種**: SaaSスタートアップ（開発者向け生産性ツール）
+- **規模**: 従業員15名（今後1年で50名予定）、エンジニア8名
+- **フェーズ**: シリーズA調達完了、急成長期
+- **現状インフラ**: 単一AWSアカウントで全環境を運用
 
 ### 現状の課題
-
-設備の突発故障により生産ラインが停止し、納期遅延やコスト増加が発生しています。現在は定期保全（TBM: Time Based Maintenance）を実施していますが、過剰保全によるコスト増や、定期保全の間に発生する故障を防げていません。
-
-### 数値で示された問題
-
-| 指標 | 現状 | 業界平均 |
-|------|------|----------|
-| 年間計画外停止回数 | 180回（3.6回/台） | 50回以下 |
-| 平均ダウンタイム | 4時間/回 | 1時間/回 |
-| 年間停止時間 | 720時間 | 50時間以下 |
-| 停止による損失 | 年3.6億円 | - |
-| 保全コスト | 年2億円 | - |
-| 設備稼働率 | 88% | 95% |
-
-### 故障の内訳分析（過去1年）
-
-| 故障種別 | 発生回数 | 平均復旧時間 | 予兆検知可能性 |
-|----------|----------|--------------|----------------|
-| モーター異常 | 45回 | 6時間 | 高（振動・電流） |
-| 軸受け摩耗 | 35回 | 3時間 | 高（振動・温度） |
-| 油圧系統異常 | 30回 | 4時間 | 中（圧力・温度） |
-| 電気系統故障 | 25回 | 5時間 | 中（電流・電圧） |
-| センサー故障 | 20回 | 2時間 | 高（値異常） |
-| その他 | 25回 | 3時間 | 低 |
-
-**予兆検知可能な故障: 約80%（144回/年）**
-
-### 解決したいこと
-
-1. 設備センサーデータのリアルタイム収集・分析
-2. 異常検知AIモデルによる故障予兆の検出
-3. 予知保全（PdM: Predictive Maintenance）への移行
-4. 計画外停止の80%削減
-5. MLモデルの継続的な改善サイクル確立
-
-### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| 計画外停止回数 | 180回/年 | 36回/年（80%削減） | 12ヶ月後 |
-| 異常検知精度（Recall） | - | 90%以上 | 6ヶ月後 |
-| 誤検知率（False Positive） | - | 10%以下 | 6ヶ月後 |
-| 設備稼働率 | 88% | 95%以上 | 12ヶ月後 |
-| ダウンタイム損失 | 3.6億円/年 | 0.7億円/年以下 | 12ヶ月後 |
-
----
-
-## 3. 達成目標
-
-この演習で習得できるスキル：
-
-### 技術的な学習ポイント
-
-1. **Amazon SageMakerの実践活用**
-   - 組み込みアルゴリズム（Random Cut Forest）
-   - モデルのトレーニング・デプロイ
-   - エンドポイント管理
-
-2. **MLOpsパイプラインの構築**
-   - SageMaker Pipelines
-   - モデルレジストリ
-   - A/Bテストデプロイ
-
-3. **IoTデータパイプライン**
-   - IoT Core / Kinesis Data Streams
-   - リアルタイム推論
-   - Lambda + Step Functions
-
-4. **時系列異常検知の基礎**
-   - Random Cut Forest（RCF）アルゴリズム
-   - 異常スコアの閾値設計
-   - 特徴量エンジニアリング
-
-### 実務で活かせる知識
-
-- 製造業におけるAI活用パターン
-- 予知保全システムの設計
-- MLOpsの実践的なワークフロー
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| ML プラットフォーム | SageMaker | Vertex AI |
-| IoT | IoT Core | Cloud IoT Core |
-| ストリーム処理 | Kinesis | Pub/Sub + Dataflow |
-| 時系列DB | Timestream | BigQuery + Cloud Monitoring |
-| MLパイプライン | SageMaker Pipelines | Vertex AI Pipelines |
-
----
-
-## 4. 学習するAWSサービス
-
-### メインサービス
-
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon SageMaker | 異常検知モデルの構築・デプロイ | エンドツーエンドMLプラットフォーム |
-| Amazon Kinesis Data Streams | センサーデータのストリーム処理 | リアルタイム取り込み |
-| AWS Lambda | リアルタイム推論・アラート | イベント駆動処理 |
-| AWS Step Functions | MLパイプラインオーケストレーション | ワークフロー管理 |
-| Amazon S3 | 学習データ・モデル保存 | データレイク |
-| Amazon DynamoDB | リアルタイムデータ・アラート履歴 | 高速アクセス |
-| Amazon Timestream | 時系列データ保存・分析 | 時系列特化DB |
-
-### 補助サービス
-
-| サービス | 役割 |
-|----------|------|
-| Amazon SNS | アラート通知 |
-| Amazon CloudWatch | 監視・ダッシュボード |
-| AWS IoT Core | デバイス接続（実環境用） |
-| Amazon EventBridge | スケジュール実行 |
-
----
-
-## 5. 前提条件
-
-### 必要な事前知識
-
-- AWSの基本操作（S3, Lambda）
-- Python基礎
-- 機械学習の基本概念（訓練/検証/テスト）
-- 時系列データの基本理解
-
-### 準備するもの
-
-1. **AWSアカウント**
-   - SageMaker実行権限
-   - 適切なIAM権限
-
-2. **開発環境**
-   - Terraform v1.5以上
-   - AWS CLI v2
-   - Python 3.9以上
-   - Jupyter Notebook（またはSageMaker Studio）
-
-3. **テストデータ**
-   - センサーデータ（CSVまたはJSON）
-   - 正常/異常ラベル付きデータ（学習用）
-
----
-
-## 6. 最終構成図
-
-### システム全体構成
+DevBoost株式会社は、単一のAWSアカウントで本番・開発・検証環境を運用しています。
+急成長に伴い、以下の問題が深刻化しています：
 
 ```mermaid
 flowchart TB
-    subgraph Realtime["リアルタイム処理"]
-        Sensor["設備センサー"]
-        IoT["IoT Core / API Gateway"]
-        Kinesis["Kinesis Data Streams"]
-
-        subgraph Processing["データ処理"]
-            LambdaPrep["Lambda: データ前処理"]
-            Timestream[("Timestream: 時系列保存")]
+    subgraph CurrentSystem["現行システム構成（単一アカウント）"]
+        subgraph Security["1. セキュリティリスク"]
+            S1["本番環境に全員がアクセス可能"]
+            S2["IAMポリシーが複雑化、管理不能"]
+            S3["機密データへのアクセス制御が不十分"]
         end
-
-        subgraph Inference["推論処理"]
-            LambdaInf["Lambda: リアルタイム推論"]
-            SageMaker["SageMaker Endpoint: 異常検知"]
-            DynamoDB[("DynamoDB: 結果保存")]
-            SNS["SNS: アラート通知"]
+        subgraph Cost["2. コスト管理の困難"]
+            C1["環境別・チーム別のコストが把握できない"]
+            C2["開発者が本番リソースを誤って変更"]
+            C3["リソースの野放し状態"]
         end
-
-        Staff["保全担当者/管理画面"]
-    end
-
-    subgraph Batch["定期バッチ"]
-        EventBridge["EventBridge（週次）"]
-        subgraph StepFunctions["Step Functions: モデル再学習パイプライン"]
-            SMProcessing["SageMaker Processing: データ準備"]
-            SMTraining["SageMaker Training: モデル学習"]
-            SMRegistry["SageMaker Model Registry: 登録"]
-            SMDeploy["SageMaker Endpoint: デプロイ"]
+        subgraph Operations["3. 運用効率の低下"]
+            O1["新環境構築に30分以上"]
+            O2["設定ミスによるインシデント頻発"]
+            O3["チーム間の依存関係で開発停滞"]
+        end
+        subgraph Compliance["4. コンプライアンス不備"]
+            CP1["監査証跡が整備されていない"]
+            CP2["セキュリティ基準の統一管理ができない"]
+            CP3["顧客からのSOC2要求に対応困難"]
         end
     end
-
-    Sensor -->|MQTT/HTTP| IoT
-    IoT --> Kinesis
-    Kinesis --> LambdaPrep
-    LambdaPrep --> Timestream
-    Kinesis --> LambdaInf
-    LambdaInf --> SageMaker
-    SageMaker -->|異常スコア| DynamoDB
-    DynamoDB -->|閾値超過| SNS
-    SNS --> Staff
-
-    EventBridge --> SMProcessing
-    SMProcessing --> SMTraining
-    SMTraining --> SMRegistry
-    SMRegistry --> SMDeploy
 ```
 
-### データフロー
+### ビジネス要件
+```
+機能要件:
+- マルチアカウント環境の構築（本番/ステージング/開発/共有）
+- セキュリティベースラインの自動適用
+- 新アカウント作成の自動化（5分以内）
+- 統合ログ・監査基盤
 
-1. **データ収集**: センサーデータをKinesis Data Streamsに送信
-2. **リアルタイム処理**: Lambdaで前処理し、SageMakerエンドポイントで推論
-3. **異常検知**: 異常スコアが閾値を超えたらアラート
-4. **モデル改善**: 週次でデータを蓄積し、モデルを再学習
+非機能要件:
+- 環境構築時間：30分 → 5分
+- セキュリティインシデント：0件/月
+- コンプライアンススコア：95%以上
+- 運用工数：週10時間 → 週2時間
+```
+
+### 成功指標（KPI）
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 新環境構築時間 | 30分 | 5分 |
+| セキュリティインシデント | 月2-3件 | 0件 |
+| コスト可視性 | 0%（不明） | 100% |
+| IAMポリシー数 | 150+ | 20以下 |
+| コンプライアンススコア | 40% | 95% |
+
+---
+
+## 3. 学習目標
+
+### 本課題で習得するスキル
+
+```
+1. AWS Organizations（理解度：詳細）
+   - OU（組織単位）設計
+   - SCP（サービスコントロールポリシー）
+   - 一括請求とコスト配分
+
+2. Landing Zone設計（理解度：実装）
+   - Control Tower の概念理解
+   - Account Factory パターン
+   - ベースラインセキュリティ
+
+3. Terraform によるIaC（理解度：実装）
+   - マルチアカウントプロビジョニング
+   - モジュール設計
+   - State管理（S3 + DynamoDB）
+
+4. セキュリティガバナンス（理解度：基礎）
+   - GuardDuty / Security Hub 統合
+   - CloudTrail 組織トレイル
+   - Config 集約
+```
+
+### GCPエンジニア向け補足
+```
+GCP → AWS マッピング:
+- Resource Manager → AWS Organizations
+- Folders → Organizational Units (OU)
+- Organization Policies → Service Control Policies (SCP)
+- Cloud Identity → IAM Identity Center
+- Security Command Center → Security Hub
+
+主な違い:
+1. AWS Organizations: アカウント単位での分離が基本
+   （GCPはプロジェクト単位）
+
+2. SCP: 明示的な許可ではなく、最大権限の境界を設定
+   （Organization Policies に近いが、IAMとの組み合わせが必要）
+
+3. Landing Zone: AWS独自の概念
+   （GCPではCloud Foundation Toolkitが近い）
+```
+
+---
+
+## 4. 使用するAWSサービス
+
+### メインサービス
+| サービス | 役割 | 使用機能 |
+|----------|------|----------|
+| **AWS Organizations** | アカウント管理 | OU、SCP、一括請求 |
+| **AWS IAM Identity Center** | ID管理 | SSO、権限セット |
+| **AWS CloudTrail** | 監査ログ | 組織トレイル |
+| **AWS Config** | 構成管理 | アグリゲーター |
+
+### サポートサービス
+| サービス | 用途 |
+|----------|------|
+| **Amazon S3** | Terraform State、ログ保存 |
+| **Amazon DynamoDB** | Terraform State Lock |
+| **AWS Security Hub** | セキュリティ統合 |
+| **Amazon GuardDuty** | 脅威検知 |
+| **AWS Budgets** | コスト管理 |
+| **Amazon SNS** | 通知 |
+
+### アーキテクチャ図
+```mermaid
+flowchart TB
+    subgraph Organizations["DevBoost AWS Organizations"]
+        subgraph Management["Management Account (Root)"]
+            OrgMgmt["Organizations<br/>Management"]
+            IAMCenter["IAM Identity<br/>Center"]
+            Billing["Billing &<br/>Cost Mgmt"]
+            RootSCP["SCP: DenyRootUser, RequireIMDSv2, DenyLeaveOrg"]
+        end
+
+        subgraph SecurityOU["Security OU"]
+            subgraph LogAccount["Log Account"]
+                CloudTrail["CloudTrail"]
+                ConfigAgg["Config Agg"]
+                S3Logs["S3 Logs"]
+            end
+            subgraph SecAccount["Security Account"]
+                GuardDuty["GuardDuty"]
+                SecHub["Security Hub"]
+                Detective["Detective"]
+            end
+            SecuritySCP["SCP: Restrict Regions"]
+        end
+
+        subgraph InfraOU["Infrastructure OU"]
+            subgraph NetworkAccount["Network Account"]
+                TransitGW["Transit GW"]
+                VPNDX["VPN/DX"]
+                DNS["DNS (R53)"]
+            end
+            subgraph SharedServices["Shared Services"]
+                ECR["ECR"]
+                CICD["CI/CD"]
+                Artifacts["Artifacts"]
+            end
+            InfraSCP["SCP: Network Admin Only"]
+        end
+
+        subgraph WorkloadsOU["Workloads OU"]
+            subgraph ProdOU["Production OU"]
+                ProdAccount["Production Account"]
+            end
+            subgraph NonProdOU["Non-Production"]
+                StagingAccount["Staging Account"]
+                DevAccount["Dev Account"]
+            end
+            subgraph SandboxOU["Sandbox OU"]
+                SandboxAccount["Sandbox Account"]
+                SandboxSCP["SCP: Strict Budget"]
+            end
+            WorkloadsSCP["SCP: Budget Limit"]
+        end
+    end
+
+    Management --> SecurityOU
+    Management --> InfraOU
+    Management --> WorkloadsOU
+```
+
+---
+
+## 5. 前提条件と事前準備
+
+### 必要な環境
+```bash
+# Terraform
+terraform --version  # 1.5以上
+
+# AWS CLI v2
+aws --version  # 2.x以上
+
+# Git
+git --version
+
+# jq（JSON処理）
+jq --version
+```
+
+### AWSアカウント要件
+```
+- AWS Organizations が有効化可能なアカウント
+- 管理者権限を持つIAMユーザーまたはロール
+- 請求情報へのアクセス権限
+- 新規アカウント作成権限
+```
+
+### 事前準備スクリプト
+```bash
+#!/bin/bash
+# setup-landing-zone.sh
+
+# 変数設定
+PROJECT_NAME="devboost"
+REGION="ap-northeast-1"
+
+# ディレクトリ構造の作成
+mkdir -p ${PROJECT_NAME}-landing-zone/{modules,environments,policies}
+cd ${PROJECT_NAME}-landing-zone
+
+# ディレクトリ構造
+cat << 'EOF'
+devboost-landing-zone/
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── providers.tf
+├── backend.tf
+├── modules/
+│   ├── organization/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── account/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── scp/
+│   │   ├── main.tf
+│   │   └── policies/
+│   │       ├── deny-root.json
+│   │       ├── require-imdsv2.json
+│   │       └── region-restriction.json
+│   ├── security-baseline/
+│   │   ├── main.tf
+│   │   ├── guardduty.tf
+│   │   ├── securityhub.tf
+│   │   └── config.tf
+│   └── logging/
+│       ├── main.tf
+│       ├── cloudtrail.tf
+│       └── s3.tf
+├── environments/
+│   ├── production/
+│   ├── staging/
+│   └── development/
+└── policies/
+    └── scp/
+EOF
+
+# AWS Organizations の状態確認
+echo "=== Checking AWS Organizations Status ==="
+aws organizations describe-organization 2>/dev/null || echo "Organizations not enabled yet"
+
+# 現在の認証情報確認
+echo "=== Current AWS Identity ==="
+aws sts get-caller-identity
+```
+
+---
+
+## 6. アーキテクチャ設計
+
+### OU（組織単位）設計
+```yaml
+# ou-design.yaml
+organizational_units:
+  root:
+    name: "Root"
+    scps:
+      - DenyLeaveOrganization
+      - RequireIMDSv2
+
+  security:
+    name: "Security"
+    purpose: "セキュリティ・監査機能の集約"
+    scps:
+      - DenyAllExceptSecurityServices
+    accounts:
+      - name: "log-archive"
+        email: "aws-log@devboost.example.com"
+        purpose: "CloudTrail, Config, VPCフローログの集約"
+      - name: "security-tooling"
+        email: "aws-security@devboost.example.com"
+        purpose: "GuardDuty, Security Hub, Detective"
+
+  infrastructure:
+    name: "Infrastructure"
+    purpose: "共有インフラストラクチャ"
+    scps:
+      - NetworkAdminOnly
+    accounts:
+      - name: "network"
+        email: "aws-network@devboost.example.com"
+        purpose: "Transit Gateway, VPN, Direct Connect"
+      - name: "shared-services"
+        email: "aws-shared@devboost.example.com"
+        purpose: "ECR, CI/CD, 共有ツール"
+
+  workloads:
+    name: "Workloads"
+    children:
+      production:
+        name: "Production"
+        scps:
+          - DenyDestructiveActions
+          - RequireTagging
+        accounts:
+          - name: "production"
+            email: "aws-prod@devboost.example.com"
+
+      non_production:
+        name: "Non-Production"
+        scps:
+          - BudgetLimit
+        accounts:
+          - name: "staging"
+            email: "aws-staging@devboost.example.com"
+          - name: "development"
+            email: "aws-dev@devboost.example.com"
+
+      sandbox:
+        name: "Sandbox"
+        scps:
+          - StrictBudgetLimit
+          - LimitedServices
+        accounts:
+          - name: "sandbox"
+            email: "aws-sandbox@devboost.example.com"
+```
+
+### SCP設計
+```yaml
+# scp-design.yaml
+service_control_policies:
+  # 全組織に適用
+  DenyLeaveOrganization:
+    description: "組織からの離脱を禁止"
+    effect: "DENY"
+    actions:
+      - "organizations:LeaveOrganization"
+
+  RequireIMDSv2:
+    description: "EC2でIMDSv2を必須化"
+    effect: "DENY"
+    actions:
+      - "ec2:RunInstances"
+    conditions:
+      StringNotEquals:
+        "ec2:MetadataHttpTokens": "required"
+
+  # 本番環境用
+  DenyDestructiveActions:
+    description: "破壊的操作の禁止"
+    effect: "DENY"
+    actions:
+      - "ec2:TerminateInstances"
+      - "rds:DeleteDBInstance"
+      - "s3:DeleteBucket"
+    conditions:
+      StringNotLike:
+        "aws:PrincipalArn": "arn:aws:iam::*:role/Admin*"
+
+  # 開発環境用
+  BudgetLimit:
+    description: "高額サービスの制限"
+    effect: "DENY"
+    actions:
+      - "ec2:RunInstances"
+    conditions:
+      ForAnyValue:StringLike:
+        "ec2:InstanceType":
+          - "*.metal"
+          - "*.24xlarge"
+          - "*.16xlarge"
+          - "p*.*"
+          - "g*.*"
+
+  # リージョン制限
+  RegionRestriction:
+    description: "許可リージョンの制限"
+    effect: "DENY"
+    not_actions:
+      - "iam:*"
+      - "organizations:*"
+      - "support:*"
+      - "budgets:*"
+    conditions:
+      StringNotEquals:
+        "aws:RequestedRegion":
+          - "ap-northeast-1"
+          - "us-east-1"  # グローバルサービス用
+```
 
 ---
 
 ## 8. トラブルシューティング課題
 
-### 問題1: SageMakerエンドポイントのレイテンシーが高い
+### 課題1: アカウント作成が失敗する
 
-**症状:**
+**症状**:
 ```
-推論に500ms以上かかる
-リアルタイム性が損なわれている
-```
-
-**ヒント:**
-1. インスタンスタイプが適切か確認
-2. コールドスタートの影響を確認
-3. バッチ推論の活用を検討
-
-**解決方法:**
-```python
-# バッチ推論の実装
-def batch_invoke(features_list: list) -> list:
-    """複数サンプルを1回のリクエストで推論"""
-    payload = '\n'.join([','.join(map(str, f)) for f in features_list])
-
-    response = sagemaker_runtime.invoke_endpoint(
-        EndpointName=ENDPOINT_NAME,
-        ContentType='text/csv',
-        Body=payload
-    )
-
-    result = json.loads(response['Body'].read())
-    return [s['score'] for s in result['scores']]
+Error: error creating Organizations Account: ConstraintViolationException:
+You have exceeded the allowed number of AWS accounts.
 ```
 
-### 問題2: 誤検知（False Positive）が多い
-
-**症状:**
-```
-正常な状態でもアラートが頻発
-現場から「オオカミ少年」状態の苦情
-```
-
-**ヒント:**
-1. 閾値の調整
-2. 特徴量エンジニアリングの見直し
-3. 時系列の考慮（急変 vs 緩やかな変化）
-
-**解決方法:**
-```python
-# 連続異常検出による誤検知抑制
-def check_consecutive_anomalies(equipment_id: str, current_score: float, window_size: int = 3) -> bool:
-    """連続して閾値を超えた場合のみアラート"""
-    # DynamoDBから直近のスコアを取得
-    recent_scores = get_recent_scores(equipment_id, window_size)
-    recent_scores.append(current_score)
-
-    # 全て閾値を超えている場合のみTrue
-    return all(s > ANOMALY_THRESHOLD for s in recent_scores[-window_size:])
-```
-
-### 問題3: モデル再学習後に性能が低下
-
-**症状:**
-```
-再学習後のモデルでRecallが低下
-既知の異常パターンを検出できなくなった
-```
-
-**ヒント:**
-1. 学習データの分布を確認
-2. 異常データの比率が適切か
-3. ハイパーパラメータの調整
-
-**解決方法:**
-```python
-# データバランシング
-def balance_training_data(df: pd.DataFrame, anomaly_ratio: float = 0.1) -> pd.DataFrame:
-    """異常データの比率を調整"""
-    normal = df[df['is_anomaly'] == 0]
-    anomaly = df[df['is_anomaly'] == 1]
-
-    target_anomaly_count = int(len(normal) * anomaly_ratio / (1 - anomaly_ratio))
-
-    if len(anomaly) < target_anomaly_count:
-        # アンダーサンプリングされた異常をオーバーサンプリング
-        anomaly = anomaly.sample(target_anomaly_count, replace=True)
-    else:
-        anomaly = anomaly.sample(target_anomaly_count)
-
-    return pd.concat([normal, anomaly]).sample(frac=1).reset_index(drop=True)
-```
-
----
-
-## 9. 設計の考察ポイント
-
-### 1. Random Cut Forest を選択した理由は？
-
-**考察ポイント:**
-- 教師なし学習 vs 教師あり学習
-- ストリーミングデータへの適応性
-- 解釈可能性（なぜ異常か説明できるか）
-- 代替: Isolation Forest, AutoEncoder, LSTM
-
-### 2. リアルタイム推論の必要性は？
-
-**考察ポイント:**
-- 秒単位の検知 vs 分単位のバッチ
-- コスト（エンドポイント常時起動）vs 価値
-- エッジでの推論（IoT Greengrass）の検討
-
-### 3. 閾値設計のアプローチは？
-
-**考察ポイント:**
-- 固定閾値 vs 動的閾値
-- 設備ごとの閾値カスタマイズ
-- ビジネスインパクト（見逃し vs 誤検知）
-
-### 4. MLOpsの成熟度は適切か？
-
-**考察ポイント:**
-- 手動 → 自動化 → 継続的学習
-- モデル監視（ドリフト検知）
-- A/Bテストによる段階的デプロイ
-
-### 5. エッジコンピューティングの検討
-
-**考察ポイント:**
-- レイテンシー要件が厳しい場合
-- ネットワーク障害時の可用性
-- IoT Greengrass + SageMaker Edge
-
----
-
-## 10. 発展課題（オプション）
-
-### 1. マルチモデル構成
-- 設備タイプ別のモデル
-- SageMaker Multi-Model Endpoint
-- モデルルーティング
-
-### 2. 特徴量ストアの導入
-- SageMaker Feature Store
-- リアルタイム/バッチ両対応
-- 特徴量の再利用
-
-### 3. 説明可能AI（XAI）
-- SHAP値の計算
-- 異常の原因説明
-- 保全担当者への情報提供
-
-### 4. エッジ推論
-- IoT Greengrass + SageMaker Edge
-- オフライン対応
-- 帯域幅削減
-
-### 5. 予測メンテナンススケジューリング
-- 残存寿命（RUL）予測
-- 保全計画の最適化
-- 部品在庫との連携
-
----
-
-## 11. 想定コストと削減方法
-
-### 月額概算コスト
-
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| SageMaker Endpoint | ml.t2.medium × 24h × 30日 | $50 |
-| SageMaker Training | ml.m5.large × 4回/月 × 1時間 | $4 |
-| Kinesis Data Streams | 2 シャード × 24h × 30日 | $22 |
-| Kinesis Firehose | 100GB/月 | $3 |
-| AWS Lambda | 200万回 × 500ms | $5 |
-| Amazon Timestream | 10GB 書き込み + 100GBストレージ | $30 |
-| Amazon DynamoDB | オンデマンド | $10 |
-| Amazon S3 | 50GB | $1 |
-| CloudWatch | ログ・メトリクス | $10 |
-| Step Functions | 4回/月 | $0.10 |
-| **合計** | | **約$135（約20,000円）** |
-
-### コスト削減のポイント
-
-1. **SageMaker Serverless Inference**
-   - トラフィックが少ない時間帯の自動スケールダウン
-   - → 最大50%削減
-
-2. **Kinesis On-Demand**
-   - トラフィックパターンが予測困難な場合
-   - シャード管理の自動化
-
-3. **Timestreamの階層化**
-   - メモリストア: 直近24時間
-   - マグネティックストア: 長期保存
-
-4. **スポットインスタンス（学習時）**
-   - SageMaker Training でスポット使用
-   - → 学習コスト70%削減
-
-### リソース削除手順
-
+**調査コマンド**:
 ```bash
-# SageMaker
-aws sagemaker delete-endpoint --endpoint-name techmfg-endpoint-dev
-aws sagemaker delete-endpoint-config --endpoint-config-name techmfg-endpoint-config-dev
-aws sagemaker delete-model --model-name techmfg-anomaly-model-dev
+# アカウント制限の確認
+aws organizations describe-organization
 
-# Kinesis
-aws kinesis delete-stream --stream-name techmfg-sensor-data-dev
-aws firehose delete-delivery-stream --delivery-stream-name techmfg-sensor-backup-dev
+# 既存アカウント数の確認
+aws organizations list-accounts --query 'Accounts[*].[Id,Name,Status]' --output table
 
-# Timestream
-aws timestream-write delete-table --database-name techmfg-sensor-db --table-name sensor_readings
-aws timestream-write delete-table --database-name techmfg-sensor-db --table-name anomaly_scores
-aws timestream-write delete-database --database-name techmfg-sensor-db
+# Service Quotas の確認
+aws service-quotas get-service-quota \
+    --service-code organizations \
+    --quota-code L-29A0C5DF
+```
 
-# DynamoDB
-aws dynamodb delete-table --table-name techmfg-alerts
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
 
-# Step Functions
-aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
+**原因**: Organizations のデフォルトアカウント制限（10）に達している
 
-# Lambda
-aws lambda delete-function --function-name techmfg-inference
-aws lambda delete-function --function-name techmfg-export-training-data
-aws lambda delete-function --function-name techmfg-evaluate-model
+**解決手順**:
+```bash
+# 1. Service Quotas でクォータ引き上げリクエスト
+aws service-quotas request-service-quota-increase \
+    --service-code organizations \
+    --quota-code L-29A0C5DF \
+    --desired-value 50
 
-# S3
-aws s3 rm s3://techmfg-data-bucket --recursive
-aws s3 rb s3://techmfg-data-bucket
+# 2. または、AWS サポートケースを作成
+# - カテゴリ: Service Limit Increase
+# - サービス: AWS Organizations
+# - 理由: ビジネス要件を記載
 
-# SNS
-aws sns delete-topic --topic-arn arn:aws:sns:...
+# 3. 待機中の対応策
+# - 不要なアカウントのクローズ検討
+# - アカウント統合の検討
+```
 
-# Terraform
-terraform destroy -auto-approve
+**追加確認事項**:
+- 閉鎖中のアカウントも制限にカウントされる（90日間）
+- アカウントメールの重複確認
+</details>
+
+### 課題2: SCP が意図通りに機能しない
+
+**症状**:
+```
+SCP でリージョン制限を設定したが、制限されているはずのリージョンで
+リソースが作成できてしまう。
+```
+
+**調査手順**:
+```bash
+# SCP のアタッチ状態確認
+aws organizations list-policies-for-target \
+    --target-id ou-xxxx-xxxxxxxx \
+    --filter SERVICE_CONTROL_POLICY
+
+# SCP の内容確認
+aws organizations describe-policy --policy-id p-xxxxxxxx
+
+# 対象アカウントの有効なポリシー確認
+aws organizations describe-effective-policy \
+    --target-id 123456789012 \
+    --policy-type SERVICE_CONTROL_POLICY
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: SCP の条件や NotAction の設定が不適切
+
+**解決手順**:
+```hcl
+# 1. NotAction の使用に注意
+# NotAction で指定したサービスは SCP の制限を受けない
+# グローバルサービスを適切に除外する
+
+resource "aws_organizations_policy" "region_restriction_fixed" {
+  name = "RegionRestrictionFixed"
+  type = "SERVICE_CONTROL_POLICY"
+
+  content = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyOtherRegions"
+        Effect    = "Deny"
+        NotAction = [
+          # グローバルサービスのみを除外
+          "iam:*",
+          "organizations:*",
+          "route53:*",
+          "cloudfront:*",
+          "waf:*",
+          "wafv2:*",
+          "globalaccelerator:*",
+          "support:*",
+          "budgets:*",
+          "ce:*",
+          "s3:GetBucketLocation",  # S3 は特定のアクションのみ除外
+          "s3:ListAllMyBuckets"
+        ]
+        Resource = "*"
+        Condition = {
+          StringNotEquals = {
+            "aws:RequestedRegion" = ["ap-northeast-1", "us-east-1"]
+          }
+        }
+      }
+    ]
+  })
+}
+
+# 2. SCP が OU に正しくアタッチされているか確認
+# 3. OU の階層構造を確認（親 OU の SCP も影響）
+# 4. マネジメントアカウントは SCP の対象外であることに注意
+```
+
+**テスト方法**:
+```bash
+# 制限されるべきリージョンでテスト
+aws ec2 describe-vpcs --region eu-west-1
+# Access Denied が返ることを確認
+```
+</details>
+
+### 課題3: クロスアカウントアクセスが機能しない
+
+**症状**:
+```
+Terraform で別アカウントにリソースを作成しようとすると
+Access Denied エラーが発生する。
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: AssumeRole の設定が不完全
+
+**解決手順**:
+```hcl
+# 1. Terraform provider でロールを指定
+provider "aws" {
+  alias  = "production"
+  region = "ap-northeast-1"
+
+  assume_role {
+    role_arn     = "arn:aws:iam::PRODUCTION_ACCOUNT_ID:role/OrganizationAccountAccessRole"
+    session_name = "TerraformSession"
+  }
+}
+
+# 2. Organizations 作成時のデフォルトロールを確認
+# アカウント作成時に OrganizationAccountAccessRole が自動作成される
+
+# 3. 信頼ポリシーの確認（対象アカウントで）
+aws iam get-role --role-name OrganizationAccountAccessRole
+
+# 4. 必要に応じて信頼ポリシーを更新
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::MANAGEMENT_ACCOUNT_ID:root"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+</details>
+
+---
+
+## 9. 設計課題
+
+### 設計課題: 50名規模への成長対応
+
+**シナリオ**:
+DevBoost社は1年後に従業員50名（エンジニア20名）への成長を計画しています。
+現在の Landing Zone 設計を拡張し、以下の要件に対応してください。
+
+**要件**:
+```
+1. チーム構成（想定）
+   - プラットフォームチーム: 5名
+   - プロダクトチームA: 5名
+   - プロダクトチームB: 5名
+   - データチーム: 3名
+   - SRE: 2名
+
+2. アクセス要件
+   - チームごとに専用の開発アカウント
+   - 本番環境は SRE + プラットフォームのみ
+   - データチームは分析環境のみ
+
+3. セキュリティ要件
+   - SOC2 Type II 準拠準備
+   - 監査ログの13ヶ月保持
+   - PII データの暗号化必須
+
+4. コスト要件
+   - チーム別コスト可視化
+   - 開発環境の予算制限（チームあたり月10万円）
+```
+
+**設計すべき項目**:
+- 拡張OU構造
+- IAM Identity Center の権限セット設計
+- 追加SCP
+- コスト配分戦略
+
+<details>
+<summary>設計例を見る</summary>
+
+### 拡張 OU 構造
+
+```mermaid
+flowchart TB
+    Root["Root"]
+
+    Root --> SecurityOU["Security OU"]
+    SecurityOU --> LogArchive["Log Archive Account"]
+    SecurityOU --> SecTooling["Security Tooling Account"]
+
+    Root --> InfraOU["Infrastructure OU"]
+    InfraOU --> NetworkAcc["Network Account"]
+    InfraOU --> SharedSvc["Shared Services Account"]
+
+    Root --> WorkloadsOU["Workloads OU"]
+    WorkloadsOU --> ProdOU["Production OU"]
+    ProdOU --> ProdAcc["Production Account"]
+
+    WorkloadsOU --> PreProdOU["Pre-Production OU"]
+    PreProdOU --> StagingAcc["Staging Account"]
+    PreProdOU --> QAAcc["QA Account"]
+
+    WorkloadsOU --> DevOU["Development OU"]
+    DevOU --> PlatformDev["Platform-Dev Account"]
+    DevOU --> ProductADev["ProductA-Dev Account"]
+    DevOU --> ProductBDev["ProductB-Dev Account"]
+    DevOU --> DataDev["Data-Dev Account"]
+
+    WorkloadsOU --> SandboxOU["Sandbox OU"]
+    SandboxOU --> SandboxAcc["Sandbox Account"]
+
+    Root --> AnalyticsOU["Analytics OU (New)"]
+    AnalyticsOU --> DataLakeAcc["Data Lake Account"]
+    AnalyticsOU --> BIAcc["BI Account"]
+```
+
+### IAM Identity Center 権限セット設計
+
+```yaml
+permission_sets:
+  # 管理者用
+  AdministratorAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+    session_duration: 4h
+    assignment:
+      - group: SRE
+        accounts: [All]
+      - group: PlatformTeam
+        accounts: [Infrastructure, Development OUs]
+
+  # 開発者用
+  DeveloperAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/PowerUserAccess
+    inline_policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Deny",
+            "Action": [
+              "iam:CreateUser",
+              "iam:CreateAccessKey",
+              "organizations:*"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    session_duration: 8h
+    assignment:
+      - group: ProductTeamA
+        accounts: [ProductA-Dev]
+      - group: ProductTeamB
+        accounts: [ProductB-Dev]
+
+  # 読み取り専用
+  ViewOnlyAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/ViewOnlyAccess
+    session_duration: 8h
+    assignment:
+      - group: AllDevelopers
+        accounts: [Production]
+
+  # データ分析用
+  DataAnalystAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+      - arn:aws:iam::aws:policy/AmazonRedshiftReadOnlyAccess
+    inline_policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:ListBucket"
+            ],
+            "Resource": [
+              "arn:aws:s3:::*-data-lake-*",
+              "arn:aws:s3:::*-data-lake-*/*"
+            ]
+          }
+        ]
+      }
+    assignment:
+      - group: DataTeam
+        accounts: [Data Lake, BI]
+```
+
+### コスト配分戦略
+
+```yaml
+cost_allocation:
+  # 必須タグ
+  mandatory_tags:
+    - Team
+    - Environment
+    - CostCenter
+    - Project
+
+  # Budget 設定
+  budgets:
+    - name: ProductA-Dev-Monthly
+      amount: 100000  # 10万円
+      filter:
+        account: ProductA-Dev
+      alerts:
+        - threshold: 80
+          action: notify
+        - threshold: 100
+          action: [notify, restrict_expensive_services]
+
+    - name: ProductB-Dev-Monthly
+      amount: 100000
+      filter:
+        account: ProductB-Dev
+      alerts:
+        - threshold: 80
+          action: notify
+        - threshold: 100
+          action: [notify, restrict_expensive_services]
+
+  # Cost Categories
+  cost_categories:
+    - name: Team
+      rules:
+        - value: Platform
+          match: Account IN [Platform-Dev, Shared-Services, Network]
+        - value: ProductA
+          match: Account IN [ProductA-Dev] OR Tag:Team = ProductA
+        - value: ProductB
+          match: Account IN [ProductB-Dev] OR Tag:Team = ProductB
+        - value: Data
+          match: Account IN [Data-Dev, Data-Lake, BI]
+```
+
+</details>
+
+---
+
+## 10. 発展課題
+
+### 発展課題1: Control Tower の導入（難易度：中級）
+
+**課題内容**:
+現在の Terraform ベースの Landing Zone を AWS Control Tower に移行し、
+ガードレールと Account Factory を活用してください。
+
+**要件**:
+- 既存アカウントの Control Tower への登録
+- カスタムガードレールの作成
+- Account Factory Customization (AFC) の設定
+
+### 発展課題2: GitOps によるアカウント管理（難易度：上級）
+
+**課題内容**:
+新規アカウント作成をGitOps で管理し、PR ベースの承認フローを実装してください。
+
+**要件**:
+- GitHub/GitLab リポジトリでアカウント定義を管理
+- PR 作成 → レビュー → マージで自動プロビジョニング
+- Terraform Cloud / Atlantis の活用
+
+### 発展課題3: FinOps 基盤の構築（難易度：中級）
+
+**課題内容**:
+組織全体のコスト可視化と最適化を自動化する FinOps 基盤を構築してください。
+
+**要件**:
+- Cost and Usage Report の設定と分析
+- 異常コスト検知の自動化
+- 月次コストレポートの自動配信
+
+---
+
+## 11. 振り返りと次のステップ
+
+### 学習のまとめ
+
+```
+本課題で学んだこと:
+□ AWS Organizations によるマルチアカウント管理
+□ OU 設計とベストプラクティス
+□ SCP による権限境界の設定
+□ IAM Identity Center による統合 ID 管理
+□ Terraform でのマルチアカウントプロビジョニング
+□ 組織レベルのセキュリティ・監査基盤
+
+GCP との主な違い:
+- アカウント vs プロジェクトの粒度の違い
+- SCP は Organization Policy より IAM 統合が深い
+- Control Tower という Landing Zone ソリューション
+```
+
+### GCP経験者向けポイント
+
+| 観点 | GCP | AWS | 移行時の注意 |
+|------|-----|-----|-------------|
+| 階層構造 | Folders | Organizational Units | OU は移動可能だが制限あり |
+| ポリシー | Organization Policies | SCP | SCP は許可ではなく境界を設定 |
+| ID 管理 | Cloud Identity | IAM Identity Center | SCIM 連携の設定が異なる |
+| 請求 | Billing Account | 一括請求 | 支払いアカウントは1つ |
+| ログ集約 | Log Router | CloudTrail 組織トレイル | 設定方法が異なる |
+
+### 推奨される次のステップ
+
+```
+1. AWS Certified Solutions Architect Associate
+   - Organizations の詳細理解
+
+2. Control Tower の学習
+   - マネージドな Landing Zone
+
+3. 実環境での適用
+   - 段階的な移行計画の策定
+   - チームへの教育
+
+4. 関連課題への挑戦
+   - 課題32: マルチリージョン構成
+   - 課題40: IAM Identity Center 統合
 ```
 
 ---
 
-## 12. 学習のポイント
+## 12. 推定コストと注意事項
 
-### 1. 時系列異常検知の基礎
-Random Cut Forest は教師なし学習で異常検知を行うアルゴリズム。ストリーミングデータに適しており、SageMaker の組み込みアルゴリズムとして利用可能。
+### 本課題の推定コスト
 
-### 2. MLOpsパイプラインの設計
-モデルの学習 → 評価 → デプロイの自動化サイクルを Step Functions で構築。性能基準を満たさないモデルはデプロイしない「品質ゲート」を設ける。
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| Organizations | 管理機能 | 無料 |
+| CloudTrail | 組織トレイル | $2-5/月 |
+| Config | ルール評価 | $2-5/月 |
+| S3 | ログ保存 | $1-2/月 |
+| IAM Identity Center | ユーザー管理 | 無料 |
+| **合計** | | **$5-15/月** |
 
-### 3. リアルタイム推論アーキテクチャ
-Kinesis → Lambda → SageMaker Endpoint の構成は、IoT/ストリーミングデータのリアルタイム推論の典型パターン。
+### 注意事項
 
-### 4. 閾値設計の重要性
-異常検知では、誤検知（False Positive）と見逃し（False Negative）のトレードオフを理解し、ビジネス要件に合った閾値を設計する。
+```
+⚠️ Organizations の有効化
+- 一度有効化すると、完全な無効化は困難
+- 既存のアカウント構造に影響
 
-### 5. 予知保全（PdM）の価値
-故障を予測して事前に保全することで、計画外停止を減らし、保全コストを最適化できる。製造業DXの重要なユースケース。
+⚠️ アカウント作成
+- アカウント作成には一意のメールアドレスが必要
+- 作成後のメールアドレス変更は不可
+- アカウントのクローズには90日の待機期間
+
+⚠️ SCP の適用
+- マネジメントアカウントには SCP が適用されない
+- SCP は許可を与えない（IAM との AND 条件）
+- テスト環境で十分な検証後に適用
+
+⚠️ 本番環境への適用
+- 段階的に適用（Sandbox → Dev → Staging → Prod）
+- ロールバック計画を準備
+- チームへの事前周知
+```
+
+---
+
+**課題作成日**: 2024年1月
+**最終更新日**: 2024年1月
+**作成者**: AWS学習プログラム

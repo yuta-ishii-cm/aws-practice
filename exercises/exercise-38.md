@@ -1,4 +1,4 @@
-# 課題38: SaaS企業のマルチテナント基盤構築
+# 課題38: TeamHub - マルチテナントSaaS認証基盤
 
 **難易度: 🟡 中級**
 
@@ -9,941 +9,705 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | コンテナ |
+| カテゴリ | 認証・認可 / セキュリティ |
 | 処理タイプ | リアルタイム |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-8時間 |
+| 使用IaC | CDK |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. シナリオ
 
+BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可システムを AWS CDK で構築します。テナント分離、ロールベースアクセス制御（RBAC）、テナント管理機能を実装し、セキュアなマルチテナントSaaSアーキテクチャを学びます。
+
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | TaskFlow株式会社 |
-| **業種** | プロジェクト管理SaaS |
-| **従業員数** | 80名（エンジニア35名） |
-| **テナント数** | 500社（月額利用料ベースで収益化） |
-| **月間リクエスト** | 5000万リクエスト |
-| **データ量** | テナント平均5GB、合計2.5TB |
+| 企業名 | 〇〇株式会社 |
+| 業種 | BtoB SaaS（プロジェクト管理ツール） |
+| テナント数 | 100社 |
+| 総ユーザー数 | 5,000名 |
+| テナント規模 | 小規模（10名以下）〜大規模（500名） |
+| 課題 | テナント間のデータ分離とセキュリティ確保 |
 
-### 現状の課題
+### 達成目標（white hat KPI）
 
-```
-TaskFlow株式会社は急成長するプロジェクト管理SaaSを提供しています。
-現在は全テナントが同一のEC2インスタンス群で稼働していますが、
-以下の課題が顕在化しています：
-
-1. テナント間のリソース競合
-   - 大規模テナントが他テナントの性能に影響
-   - ピーク時に応答時間が5秒以上に悪化
-
-2. セキュリティ懸念
-   - テナント間のデータ分離が不十分
-   - コンプライアンス要件（ISO27001）対応の必要性
-
-3. 運用効率の低下
-   - テナントごとのカスタマイズ要求への対応困難
-   - スケーリングが粗粒度で非効率
-
-4. データベース接続管理
-   - コネクションプール枯渇が頻発
-   - フェイルオーバー時の接続切れ
-```
-
-### ビジネス目標
-
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| P99レイテンシ | 5秒 | 500ms以下 |
-| テナント分離レベル | なし | Namespace + ネットワークポリシー |
-| DB接続効率 | 直接接続（コネクション枯渇） | RDS Proxy経由（プーリング） |
-| デプロイ頻度 | 週1回 | 1日複数回（テナント単位） |
-| リソース効率 | 平均CPU使用率30% | 平均60%以上 |
+| KPI | 目標値 | 測定方法 |
+|-----|--------|----------|
+| テナント分離 | 100% | クロステナントアクセス試行のブロック率 |
+| 認証成功率 | 99.9% | 正当なリクエストの認証成功率 |
+| 認可レイテンシ | < 50ms | カスタム認可処理の平均応答時間 |
+| テナントオンボーディング | < 5分 | 新規テナント作成の所要時間 |
 
 ---
 
-## 3. 達成目標（ゴール）
-
-### 主要な学習成果
-
-```
-この課題を完了すると、以下ができるようになります：
-
-1. EKS基盤の構築とマルチテナント設計
-   - Namespaceによるテナント分離
-   - ResourceQuotaとLimitRangeの適用
-   - NetworkPolicyによるネットワーク分離
-
-2. Istioによるサービスメッシュの実装
-   - トラフィック管理とルーティング
-   - 相互TLS（mTLS）による通信暗号化
-   - テナントごとのレート制限
-
-3. RDS Proxyによるデータベース接続最適化
-   - コネクションプーリング
-   - IAM認証の統合
-   - フェイルオーバー時の接続維持
-
-4. 可観測性の確立
-   - テナント別のメトリクス収集
-   - 分散トレーシング（Jaeger）
-   - Kialiによるサービスメッシュ可視化
-```
-
-### 合格基準
-
-| 項目 | 基準 |
-|------|------|
-| テナント分離 | NetworkPolicyでテナント間通信がブロックされること |
-| mTLS | すべてのサービス間通信がmTLS化されること |
-| DB接続 | RDS Proxy経由で接続プーリングが機能すること |
-| レート制限 | テナントごとのAPI制限が正しく適用されること |
-| 監視 | テナント別のダッシュボードが作成されること |
-
----
-
-## 4. 使用するAWSサービス
-
-### コア技術スタック
-
-```yaml
-Kubernetes基盤:
-  - Amazon EKS: Kubernetes クラスター
-  - Amazon ECR: コンテナイメージレジストリ
-  - AWS Load Balancer Controller: ALB/NLB 統合
-
-サービスメッシュ:
-  - Istio: サービスメッシュ制御
-  - Envoy: データプレーン
-  - Kiali: サービスメッシュ可視化
-  - Jaeger: 分散トレーシング
-
-データベース:
-  - Amazon RDS (PostgreSQL): マルチテナントDB
-  - Amazon RDS Proxy: 接続プーリング
-  - AWS Secrets Manager: 認証情報管理
-
-セキュリティ:
-  - AWS IAM: 認証・認可
-  - Amazon VPC: ネットワーク分離
-  - AWS WAF: Webアプリケーション保護
-  - AWS Certificate Manager: TLS証明書
-
-監視・運用:
-  - Amazon CloudWatch: ログ・メトリクス
-  - Container Insights: コンテナ監視
-  - Prometheus: メトリクス収集
-  - Grafana: ダッシュボード
-```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| Kubernetesマネージド | EKS | GKE |
-| サービスメッシュ | Istio on EKS / App Mesh | Anthos Service Mesh |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| コンテナレジストリ | ECR | Artifact Registry |
-| ロードバランサ統合 | ALB Ingress Controller | GKE Ingress |
-
----
-
-## 5. 前提条件
-
-### 技術要件
-
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
-kubectl version        # 1.28+
-eksctl version         # 0.160+
-istioctl version       # 1.20+
-helm version           # 3.12+
-
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export CLUSTER_NAME=taskflow-eks
-```
-
-### 事前準備
-
-```bash
-# 1. VPC CIDR設計
-# - VPC: 10.0.0.0/16
-# - Public Subnets: 10.0.0.0/20, 10.0.16.0/20, 10.0.32.0/20
-# - Private Subnets: 10.0.128.0/20, 10.0.144.0/20, 10.0.160.0/20
-# - DB Subnets: 10.0.200.0/24, 10.0.201.0/24, 10.0.202.0/24
-
-# 2. ECRリポジトリ作成
-aws ecr create-repository --repository-name taskflow/api-gateway
-aws ecr create-repository --repository-name taskflow/project-service
-aws ecr create-repository --repository-name taskflow/user-service
-aws ecr create-repository --repository-name taskflow/task-service
-```
-
----
-
-## 6. アーキテクチャ図
-
-### 全体構成
+## 2. アーキテクチャ図
 
 ```mermaid
 architecture-beta
-    group internet(cloud)[Internet]
-    group edge(server)[Edge Layer]
-    group eks(cloud)[EKS Cluster]
-    group mesh(server)[Istio Service Mesh mTLS] in eks
-    group tenant_a(server)[Namespace: tenant-enterprise-a] in mesh
-    group tenant_b(server)[Namespace: tenant-standard-b] in mesh
-    group shared(server)[Namespace: shared-services] in mesh
-    group monitoring(server)[Namespace: monitoring] in eks
-    group data(database)[Data Layer]
+    group teamhub(cloud)[TeamHub マルチテナント認証アーキテクチャ]
 
-    service user(internet)[User] in internet
-    service waf(server)[AWS WAF Rate Limiting] in edge
-    service alb(server)[Application Load Balancer] in edge
+    group tenants(cloud)[Tenants] in teamhub
+    group cognito(server)[Amazon Cognito] in teamhub
+    group triggers(server)[Lambda Triggers] in teamhub
+    group api(server)[API Layer] in teamhub
+    group backend(server)[Backend Services] in teamhub
+    group data(database)[Data Layer] in teamhub
+    group portal(server)[Management Portal] in teamhub
 
-    service istio_ingress(server)[Istio Ingress Gateway] in eks
+    service tenant_a(internet)[Tenant A Users] in tenants
+    service tenant_b(internet)[Tenant B Users] in tenants
+    service tenant_c(internet)[Tenant C Users] in tenants
 
-    service project_a(server)[Project Service Envoy] in tenant_a
-    service task_a(server)[Task Service Envoy] in tenant_a
-    service user_a(server)[User Service Envoy] in tenant_a
+    service userpool(server)[Cognito User Pool] in cognito
 
-    service project_b(server)[Project Service] in tenant_b
-    service task_b(server)[Task Service] in tenant_b
-    service user_b(server)[User Service] in tenant_b
+    service pre_signup(server)[Pre-SignUp Trigger] in triggers
+    service post_auth(server)[Post-Auth Trigger] in triggers
+    service pre_token(server)[Pre-Token Generation] in triggers
 
-    service auth_svc(server)[Auth Service] in shared
-    service billing_svc(server)[Billing Service] in shared
-    service notif_svc(server)[Notification Service] in shared
+    service apigw(server)[API Gateway] in api
+    service authorizer(server)[Lambda Authorizer JWT RBAC] in api
 
-    service prometheus(server)[Prometheus] in monitoring
-    service grafana(server)[Grafana] in monitoring
-    service kiali(server)[Kiali] in monitoring
-    service jaeger(server)[Jaeger] in monitoring
+    service project_svc(server)[Project Service Lambda] in backend
+    service task_svc(server)[Task Service Lambda] in backend
+    service team_svc(server)[Team Service Lambda] in backend
 
-    service rds_proxy(database)[RDS Proxy Connection Pool] in data
-    service rds(database)[RDS PostgreSQL Multi-AZ] in data
+    service dynamodb(database)[DynamoDB Single Table] in data
+    service tenant_meta(database)[Tenant Metadata Table] in data
 
-    user:B --> T:waf
-    waf:B --> T:alb
-    alb:B --> T:istio_ingress
-    istio_ingress:B --> T:project_a
-    istio_ingress:B --> T:project_b
-    project_a:B --> T:rds_proxy
-    project_b:B --> T:rds_proxy
-    rds_proxy:B --> T:rds
+    service admin_ui(server)[Tenant Admin UI] in portal
+    service user_mgmt(server)[User Management] in portal
+    service usage_dash(server)[Usage Dashboard] in portal
+
+    tenant_a:B --> T:userpool
+    tenant_b:B --> T:userpool
+    tenant_c:B --> T:userpool
+    userpool:B --> T:pre_signup
+    userpool:B --> T:post_auth
+    userpool:B --> T:pre_token
+    pre_token:B --> T:authorizer
+    authorizer:B --> T:project_svc
+    authorizer:B --> T:task_svc
+    authorizer:B --> T:team_svc
+    project_svc:B --> T:dynamodb
+    task_svc:B --> T:dynamodb
+    team_svc:B --> T:dynamodb
 ```
 
-**Tenant Isolation:**
-- Namespace: 論理的分離
-- NetworkPolicy: deny-all + allow-same-tenant
-- ResourceQuota: Enterprise (CPU 4, Memory 8Gi), Standard (CPU 2, Memory 4Gi)
-- mTLS: 通信暗号化
-- PostgreSQL Schema: tenant_a, tenant_b, shared (Row Level Security)
+**Custom Attributes:** tenant_id (必須), tenant_role (admin/manager/member), tenant_tier (free/standard/enterprise)
 
-### データフロー
+**Lambda Authorizer:** JWT検証、テナントコンテキスト抽出、RBAC権限チェック、リソースレベル認可
 
-```
-1. リクエストフロー
-   Internet → WAF → ALB → Istio Ingress Gateway
-   → VirtualService (ルーティング) → Tenant Namespace
-   → Envoy Sidecar (mTLS) → Application Pod
+**DynamoDB Single Table Design:** PK: TENANT#X, SK: PROJECT#/TASK# (Tenant Partition)
 
-2. データベースアクセス
-   Application Pod → RDS Proxy (IAM認証)
-   → コネクションプール → PostgreSQL
-   → テナント別スキーマ (Row Level Security)
+### RBACモデル
 
-3. テナント間分離
-   - Namespace: 論理的分離
-   - NetworkPolicy: ネットワーク分離
-   - ResourceQuota: リソース分離
-   - mTLS: 通信暗号化
-   - RLS: データ分離
+```mermaid
+flowchart TB
+    subgraph platform[Platform Level - Super Admin]
+        admin[platform:admin<br/>テナント作成/削除<br/>システム設定管理<br/>全テナントのモニタリング]
+    end
+
+    subgraph tenant[Tenant Level]
+        tadmin[tenant:admin<br/>テナント設定管理<br/>ユーザー招待/削除<br/>ロール割り当て<br/>全リソースへのフルアクセス]
+        manager[tenant:manager<br/>プロジェクト作成/編集<br/>タスク管理<br/>チームメンバー管理<br/>レポート閲覧]
+        member[tenant:member<br/>割り当てタスクの閲覧/更新<br/>コメント投稿<br/>自分のプロファイル管理]
+        guest[tenant:guest read-only<br/>プロジェクト閲覧のみ<br/>コメント閲覧のみ]
+    end
+
+    admin --> tadmin
+    tadmin --> manager
+    manager --> member
+    member --> guest
 ```
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 3. 前提知識
 
-### Challenge 1: テナント間通信が発生している
+### 3.1 マルチテナントアーキテクチャ
 
+GCPでのマルチテナント経験がある方向けの比較：
+
+| 観点 | GCP | AWS |
+|------|-----|-----|
+| 認証基盤 | Firebase Authentication | Cognito User Pool |
+| カスタムクレーム | Custom Claims | Custom Attributes + Pre Token Generation |
+| テナント分離 | Identity Platform Multi-tenancy | Cognito + Custom Lambda |
+| RBAC | Custom Claims based | Groups + Custom Attributes |
+
+### 3.2 テナント分離パターン
+
+```mermaid
+flowchart TB
+    subgraph silo[1. Silo Model 完全分離]
+        direction TB
+        subgraph siloA[Tenant A]
+            poolA[User Pool A] --> dbA[Database A]
+        end
+        subgraph siloB[Tenant B]
+            poolB[User Pool B] --> dbB[Database B]
+        end
+        subgraph siloC[Tenant C]
+            poolC[User Pool C] --> dbC[Database C]
+        end
+    end
+    siloNote[✓ 完全分離  ✗ コスト高  ✗ 管理複雑]
+
+    subgraph pool[2. Pool Model 共有+論理分離 - 本課題で採用]
+        direction TB
+        sharedPool[Shared Cognito User Pool<br/>User tenant_id=A / B / C]
+        sharedPool --> authorizer[Lambda Authorizer<br/>tenant context]
+        sharedPool --> dynamodb[DynamoDB<br/>partition by tenant_id]
+    end
+    poolNote[✓ コスト効率  ✓ 管理容易  △ 分離はアプリケーション責務]
+
+    subgraph bridge[3. Bridge Model ハイブリッド]
+        direction LR
+        subgraph enterprise[Enterprise Tenants - Silo]
+            dedA[Dedicated Tenant A]
+            dedB[Dedicated Tenant B]
+        end
+        subgraph standard[Standard Tenants - Pool]
+            shared[Shared Infrastructure<br/>Tenants C, D, E...]
+        end
+    end
+    bridgeNote[✓ 柔軟性  ✓ エンタープライズ対応  △ 複雑性増加]
 ```
-問題:
-あるテナントのPodから別テナントのサービスにリクエストが到達している。
-NetworkPolicyが正しく機能していないようだ。
 
-ログ:
-kubectl logs -n tenant-acme-corp deploy/project-service
-[ERROR] Unexpected response from tenant-small-biz namespace
+---
 
-調査項目:
-1. NetworkPolicyの適用状態
-2. Istio Sidecarの状態
-3. DNS解決の挙動
+## 6. 課題
+
+### 6.1 ハンズオン課題
+
+#### 課題1: テナントティア別の機能制限（難易度：初級）
+
+**目標**: テナントの契約プランに応じて利用可能な機能を制限する
+
+**要件**:
+- Freeプラン: 基本機能のみ
+- Standardプラン: レポート機能追加
+- Enterpriseプラン: 監査ログ、SSO対応
+
+**実装ポイント**:
+```typescript
+// テナントティアによる機能フラグの例
+const TIER_FEATURES: Record<string, string[]> = {
+  free: ['projects', 'tasks', 'basic-reports'],
+  standard: ['projects', 'tasks', 'advanced-reports', 'integrations'],
+  enterprise: ['projects', 'tasks', 'advanced-reports', 'integrations', 'audit-logs', 'sso', 'custom-branding'],
+};
 ```
+
+**確認方法**:
+- Freeプランのテナントが高度なレポート機能にアクセスしようとすると403エラーが返ること
+- Enterpriseプランのテナントは全機能にアクセスできること
+
+---
+
+#### 課題2: ユーザー招待フロー（難易度：中級）
+
+**目標**: テナント管理者が新規ユーザーを招待するフローを実装する
+
+**要件**:
+- 招待メールの送信
+- 招待リンクの有効期限管理（48時間）
+- 招待の承認/拒否
+- 招待状況のトラッキング
+
+**実装の流れ**:
+1. 招待レコードをDynamoDBに作成
+2. 招待コード付きのリンクを含むメールを送信
+3. ユーザーがリンクをクリックしてパスワード設定
+4. Cognito Pre-SignUpトリガーで招待コードを検証
+
+---
+
+#### 課題3: リソースレベル認可（難易度：中級〜上級）
+
+**目標**: プロジェクト単位でのアクセス制御を実装する
+
+**要件**:
+- プロジェクトごとにアクセス可能なユーザーを設定
+- プロジェクトオーナー、メンバー、閲覧者の権限レベル
+- チーム単位でのアクセス権付与
+
+**データモデル**:
+```
+PK: TENANT#A#PROJECT#001
+SK: ACCESS#USER#alice
+Data: { role: "owner", grantedAt: "...", grantedBy: "..." }
+
+PK: TENANT#A#PROJECT#001
+SK: ACCESS#TEAM#engineering
+Data: { role: "member", grantedAt: "...", grantedBy: "..." }
+```
+
+---
+
+### 6.2 トラブルシューティング課題
+
+#### 問題1: クロステナントアクセス
+
+**症状**: テナントAのユーザーがテナントBのデータを取得できてしまう
+
+**調査のヒント**:
+1. Lambda Authorizerのログを確認
+2. トークンに含まれるtenant_idクレームを確認
+3. APIバックエンドのテナントIDフィルタリングを確認
 
 <details>
-<summary>解決のヒント</summary>
+<summary>原因と解決策</summary>
 
-```bash
-# 1. NetworkPolicy確認
-kubectl get networkpolicy -n tenant-acme-corp
-kubectl describe networkpolicy default-deny-all -n tenant-acme-corp
+**原因**: バックエンドのLambda関数でテナントIDのフィルタリングが漏れていた
 
-# 2. ポリシー適用テスト
-kubectl run test-pod --image=busybox -n tenant-acme-corp --rm -it -- \
-  wget -qO- http://task-service.tenant-small-biz.svc.cluster.local/health
+```typescript
+// 問題のあるコード
+const result = await dynamodb.send(new QueryCommand({
+  TableName: TABLE_NAME,
+  KeyConditionExpression: 'PK = :pk',
+  ExpressionAttributeValues: {
+    ':pk': { S: `PROJECT#${projectId}` }, // テナントIDがない
+  },
+}));
 
-# 3. Istio設定確認
-istioctl analyze -n tenant-acme-corp
-kubectl get peerauthentication -A
-
-# 4. 根本原因: NetworkPolicyはIstioのmTLSをバイパスする可能性
-# 解決: AuthorizationPolicyを追加
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-other-tenants
-  namespace: tenant-acme-corp
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            notNamespaces:
-              - tenant-acme-corp
-              - istio-system
-              - shared-services
+// 修正後
+const tenantId = event.requestContext.authorizer?.tenantId;
+const result = await dynamodb.send(new QueryCommand({
+  TableName: TABLE_NAME,
+  KeyConditionExpression: 'PK = :pk',
+  ExpressionAttributeValues: {
+    ':pk': { S: `TENANT#${tenantId}#PROJECT#${projectId}` },
+  },
+}));
 ```
 </details>
 
-### Challenge 2: RDS Proxy接続エラー
+---
 
-```
-問題:
-アプリケーションからRDS Proxyへの接続が断続的に失敗する。
-IAM認証を使用しているが、認証エラーが発生。
+#### 問題2: トークン内のカスタムクレームが欠落
 
-エラーログ:
-FATAL: PAM authentication failed for user "project_service"
-Connection timed out after 30000ms
+**症状**: ログイン後のトークンにtenant_idやpermissionsが含まれていない
 
-環境:
-- EKS 1.28
-- RDS Proxy (PostgreSQL)
-- IRSA設定済み
-```
+**調査のヒント**:
+1. Pre-Token Generationトリガーのログを確認
+2. トリガーがUser Poolに正しく設定されているか確認
+3. トリガー関数の実行ロールを確認
 
 <details>
-<summary>解決のヒント</summary>
+<summary>原因と解決策</summary>
 
+**原因1**: Pre-Token Generationトリガーの設定ミス
 ```bash
-# 1. ServiceAccountのIAMロール確認
-kubectl describe sa project-service-sa -n tenant-acme-corp
-# Annotationsにeks.amazonaws.com/role-arnがあるか
-
-# 2. Pod内でIAM認証テスト
-kubectl exec -it deploy/project-service -n tenant-acme-corp -- bash
-aws sts get-caller-identity
-# 期待するロールが返されるか確認
-
-# 3. RDS Proxy IAMポリシー確認
-aws rds describe-db-proxy --db-proxy-name taskflow-proxy
-
-# 4. 接続トークン生成テスト
-aws rds generate-db-auth-token \
-  --hostname taskflow-proxy.proxy-xxx.ap-northeast-1.rds.amazonaws.com \
-  --port 5432 \
-  --username project_service
-
-# 5. 根本原因の可能性
-# - OIDC Providerの信頼関係設定ミス
-# - rds-db:connect権限のリソースARN形式が不正
-# - Proxyユーザー名とDBユーザー名の不一致
-
-# 修正例: IAMポリシーのリソースARN
-{
-  "Effect": "Allow",
-  "Action": "rds-db:connect",
-  "Resource": "arn:aws:rds-db:ap-northeast-1:ACCOUNT:dbuser:PROXY_RESOURCE_ID/project_service"
-}
-# PROXY_RESOURCE_IDはaws rds describe-db-proxiesで確認
-```
-</details>
-
-### Challenge 3: Istio Ingress Gatewayのレイテンシ増加
-
-```
-問題:
-特定の時間帯にIstio Ingress Gatewayのレイテンシが急増。
-P99が2秒を超えることがある。
-
-メトリクス:
-- Envoy upstream_rq_time: 50ms (正常)
-- Istio gateway total_time: 2000ms+ (異常)
-- Pod CPU/Memory: 正常範囲
-
-影響:
-- 全テナントで応答遅延
-- タイムアウトエラー発生
+# トリガーの設定確認
+aws cognito-idp describe-user-pool \
+  --user-pool-id $USER_POOL_ID \
+  --query 'UserPool.LambdaConfig'
 ```
 
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. Ingress Gateway Pod状態確認
-kubectl get pods -n istio-system -l istio=ingressgateway
-kubectl top pods -n istio-system
-
-# 2. Envoyスタッツ確認
-kubectl exec -it deploy/istio-ingressgateway -n istio-system -- \
-  curl localhost:15000/stats | grep -E "(cx_active|rq_pending)"
-
-# 3. HPA状態確認
-kubectl get hpa -n istio-system
-
-# 4. コネクションプール設定確認
-istioctl proxy-config cluster deploy/istio-ingressgateway -n istio-system
-
-# 5. 根本原因: Connection Pool枯渇
-# 解決: DestinationRuleでコネクションプール調整
-
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: gateway-pool-settings
-  namespace: istio-system
-spec:
-  host: "*.svc.cluster.local"
-  trafficPolicy:
-    connectionPool:
-      tcp:
-        maxConnections: 1000
-        connectTimeout: 10s
-      http:
-        http1MaxPendingRequests: 500
-        http2MaxRequests: 2000
-        maxRequestsPerConnection: 100
-        maxRetries: 3
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 10s
-      baseEjectionTime: 30s
-
-# 6. HPAのスケール設定強化
-kubectl patch hpa istio-ingressgateway -n istio-system --type='merge' -p '
-{
-  "spec": {
-    "minReplicas": 3,
-    "maxReplicas": 15,
-    "metrics": [
-      {
-        "type": "Resource",
-        "resource": {
-          "name": "cpu",
-          "target": {
-            "type": "Utilization",
-            "averageUtilization": 60
-          }
-        }
-      }
-    ]
+**原因2**: Lambda関数の戻り値形式が不正
+```typescript
+// 不正な形式
+event.response.claimsOverrideDetails = {
+  claimsToAddOrOverride: {
+    tenant_id: tenantId, // IDトークンには追加されるがアクセストークンには追加されない
   }
-}'
+};
+
+// 正しい形式（アクセストークンにも追加）
+event.response.claimsOverrideDetails = {
+  claimsToAddOrOverride: {
+    tenant_id: tenantId,
+  },
+  // V2トリガーを使用している場合
+  accessTokenGeneration: {
+    claimsToAddOrOverride: {
+      tenant_id: tenantId,
+    },
+  },
+};
 ```
 </details>
 
 ---
 
-## 9. 設計考慮ポイント
+#### 問題3: 認可エラーでAPIが403を返す
 
-### マルチテナント分離戦略
+**症状**: 正しい権限を持つユーザーでも403エラーが返される
 
-```yaml
-分離レベルの選択肢:
+**調査のヒント**:
+1. Authorizerのキャッシュを確認
+2. 権限マッピングの定義を確認
+3. パスパラメータの正規化ロジックを確認
 
-1. Namespace分離（本課題で採用）:
-   メリット:
-     - 論理的分離でコスト効率が良い
-     - Kubernetes標準機能で実現可能
-     - テナント追加が容易
-   デメリット:
-     - 完全な分離ではない
-     - ノイジーネイバー問題のリスク
+<details>
+<summary>原因と解決策</summary>
 
-   適用ケース:
-     - 信頼できるテナント（B2B SaaS）
-     - コスト重視の中小規模テナント
+**原因**: Authorizerのキャッシュが古いポリシーを返している
 
-2. Cluster分離:
-   メリット:
-     - 完全なリソース分離
-     - コンプライアンス要件に対応
-   デメリット:
-     - 運用コスト高
-     - クラスター間連携が複雑
+```bash
+# キャッシュの無効化（API Gateway設定変更）
+aws apigateway update-authorizer \
+  --rest-api-id <api-id> \
+  --authorizer-id <authorizer-id> \
+  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=0
 
-   適用ケース:
-     - 金融・医療などの規制業種
-     - 大規模エンタープライズテナント
-
-3. ハイブリッド分離:
-   メリット:
-     - テナントTierに応じた柔軟な対応
-     - コストとセキュリティのバランス
-   デメリット:
-     - 設計・運用の複雑さ
-
-   適用ケース:
-     - 多様なテナント要件（本課題）
+# 本番では適切なTTLを設定
+aws apigateway update-authorizer \
+  --rest-api-id <api-id> \
+  --authorizer-id <authorizer-id> \
+  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=300
 ```
+</details>
 
-### データベース分離パターン
+---
 
-```
-1. スキーマ分離（本課題で採用）:
-   ┌─────────────────────────────────────┐
-   │         PostgreSQL Instance         │
-   │  ┌─────────┐ ┌─────────┐ ┌───────┐ │
-   │  │tenant_a │ │tenant_b │ │shared │ │
-   │  │ schema  │ │ schema  │ │schema │ │
-   │  └─────────┘ └─────────┘ └───────┘ │
-   └─────────────────────────────────────┘
+### 6.3 設計課題
 
-   利点: コスト効率、運用シンプル
-   欠点: 同一インスタンスのリソース共有
+#### 課題: エンタープライズテナント向けSAML SSO統合
 
-2. データベース分離:
-   ┌─────────────┐ ┌─────────────┐
-   │ tenant_a_db │ │ tenant_b_db │
-   │  Instance   │ │  Instance   │
-   └─────────────┘ └─────────────┘
+**シナリオ**: 大企業テナントから「自社のIdP（Okta/Azure AD）でSSOしたい」という要望がありました。
 
-   利点: リソース分離、パフォーマンス保証
-   欠点: コスト高、運用複雑
+**検討事項**:
+1. Cognito User Pool + SAML Identity Providerの構成
+2. テナントごとに異なるIdPを設定する方法
+3. Just-In-Timeプロビジョニングの実装
+4. 属性マッピング（tenant_id、roleの引き継ぎ）
 
-3. Row Level Security (RLS):
-   すべてのテーブルにtenant_idカラム
-   ポリシーでアクセス制御
-
-   利点: 既存アプリからの移行容易
-   欠点: クエリパフォーマンス影響
-```
-
-### RDS Proxyの設計考慮
+**設計案を作成してください**:
 
 ```
-接続管理戦略:
-
-1. コネクションプールサイジング:
-   max_connections = (テナント数 × サービス数 × レプリカ数) × 0.5
-
-   例: 500テナント × 3サービス × 2レプリカ = 3000
-   → RDS Proxyのmax_connections: 1500程度
-
-2. IAM認証 vs パスワード認証:
-   IAM認証:
-     - セキュリティ高（Secrets不要）
-     - 15分のトークン有効期限
-     - 接続確立時のオーバーヘッド
-
-   パスワード認証:
-     - 実装シンプル
-     - Secrets管理必要
-     - 接続確立が高速
-
-3. フェイルオーバー考慮:
-   - RDS Proxyは自動的に新Primaryを検出
-   - アプリ側での再接続処理は不要
-   - ただし進行中のトランザクションは失敗
+┌─────────────────────────────────────────────────────────────────┐
+│                     SSO Integration Design                       │
+│                                                                 │
+│  [ここに設計図を作成]                                            │
+│                                                                 │
+│  考慮点：                                                        │
+│  - テナントドメインとIdPのマッピング                              │
+│  - JIT プロビジョニング時の初期ロール設定                         │
+│  - 既存ユーザーとのリンク                                        │
+│  - セッション管理（SLO対応）                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. 発展課題
+## 7. 学習リソース
 
-### 上級チャレンジ1: カナリアデプロイメント
+### 公式ドキュメント
+- [Amazon Cognito User Pools](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html)
+- [Cognito Lambda Triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html)
+- [API Gateway Lambda Authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-use-lambda-authorizer.html)
+- [Multi-tenant SaaS Best Practices](https://docs.aws.amazon.com/wellarchitected/latest/saas-lens/saas-lens.html)
 
-```yaml
-# canary-deployment.yaml
-# テナントごとにカナリアリリースを実装
+### 参考記事
+- [Building Multi-Tenant Solutions on AWS](https://aws.amazon.com/blogs/apn/building-a-multi-tenant-saas-solution-using-amazon-cognito-and-aws-identity-and-access-management/)
+- [SaaS Identity and Isolation with Amazon Cognito](https://aws.amazon.com/blogs/apn/saas-identity-and-isolation-with-amazon-cognito-on-the-aws-cloud/)
 
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: project-service-canary
-  namespace: tenant-acme-corp
-spec:
-  hosts:
-    - project-service
-  http:
-    - match:
-        - headers:
-            x-canary:
-              exact: "true"
-      route:
-        - destination:
-            host: project-service
-            subset: canary
-    - route:
-        - destination:
-            host: project-service
-            subset: stable
-          weight: 90
-        - destination:
-            host: project-service
-            subset: canary
-          weight: 10
 ---
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: project-service-versions
-  namespace: tenant-acme-corp
-spec:
-  host: project-service
-  subsets:
-    - name: stable
-      labels:
-        version: v1
-    - name: canary
-      labels:
-        version: v2
 
-# Flagger（Canary自動化）
-apiVersion: flagger.app/v1beta1
-kind: Canary
-metadata:
-  name: project-service
-  namespace: tenant-acme-corp
-spec:
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: project-service
-  service:
-    port: 80
-  analysis:
-    interval: 1m
-    threshold: 5
-    maxWeight: 50
-    stepWeight: 10
-    metrics:
-      - name: request-success-rate
-        thresholdRange:
-          min: 99
-        interval: 1m
-      - name: request-duration
-        thresholdRange:
-          max: 500
-        interval: 1m
+## 8. 解答例
+
+### 課題1: テナントティア別の機能制限
+
+```typescript
+// lib/lambda/middleware/feature-gate.ts
+interface FeatureGateResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+const TIER_FEATURES: Record<string, Set<string>> = {
+  free: new Set(['projects', 'tasks', 'basic-reports']),
+  standard: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access']),
+  enterprise: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access', 'audit-logs', 'sso', 'custom-branding', 'data-export']),
+};
+
+export function checkFeatureAccess(tenantTier: string, feature: string): FeatureGateResult {
+  const allowedFeatures = TIER_FEATURES[tenantTier] || TIER_FEATURES['free'];
+
+  if (allowedFeatures.has(feature)) {
+    return { allowed: true };
+  }
+
+  // どのティアで利用可能かを提案
+  const availableIn = Object.entries(TIER_FEATURES)
+    .filter(([_, features]) => features.has(feature))
+    .map(([tier]) => tier);
+
+  return {
+    allowed: false,
+    reason: `Feature '${feature}' is not available in '${tenantTier}' plan. Available in: ${availableIn.join(', ')}`,
+  };
+}
+
+// Lambda関数での使用例
+export const handler = async (event: APIGatewayProxyEvent) => {
+  const tenantTier = event.requestContext.authorizer?.tenant_tier || 'free';
+
+  // 高度なレポート機能へのアクセスチェック
+  const featureCheck = checkFeatureAccess(tenantTier, 'advanced-reports');
+
+  if (!featureCheck.allowed) {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({
+        error: 'Feature not available',
+        message: featureCheck.reason,
+        upgradeUrl: 'https://teamhub.example.com/pricing',
+      }),
+    };
+  }
+
+  // 機能の処理を続行
+  // ...
+};
 ```
 
-### 上級チャレンジ2: テナントオンボーディング自動化
+### 課題2: ユーザー招待フロー
 
-```python
-# tenant_provisioner.py
-import boto3
-import kubernetes
-from kubernetes import client, config
+```typescript
+// lib/lambda/api/invite-user.ts
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { DynamoDBClient, PutItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { randomBytes } from 'crypto';
 
-class TenantProvisioner:
-    def __init__(self):
-        config.load_incluster_config()
-        self.k8s_core = client.CoreV1Api()
-        self.k8s_custom = client.CustomObjectsApi()
-        self.rds = boto3.client('rds')
-        self.secretsmanager = boto3.client('secretsmanager')
+const dynamodb = new DynamoDBClient({});
+const ses = new SESClient({});
+const TABLE_NAME = process.env.TENANT_TABLE_NAME!;
+const INVITATION_TTL_HOURS = 48;
 
-    def provision_tenant(self, tenant_id: str, tier: str, config: dict):
-        """新規テナントのプロビジョニング"""
+interface InviteUserRequest {
+  email: string;
+  name: string;
+  role: 'admin' | 'manager' | 'member' | 'guest';
+}
 
-        # 1. Namespace作成
-        self._create_namespace(tenant_id, tier)
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const tenantId = event.pathParameters?.tenantId;
+  const authContext = event.requestContext.authorizer;
+  const inviterId = authContext?.principalId;
+  const inviterName = authContext?.name || 'Team Administrator';
 
-        # 2. ResourceQuota/LimitRange設定
-        self._apply_resource_limits(tenant_id, tier)
+  const body: InviteUserRequest = JSON.parse(event.body || '{}');
 
-        # 3. NetworkPolicy設定
-        self._apply_network_policies(tenant_id)
+  // 招待コードの生成
+  const inviteCode = randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + INVITATION_TTL_HOURS * 60 * 60 * 1000);
+  const now = new Date().toISOString();
 
-        # 4. DBスキーマ作成
-        self._create_db_schema(tenant_id)
+  // テナント情報の取得
+  const tenantResult = await dynamodb.send(new GetItemCommand({
+    TableName: TABLE_NAME,
+    Key: {
+      PK: { S: `TENANT#${tenantId}` },
+      SK: { S: 'METADATA' },
+    },
+  }));
 
-        # 5. IAMロール作成
-        self._create_iam_role(tenant_id)
+  const tenantName = tenantResult.Item?.name?.S || 'TeamHub';
 
-        # 6. Istio設定
-        self._configure_istio(tenant_id, tier)
+  // 招待レコードの作成
+  await dynamodb.send(new PutItemCommand({
+    TableName: TABLE_NAME,
+    Item: {
+      PK: { S: `TENANT#${tenantId}#INVITATION#${inviteCode}` },
+      SK: { S: 'METADATA' },
+      tenantId: { S: tenantId! },
+      inviteCode: { S: inviteCode },
+      email: { S: body.email },
+      name: { S: body.name },
+      role: { S: body.role },
+      status: { S: 'pending' },
+      invitedBy: { S: inviterId },
+      createdAt: { S: now },
+      expiresAt: { S: expiresAt.toISOString() },
+      ttl: { N: String(Math.floor(expiresAt.getTime() / 1000)) },
+      // メールでの検索用
+      GSI1PK: { S: `INVITATION#EMAIL#${body.email}` },
+      GSI1SK: { S: now },
+    },
+  }));
 
-        # 7. 初期アプリケーションデプロイ
-        self._deploy_services(tenant_id, tier)
+  // 招待メールの送信
+  const inviteUrl = `https://app.teamhub.example.com/accept-invite?code=${inviteCode}`;
 
-        # 8. 監視設定
-        self._setup_monitoring(tenant_id)
+  await ses.send(new SendEmailCommand({
+    Source: 'noreply@teamhub.example.com',
+    Destination: {
+      ToAddresses: [body.email],
+    },
+    Message: {
+      Subject: {
+        Data: `You've been invited to join ${tenantName} on TeamHub`,
+      },
+      Body: {
+        Html: {
+          Data: `
+            <h2>You're invited!</h2>
+            <p>${inviterName} has invited you to join <strong>${tenantName}</strong> on TeamHub.</p>
+            <p>Your role will be: <strong>${body.role}</strong></p>
+            <p>Click the button below to accept the invitation:</p>
+            <p>
+              <a href="${inviteUrl}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; border-radius: 4px;">
+                Accept Invitation
+              </a>
+            </p>
+            <p><small>This invitation expires in ${INVITATION_TTL_HOURS} hours.</small></p>
+          `,
+        },
+      },
+    },
+  }));
 
-        return {
-            "tenant_id": tenant_id,
-            "namespace": f"tenant-{tenant_id}",
-            "status": "provisioned",
-            "endpoints": self._get_endpoints(tenant_id)
-        }
+  return {
+    statusCode: 201,
+    body: JSON.stringify({
+      message: 'Invitation sent successfully',
+      email: body.email,
+      expiresAt: expiresAt.toISOString(),
+    }),
+  };
+};
 
-    def _create_namespace(self, tenant_id: str, tier: str):
-        namespace = client.V1Namespace(
-            metadata=client.V1ObjectMeta(
-                name=f"tenant-{tenant_id}",
-                labels={
-                    "istio-injection": "enabled",
-                    "tenant-id": tenant_id,
-                    "tier": tier
-                }
-            )
-        )
-        self.k8s_core.create_namespace(namespace)
+// lib/lambda/api/accept-invite.ts
+export const acceptInviteHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const { code, password } = JSON.parse(event.body || '{}');
 
-    def _apply_resource_limits(self, tenant_id: str, tier: str):
-        quotas = {
-            "enterprise": {"cpu": "16", "memory": "32Gi", "pods": "100"},
-            "standard": {"cpu": "4", "memory": "8Gi", "pods": "25"},
-            "starter": {"cpu": "1", "memory": "2Gi", "pods": "10"}
-        }
+  // 招待コードの検証
+  const inviteResult = await dynamodb.send(new GetItemCommand({
+    TableName: TABLE_NAME,
+    Key: {
+      PK: { S: `INVITATION#${code}` },
+      SK: { S: 'METADATA' },
+    },
+  }));
 
-        quota = client.V1ResourceQuota(
-            metadata=client.V1ObjectMeta(name="tenant-quota"),
-            spec=client.V1ResourceQuotaSpec(
-                hard={
-                    "requests.cpu": quotas[tier]["cpu"],
-                    "requests.memory": quotas[tier]["memory"],
-                    "pods": quotas[tier]["pods"]
-                }
-            )
-        )
-        self.k8s_core.create_namespaced_resource_quota(
-            f"tenant-{tenant_id}", quota
-        )
+  if (!inviteResult.Item) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Invalid or expired invitation' }),
+    };
+  }
 
-    def _create_db_schema(self, tenant_id: str):
-        # RDS接続してスキーマ作成
-        import psycopg2
+  const invitation = inviteResult.Item;
+  const expiresAt = new Date(invitation.expiresAt.S!);
 
-        conn = psycopg2.connect(
-            host="taskflow-proxy.proxy-xxx.rds.amazonaws.com",
-            database="taskflow",
-            user="admin",
-            password=self._get_db_password()
-        )
+  if (new Date() > expiresAt) {
+    return {
+      statusCode: 410,
+      body: JSON.stringify({ error: 'This invitation has expired' }),
+    };
+  }
 
-        with conn.cursor() as cur:
-            schema_name = f"tenant_{tenant_id.replace('-', '_')}"
-            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+  if (invitation.status.S !== 'pending') {
+    return {
+      statusCode: 409,
+      body: JSON.stringify({ error: 'This invitation has already been used' }),
+    };
+  }
 
-            # テナント用ユーザー作成
-            cur.execute(f"""
-                CREATE USER {schema_name}_user WITH PASSWORD %s;
-                GRANT USAGE ON SCHEMA {schema_name} TO {schema_name}_user;
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA {schema_name}
-                    TO {schema_name}_user;
-                ALTER DEFAULT PRIVILEGES IN SCHEMA {schema_name}
-                    GRANT ALL ON TABLES TO {schema_name}_user;
-            """, (self._generate_password(),))
+  // Cognitoユーザーの作成と招待ステータスの更新は
+  // 前述のcreate-user.tsと同様の処理を実行
+  // ...
 
-            conn.commit()
-
-# Lambda関数としてデプロイ
-def lambda_handler(event, context):
-    provisioner = TenantProvisioner()
-
-    action = event.get('action')
-    tenant_id = event.get('tenant_id')
-    tier = event.get('tier', 'standard')
-    config = event.get('config', {})
-
-    if action == 'provision':
-        return provisioner.provision_tenant(tenant_id, tier, config)
-    elif action == 'deprovision':
-        return provisioner.deprovision_tenant(tenant_id)
-    else:
-        return {"error": "Unknown action"}
-```
-
-### 上級チャレンジ3: マルチリージョン展開
-
-```yaml
-# グローバルサービスメッシュ構成
-
-# 東京リージョン
-Region: ap-northeast-1
-  EKS Cluster: taskflow-eks-tokyo
-  RDS: Primary (Multi-AZ)
-  Route53: Failover Primary
-
-# バージニアリージョン
-Region: us-east-1
-  EKS Cluster: taskflow-eks-virginia
-  RDS: Read Replica (Cross-Region)
-  Route53: Failover Secondary
-
-# Istioマルチクラスター設定
-apiVersion: install.istio.io/v1alpha1
-kind: IstioOperator
-spec:
-  values:
-    global:
-      meshID: taskflow-mesh
-      multiCluster:
-        clusterName: tokyo
-      network: network-tokyo
-
-  meshConfig:
-    defaultConfig:
-      proxyMetadata:
-        ISTIO_META_DNS_CAPTURE: "true"
-        ISTIO_META_DNS_AUTO_ALLOCATE: "true"
-
-# クロスクラスタサービスディスカバリ
----
-apiVersion: networking.istio.io/v1beta1
-kind: ServiceEntry
-metadata:
-  name: project-service-virginia
-spec:
-  hosts:
-    - project-service.tenant-acme-corp.global
-  location: MESH_INTERNAL
-  ports:
-    - number: 80
-      name: http
-      protocol: HTTP
-  resolution: DNS
-  endpoints:
-    - address: project-service.tenant-acme-corp.svc.cluster.local
-      locality: us-east-1/us-east-1a
-      labels:
-        cluster: virginia
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: 'Invitation accepted. Welcome to TeamHub!' }),
+  };
+};
 ```
 
 ---
 
-## 11. コスト見積もり
+## 9. 追加学習
 
-### 月額コスト概算（500テナント規模）
+### マルチテナントパターンの深掘り
 
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| EKS クラスター | 1クラスター | $73 |
-| EC2 (System Nodes) | m6i.large × 2 | $200 |
-| EC2 (Enterprise Nodes) | m6i.xlarge × 5 | $750 |
-| EC2 (Standard Nodes) | m6i.large × 10 | $1,000 |
-| RDS PostgreSQL | db.r6g.large Multi-AZ | $400 |
-| RDS Proxy | 2 vCPU | $73 |
-| ALB | 1 ALB + LCU | $50 |
-| NAT Gateway | 3 AZ × データ転送 | $150 |
-| CloudWatch | ログ・メトリクス | $200 |
-| ECR | イメージストレージ | $30 |
-| Secrets Manager | 50シークレット | $20 |
-| **合計** | | **約 $2,946/月** |
+1. **テナント分離レベルの選択**
+   - Silo: 完全分離（高コスト、高セキュリティ）
+   - Pool: 共有インフラ（低コスト、アプリケーション責務）
+   - Bridge: ハイブリッド（柔軟性重視）
 
-### テナント単価
+2. **ノイジーネイバー問題への対処**
+   - テナント単位のレート制限
+   - リソースクォータの設定
+   - 優先度に基づくリソース配分
 
-```
-月額コスト: $2,946
-テナント数: 500
-1テナントあたり: 約 $5.89/月
+3. **コンプライアンス対応**
+   - データレジデンシー要件
+   - 監査ログの保持
+   - GDPR/個人情報保護法対応
 
-料金プラン例:
-- Starter:  $29/月 （粗利: 80%+）
-- Standard: $99/月 （粗利: 90%+）
-- Enterprise: $499/月 （粗利: 95%+）
-```
-
-### コスト最適化ポイント
-
-```
-1. Spot Instances活用:
-   - Standard Nodeグループの50%をSpotに
-   - 想定削減: $300/月
-
-2. Reserved Instances:
-   - System/Enterprise Nodesを1年RI
-   - 想定削減: $400/月
-
-3. Cluster Autoscaler最適化:
-   - 夜間/週末のスケールダウン
-   - 想定削減: $200/月
-
-4. 監視コスト最適化:
-   - メトリクス保持期間短縮
-   - 低頻度テナントのサンプリング
-   - 想定削減: $50/月
-
-最適化後合計: 約 $1,996/月 (32%削減)
-```
+### 次のステップ
+- 課題40でIAM Identity Center（AWS SSO）を使った従業員認証を学習
+- より高度なIdP統合パターンの実装
+- ゼロトラストアーキテクチャへの拡張
 
 ---
 
-## 12. 学習のポイント
-
-### 今回学んだこと
-
-```
-1. EKSマルチテナント設計
-   □ Namespaceによる論理分離
-   □ ResourceQuota/LimitRangeでのリソース制御
-   □ NetworkPolicyでのネットワーク分離
-   □ ノードグループによるワークロード分離
-
-2. Istioサービスメッシュ
-   □ VirtualService/DestinationRuleによるトラフィック制御
-   □ mTLSによる通信暗号化
-   □ AuthorizationPolicyによるアクセス制御
-   □ EnvoyFilterによるカスタムレート制限
-
-3. RDS Proxy活用
-   □ コネクションプーリングの効果
-   □ IAM認証の統合
-   □ フェイルオーバー時の接続維持
-   □ マルチテナントでの接続効率化
-
-4. 可観測性
-   □ テナント別メトリクス収集
-   □ 分散トレーシング（Jaeger）
-   □ サービスメッシュ可視化（Kiali）
-   □ テナント別アラート設定
-```
+## 10. 参考情報
 
 ### GCPとの比較まとめ
 
-| 観点 | AWS (EKS + Istio) | GCP (GKE + ASM) |
-|------|-------------------|-----------------|
-| マネージドサービスメッシュ | 自己管理Istio | Anthos Service Mesh（マネージド） |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| 設定複雑さ | 高（自由度も高い） | 中（統合度高い） |
-| コスト | 若干安い | 若干高い |
-| 学習曲線 | 急 | 緩やか |
+| 機能 | GCP | AWS |
+|------|-----|-----|
+| ユーザー認証 | Firebase Auth / Identity Platform | Cognito User Pool |
+| マルチテナント | Identity Platform Multi-tenancy | Cognito + Custom Implementation |
+| カスタムクレーム | Firebase Admin SDK | Pre-Token Generation Trigger |
+| SAML/OIDC | Identity Platform | Cognito Identity Provider |
+| 認可 | Cloud IAM + Custom | Lambda Authorizer + Custom |
+| SSO | Cloud Identity | IAM Identity Center |
 
-### 次のステップ
+### セキュリティチェックリスト
 
-```
-1. 本番運用に向けて:
-   - DR構成（マルチリージョン）
-   - バックアップ・リストア自動化
-   - コスト配分タグによる請求分離
+- [ ] テナントIDは変更不可（immutable）として設定
+- [ ] 全てのAPIエンドポイントでテナントコンテキストを検証
+- [ ] データベースクエリでテナントIDフィルタリングを必須化
+- [ ] トークンの有効期限を適切に設定（アクセストークン: 1時間以内）
+- [ ] 監査ログで全ての認証・認可イベントを記録
+- [ ] 定期的なセキュリティレビューの実施
 
-2. 発展学習:
-   - Crossplane によるマルチクラウド管理
-   - OPA/Gatekeeper によるポリシー管理
-   - ArgoCD によるGitOps導入
+---
 
-3. 認定資格:
-   - AWS Certified Solutions Architect - Professional
-   - CKA (Certified Kubernetes Administrator)
-   - CKS (Certified Kubernetes Security Specialist)
-```
+## 11. FAQ
+
+**Q: なぜCognitoのマルチテナント機能ではなくカスタム実装を選択したのですか？**
+
+A: Cognitoには直接的なマルチテナント機能がないため、カスタム属性とLambdaトリガーを組み合わせた実装が必要です。この方法により、以下の柔軟性が得られます：
+- テナント固有のビジネスロジックの実装
+- 細かい権限制御（RBAC）
+- テナントメタデータの管理
+
+**Q: テナント数が1000を超えた場合のスケーラビリティは？**
+
+A: Pool モデルでは以下の対策を検討してください：
+- DynamoDBのパーティション設計の最適化
+- Lambda Authorizerのキャッシュ戦略
+- 大規模テナント向けのSilo移行オプション
+
+**Q: Cognito User Poolの制限に達した場合はどうすれば？**
+
+A: Cognito User Poolには以下のデフォルト制限があります：
+- 1ユーザープールあたりの最大ユーザー数: 無制限（ただしAPIレート制限あり）
+- 1ユーザープールあたりのグループ数: 10,000
+
+制限に近づいた場合は、リージョン分散または複数User Poolの管理を検討してください。
+
+---
+
+## 12. 振り返りチェックリスト
+
+以下の項目を確認して、学習内容の定着度を確認してください：
+
+- [ ] Cognito User Poolのカスタム属性を設定できる
+- [ ] Lambda Triggersを使ってトークンにカスタムクレームを追加できる
+- [ ] Lambda Authorizerでテナントコンテキストを抽出・検証できる
+- [ ] RBACの権限モデルを設計できる
+- [ ] DynamoDBでテナント分離を実現するキー設計ができる
+- [ ] テナントのオンボーディングフローを実装できる
+- [ ] クロステナントアクセスを防ぐセキュリティ対策を説明できる

@@ -1,4 +1,4 @@
-# 課題11: スタートアップのコンテナCI/CD構築
+# 課題11: LearnHub株式会社の動画教材自動字幕生成システム構築
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,686 +9,469 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | コンテナ |
-| 処理タイプ | 非同期 |
+| カテゴリ | AI / メディア処理 / EdTech |
+| 処理タイプ | バッチ / 非同期 |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 4-5時間 |
+| 所要時間 | 5〜6時間 |
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
-### 企業プロファイル
+### 企業プロフィール
+
+**LearnHub株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | SmartAssist株式会社 |
-| **業種** | AIスタートアップ（チャットボットSaaS） |
-| **従業員数** | 25名（エンジニア8名） |
-| **サービス** | AIチャットボット「SmartBot」 |
-| **顧客数** | 導入企業50社、月間会話100万件 |
-| **デプロイ頻度** | 現状週2回 → 目標1日10回 |
+| 業種 | EdTech（オンライン教育） |
+| 設立 | 2020年 |
+| 従業員数 | 25名 |
+| 月間アクティブ視聴者 | 3万人 |
+| 登録ユーザー | 10万人 |
+| 動画コンテンツ数 | 500本（総時間300時間） |
+| 平均動画長 | 36分 |
+| 月商 | 2,500万円 |
+| 講師数 | 30名（外部委託含む） |
 
 ### 現状の課題
 
+海外展開を進めるため、既存の日本語動画コンテンツに多言語字幕を追加したいが、外注費用と時間がかかりすぎています。また、聴覚障害者向けのアクセシビリティ対応も求められています。
+
+### 数値で示された問題
+
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 字幕付き動画比率 | 20%（日本語のみ） | 100%（日英中） |
+| 字幕作成コスト | 15,000円/時間 | 3,000円/時間以下 |
+| 字幕作成リードタイム | 2週間 | 24時間以内 |
+| 多言語対応言語数 | 日本語のみ | 日本語・英語・中国語 |
+| 月間新規動画 | 20本 | - |
+| 字幕外注費 | 月90万円 | 月20万円以下 |
+
+### 現状の字幕作成フロー
+
 ```
-SmartAssist株式会社は急成長するAIチャットボットSaaSを提供しています。
-現在のデプロイプロセスには以下の課題があります：
-
-1. 手動デプロイの限界
-   - エンジニアがEC2に手動でDocker pullしてデプロイ
-   - 1回のデプロイに30分以上かかる
-   - 深夜作業でエンジニアが疲弊
-
-2. デプロイの不安定さ
-   - 本番環境で問題が発覚することが多い
-   - ロールバックに1時間以上かかる
-   - 顧客影響が発生するリスク
-
-3. 環境差異の問題
-   - 開発環境と本番環境の設定が異なる
-   - 「自分のPCでは動いた」問題が頻発
-   - テスト環境がない
-
-4. スケーリングの課題
-   - ピーク時（平日9-11時）に応答遅延
-   - 手動でインスタンスを追加している
-   - コスト効率が悪い
+1. 動画を外部字幕制作会社に送付
+2. 制作会社が文字起こし（3-5日）
+3. 内容確認・修正依頼（2-3日）
+4. 翻訳発注（3-5日）
+5. 翻訳確認・修正（2-3日）
+6. VTT/SRTファイル納品
+7. 動画プレイヤーへ統合
+→ 合計: 2-3週間
 ```
 
-### ビジネス目標
+### 解決したいこと
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| デプロイ所要時間 | 30分 | 5分以下 |
-| デプロイ頻度 | 週2回 | 1日10回（オンデマンド） |
-| ロールバック時間 | 1時間 | 5分以下 |
-| デプロイ成功率 | 80% | 99%以上 |
-| ダウンタイム | 5分/回 | ゼロ |
+1. 動画の音声からの自動文字起こし（日本語）
+2. 日本語字幕の自動生成（タイムスタンプ付き）
+3. 英語・中国語への自動翻訳
+4. 字幕ファイル（VTT形式）の自動生成
+5. 生成された字幕の品質向上（AI校正）
+
+### 成功指標（KPI）
+
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| 字幕カバー率 | 20% | 100% | 3ヶ月後 |
+| 文字起こし精度 | - | 95%以上 | 1ヶ月後 |
+| 字幕作成時間 | 2週間 | 24時間以内 | 1ヶ月後 |
+| コスト削減率 | - | 70%以上 | 3ヶ月後 |
+| 海外ユーザー増加 | - | +30% | 6ヶ月後 |
 
 ---
 
-## 3. 達成目標（ゴール）
+## 達成目標
 
-### 主要な学習成果
+この演習で習得できるスキル：
 
-```
-この課題を完了すると、以下ができるようになります：
+### 技術的な学習ポイント
 
-1. ECRによるコンテナイメージ管理
-   - プライベートリポジトリの作成と管理
-   - イメージのタグ付けとライフサイクル管理
-   - 脆弱性スキャンの活用
+1. **Amazon Transcribeの実践活用**
+   - 音声からの自動文字起こし
+   - 日本語モデルの活用
+   - カスタムボキャブラリー設定
 
-2. CodePipelineによるCI/CDパイプライン構築
-   - ソースステージ（GitHub/CodeCommit連携）
-   - ビルドステージ（CodeBuild）
-   - デプロイステージ（ECS）
+2. **Amazon Translateの実践活用**
+   - 多言語翻訳
+   - 用語集（Terminology）の活用
+   - バッチ翻訳処理
 
-3. ECS Fargateによるコンテナ運用
-   - タスク定義とサービス設定
-   - Auto Scalingの構成
-   - Blue/Greenデプロイメント
+3. **Amazon Bedrockによる品質向上**
+   - 字幕の校正・修正
+   - 文脈を考慮した翻訳改善
 
-4. 運用監視の基礎
-   - CloudWatchによるログ・メトリクス監視
-   - アラート設定とSlack通知
-```
+4. **メディアパイプラインの構築**
+   - S3イベント駆動
+   - Lambda + SQSによる非同期処理
+   - VTT/SRT形式の生成
 
-### 合格基準
+### 実務で活かせる知識
 
-| 項目 | 基準 |
-|------|------|
-| パイプライン | GitプッシュからECSデプロイまで自動化されること |
-| デプロイ時間 | 10分以内にデプロイが完了すること |
-| ゼロダウンタイム | Blue/Greenデプロイでダウンタイムがないこと |
-| ロールバック | 1クリックで前バージョンに戻せること |
-| 監視 | コンテナログとメトリクスが収集されていること |
-
----
-
-## 4. 使用するAWSサービス
-
-### コア技術スタック
-
-```yaml
-コンテナ基盤:
-  - Amazon ECR: コンテナイメージリポジトリ
-  - Amazon ECS: コンテナオーケストレーション
-  - AWS Fargate: サーバーレスコンテナ実行環境
-
-CI/CD:
-  - AWS CodePipeline: CI/CDオーケストレーション
-  - AWS CodeBuild: コンテナビルド
-  - AWS CodeDeploy: Blue/Greenデプロイ
-
-ネットワーク:
-  - Amazon VPC: ネットワーク分離
-  - Application Load Balancer: トラフィック分散
-  - AWS Certificate Manager: SSL/TLS証明書
-
-監視・運用:
-  - Amazon CloudWatch: ログ・メトリクス・アラーム
-  - AWS Systems Manager Parameter Store: 設定管理
-  - Amazon SNS: 通知
-
-セキュリティ:
-  - AWS IAM: アクセス制御
-  - AWS Secrets Manager: シークレット管理
-```
+- 音声処理パイプラインの設計
+- 多言語対応システムの構築
+- メディアファイル処理の自動化
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| コンテナレジストリ | ECR | Artifact Registry |
-| コンテナ実行 | ECS Fargate | Cloud Run |
-| CI/CD | CodePipeline + CodeBuild | Cloud Build |
-| デプロイ戦略 | CodeDeploy | Cloud Deploy |
-| ロードバランサ | ALB | Cloud Load Balancing |
+| 音声認識 | Amazon Transcribe | Speech-to-Text |
+| 翻訳 | Amazon Translate | Cloud Translation |
+| 生成AI | Bedrock | Vertex AI |
+| メディア処理 | MediaConvert | Transcoder API |
 
 ---
 
-## 5. 前提条件
+## 使用するAWSサービス
 
-### 技術要件
+### メインサービス
+
+| サービス | 役割 | 選定理由 |
+|----------|------|----------|
+| Amazon Transcribe | 音声→テキスト変換 | 日本語対応、字幕形式出力 |
+| Amazon Translate | 多言語翻訳 | リアルタイム翻訳、用語集対応 |
+| Amazon Bedrock | 字幕校正・品質向上 | 文脈理解、自然な表現 |
+| AWS Lambda | 各処理の実行 | サーバーレス |
+| Amazon S3 | 動画・字幕ファイル保存 | 大容量対応 |
+| Amazon SQS | 非同期処理キュー | 順序制御、リトライ |
+
+### 補助サービス
+
+| サービス | 役割 |
+|----------|------|
+| Amazon DynamoDB | 処理ステータス管理 |
+| Amazon SNS | 処理完了通知 |
+| Amazon CloudWatch | 監視・ログ |
+
+---
+
+## 前提条件
+
+### 必要な事前知識
+
+- AWSの基本操作（S3, Lambda）
+- Python基礎
+- 字幕フォーマット（VTT/SRT）の基本理解
+
+### 準備するもの
+
+1. **AWSアカウント**
+   - Bedrock有効化（Claude 3 Haiku推奨）
+   - Transcribe/Translate アクセス権限
+
+2. **開発環境**
+   - AWS CLI v2
+   - Python 3.9以上
+
+3. **テストデータ**
+   - サンプル動画ファイル（MP4, 5-10分）
+   - または音声ファイル（MP3/WAV）
+
+---
+
+## アーキテクチャ概要
+
+### システム全体構成
+
+```
+[講師が動画アップロード]
+        ↓
+[S3: 動画入力バケット]
+        ↓ S3イベント
+[SQS: 処理キュー]
+        ↓
+[Lambda: transcribe-starter]
+        ↓
+[Amazon Transcribe]（非同期ジョブ）
+        ↓ 完了イベント
+[Lambda: transcribe-callback]
+        ↓
+[S3: 日本語字幕JSON保存]
+        ↓
+[Lambda: translator]
+        ├── Amazon Translate（英語）
+        └── Amazon Translate（中国語）
+        ↓
+[Lambda: vtt-generator]
+        ├── Bedrock（字幕校正）
+        └── VTT/SRTファイル生成
+        ↓
+[S3: 字幕出力バケット]
+        ↓
+[SNS: 完了通知]
+```
+
+### 字幕生成フロー
+
+1. **動画アップロード**: S3にMP4をアップロード
+2. **音声抽出**: Transcribeが自動で音声を認識
+3. **文字起こし**: 日本語テキスト+タイムスタンプ生成
+4. **翻訳**: Translateで英語・中国語に翻訳
+5. **校正**: Bedrockで字幕の品質向上
+6. **出力**: VTT形式で3言語分の字幕ファイル生成
+7. **通知**: 処理完了をメール通知
+
+---
+
+## トラブルシューティング課題
+
+### 問題1: Transcribeジョブが失敗
+
+**症状:**
+```
+TranscriptionJobStatus: FAILED
+FailureReason: "The media format provided does not match the detected media format."
+```
+
+**ヒント:**
+1. ファイル拡張子と実際のフォーマットが一致しているか確認
+2. サポートされているフォーマットか確認（MP3, MP4, WAV, FLAC等）
+3. ファイルが破損していないか確認
+
+**解決方法:**
+```python
+# Lambda内でファイル形式を自動検出
+import mimetypes
+
+def get_media_format(key):
+    extension = key.split('.')[-1].lower()
+    format_map = {
+        'mp4': 'mp4',
+        'mp3': 'mp3',
+        'wav': 'wav',
+        'm4a': 'mp4',
+        'flac': 'flac'
+    }
+    return format_map.get(extension, 'mp4')
+```
+
+### 問題2: 翻訳結果が不自然
+
+**症状:**
+```
+技術用語が一般的な意味で翻訳される
+プログラミング用語が変な日本語になる
+```
+
+**ヒント:**
+1. Amazon Translateの用語集（Terminology）を活用
+2. Bedrockの校正プロンプトを調整
+3. カスタムボキャブラリーを設定
+
+**解決方法:**
+```python
+# 用語集の使用
+def translate_with_terminology(text, source_lang, target_lang, terminology_names):
+    response = translate.translate_text(
+        Text=text,
+        SourceLanguageCode=source_lang,
+        TargetLanguageCode=target_lang,
+        TerminologyNames=terminology_names
+    )
+    return response['TranslatedText']
+
+# 用語集の例（事前にCSVでアップロード）
+# en,ja
+# Lambda,Lambda
+# API Gateway,API Gateway
+# serverless,サーバーレス
+```
+
+### 問題3: 字幕のタイミングがずれる
+
+**症状:**
+```
+音声と字幕が同期していない
+特に翻訳後の字幕で顕著
+```
+
+**ヒント:**
+1. VTTパース時にタイムスタンプが正しく保持されているか
+2. 翻訳で文が長くなりすぎていないか
+3. セグメント分割が適切か
+
+**解決方法:**
+```python
+# 長すぎる字幕を分割
+MAX_CHARS_PER_LINE = 40
+
+def split_long_subtitle(text, max_chars=MAX_CHARS_PER_LINE):
+    if len(text) <= max_chars:
+        return text
+
+    # 適切な位置で改行
+    words = text.split()
+    lines = []
+    current_line = []
+
+    for word in words:
+        if len(' '.join(current_line + [word])) <= max_chars:
+            current_line.append(word)
+        else:
+            lines.append(' '.join(current_line))
+            current_line = [word]
+
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    return '\n'.join(lines)
+```
+
+---
+
+## 設計の考察ポイント
+
+### 1. なぜTranscribeの標準字幕出力を使わないのか？
+
+**考察ポイント:**
+- Transcribeの標準VTT出力 vs カスタム処理
+- 翻訳を挟む必要性
+- 品質向上のためのカスタマイズ余地
+
+### 2. Bedrockによる校正は必要か？
+
+**考察ポイント:**
+- Amazon Translateの品質
+- 追加コストと品質向上のトレードオフ
+- 処理時間への影響
+
+### 3. 同期処理 vs 非同期処理の選択
+
+**考察ポイント:**
+- Transcribeは非同期のみ
+- 翻訳は同期/非同期どちらも可能
+- ユーザー体験とシステム設計のバランス
+
+### 4. カスタムボキャブラリーの運用
+
+**考察ポイント:**
+- 技術用語の一貫性
+- 更新頻度と管理方法
+- 講師ごとの専門用語対応
+
+### 5. 字幕品質のモニタリング
+
+**考察ポイント:**
+- 自動評価の方法
+- 人間によるサンプリング確認
+- フィードバックループの設計
+
+---
+
+## 発展課題（オプション）
+
+### 1. リアルタイム字幕（ライブ配信対応）
+- Amazon Transcribe Streamingの活用
+- WebSocketによるリアルタイム配信
+- 遅延最小化の工夫
+
+### 2. 話者分離（Speaker Diarization）
+- 複数講師の動画対応
+- 話者ラベルの自動付与
+- 対話形式コンテンツへの対応
+
+### 3. 字幕エディターUIの構築
+- Webベースの字幕編集ツール
+- タイムライン表示
+- 修正→再生成のワークフロー
+
+### 4. 品質スコアリング
+- 文字起こし精度の自動評価
+- WER（Word Error Rate）計測
+- 低品質字幕の自動フラグ
+
+### 5. 対応言語の拡大
+- 韓国語、スペイン語等の追加
+- 言語自動検出
+- 多言語プレイリスト対応
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（月20本×平均36分処理想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| Amazon Transcribe | 20本 × 36分 = 720分 | $17 |
+| Amazon Translate | 720分 × 2言語 × 約2000文字 | $30 |
+| Amazon Bedrock (Haiku) | 720分 × 2言語 × 50セグメント | $5 |
+| AWS Lambda | 処理時間合計 | $2 |
+| Amazon S3 | 動画+字幕保存 | $5 |
+| Amazon DynamoDB | オンデマンド | $1 |
+| Amazon SQS | メッセージ | $0.01 |
+| Amazon SNS | 通知 | $0.01 |
+| CloudWatch | ログ | $3 |
+| **合計** | | **約$63（約9,500円）** |
+
+### コスト削減のポイント
+
+1. **Transcribeの効率化**
+   - 同じ動画の再処理を避ける（キャッシング）
+   - 短い動画は結合して処理
+
+2. **翻訳の最適化**
+   - 繰り返しフレーズのキャッシュ
+   - バッチ翻訳API（大量処理時）
+
+3. **Bedrock校正の選択的適用**
+   - 全セグメントではなく長いセグメントのみ
+   - Claude 3 Haikuの使用（Sonnetより安価）
+
+4. **S3ライフサイクル**
+   - 古い中間ファイルの自動削除
+   - Intelligent-Tieringの活用
+
+### リソース削除手順
 
 ```bash
-# 必要なCLIツール
-aws --version          # 2.x
-docker --version       # 20.x+
-git --version          # 2.x+
+# S3バケット内容削除
+aws s3 rm s3://learnhub-videos-input-${ACCOUNT_ID} --recursive
+aws s3 rm s3://learnhub-subtitles-output-${ACCOUNT_ID} --recursive
 
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+# S3バケット削除
+aws s3 rb s3://learnhub-videos-input-${ACCOUNT_ID}
+aws s3 rb s3://learnhub-subtitles-output-${ACCOUNT_ID}
 
-### 事前準備
+# DynamoDBテーブル削除
+aws dynamodb delete-table --table-name learnhub-subtitle-jobs
 
-```bash
-# 1. GitHubリポジトリの準備（またはCodeCommit）
-# リポジトリ名: smartassist-chatbot
+# SQSキュー削除
+aws sqs delete-queue --queue-url https://sqs.${AWS_REGION}.amazonaws.com/${ACCOUNT_ID}/learnhub-subtitle-queue
 
-# 2. サンプルアプリケーションの構造
-smartassist-chatbot/
-├── src/
-│   ├── app.py              # Flaskアプリケーション
-│   ├── chatbot/
-│   │   ├── __init__.py
-│   │   ├── engine.py       # チャットボットエンジン
-│   │   └── responses.py    # 応答生成
-│   └── tests/
-│       └── test_app.py
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-├── buildspec.yml           # CodeBuild設定
-├── appspec.yaml            # CodeDeploy設定
-└── taskdef.json            # ECSタスク定義
+# SNSトピック削除
+aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:learnhub-subtitle-notifications
+
+# EventBridgeルール削除
+aws events remove-targets --rule learnhub-transcribe-complete --ids 1
+aws events delete-rule --name learnhub-transcribe-complete
+
+# Lambda関数削除
+aws lambda delete-function --function-name learnhub-transcribe-starter
+aws lambda delete-function --function-name learnhub-transcribe-callback
+aws lambda delete-function --function-name learnhub-translator-vtt-generator
+
+# CloudFormation スタック削除
+aws cloudformation delete-stack --stack-name learnhub-subtitle-iam
 ```
 
 ---
 
-## 6. アーキテクチャ図
+## 学習のポイント
 
-### 全体構成
+### 1. メディア処理パイプラインの設計
+Transcribe（音声認識）→ Translate（翻訳）→ カスタム処理の流れは、メディア処理の典型パターン。各サービスの特性（同期/非同期、制限）を理解して設計する。
 
-```mermaid
-flowchart TB
-    subgraph Pipeline["CI/CD Pipeline - AWS CodePipeline"]
-        GitHub["GitHub<br/>(Source)"]
-        CodeBuild["CodeBuild<br/>(Build&Test)"]
-        ECR["ECR<br/>(Image)"]
-        CodeDeploy["CodeDeploy<br/>(Blue/Green)"]
-    end
+### 2. 非同期処理の設計
+Transcribeのような長時間ジョブは必然的に非同期になる。EventBridgeでジョブ完了イベントをキャッチし、後続処理につなげるパターンを習得する。
 
-    subgraph VPC["VPC"]
-        subgraph PublicSubnets["Public Subnets (Multi-AZ)"]
-            subgraph ALB["Application Load Balancer<br/>(HTTP:80 → HTTPS:443 redirect)"]
-                Listener443["Listener Port: 443<br/>(Production)"]
-                Listener8443["Listener Port: 8443<br/>(Test)"]
-            end
-        end
+### 3. 多言語対応の考慮点
+翻訳品質は用語集（Terminology）やカスタムボキャブラリーで大きく向上する。技術コンテンツでは特に重要。
 
-        subgraph PrivateSubnets["Private Subnets"]
-            subgraph BlueGroup["Target Group (Blue - Active)"]
-                BlueECS["ECS Fargate Tasks"]
-                BlueTask1["Task v1"]
-                BlueTask2["Task v1"]
-            end
+### 4. 字幕フォーマットの理解
+VTT/SRT形式の構造を理解し、パース・生成ができるようになる。タイムスタンプの精度が視聴体験に直結する。
 
-            subgraph GreenGroup["Target Group (Green - Standby)"]
-                GreenECS["ECS Fargate Tasks"]
-                GreenTask1["Task v2"]
-                GreenTask2["Task v2"]
-            end
-
-            AutoScaling["Auto Scaling: Min 2, Max 10, Target CPU 70%"]
-        end
-    end
-
-    subgraph Support["Supporting Services"]
-        CloudWatch["CloudWatch Logs"]
-        Secrets["Secrets Manager"]
-        ParamStore["Parameter Store"]
-    end
-
-    GitHub --> CodeBuild
-    CodeBuild --> ECR
-    ECR --> CodeDeploy
-    CodeDeploy --> VPC
-
-    Listener443 --> BlueGroup
-    Listener8443 --> GreenGroup
-
-    VPC --> CloudWatch
-    VPC --> Secrets
-    VPC --> ParamStore
-```
-
-### デプロイフロー
-
-```mermaid
-flowchart TB
-    subgraph Step1["1. 開発者がGitHubにプッシュ"]
-        Push["Git Push"] --> Webhook["Webhookでパイプライン起動"]
-    end
-
-    subgraph Step2["2. CodeBuild実行"]
-        GetSource["ソースコード取得"]
-        UnitTest["ユニットテスト実行"]
-        DockerBuild["Dockerイメージビルド"]
-        ECRPush["ECRにプッシュ"]
-        Artifact["アーティファクト生成<br/>(imageDetail.json)"]
-        GetSource --> UnitTest --> DockerBuild --> ECRPush --> Artifact
-    end
-
-    subgraph Step3["3. CodeDeploy Blue/Green"]
-        CreateGreen["新タスクセット作成（Green）"]
-        TestTraffic["テストリスナーでトラフィック切り替え"]
-        HealthCheck["ヘルスチェック確認"]
-        ProdTraffic["本番リスナーでトラフィック切り替え"]
-        TerminateBlue["旧タスクセット（Blue）を終了"]
-        CreateGreen --> TestTraffic --> HealthCheck --> ProdTraffic --> TerminateBlue
-    end
-
-    subgraph Step4["4. 問題発生時"]
-        Rollback["ロールバック（Blueに戻す）"]
-    end
-
-    Step1 --> Step2
-    Step2 --> Step3
-    Step3 -.->|問題発生| Step4
-```
-
----
-
-## 8. トラブルシューティングチャレンジ
-
-### Challenge 1: CodeBuildでDockerビルドが失敗する
-
-```
-問題:
-CodeBuildでDockerビルド時にエラーが発生する。
-
-エラーメッセージ:
-Cannot connect to the Docker daemon at unix:///var/run/docker.sock.
-Is the docker daemon running?
-
-調査項目:
-1. CodeBuildプロジェクトの設定
-2. IAMロールの権限
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. CodeBuildプロジェクトでPrivileged modeが有効か確認
-aws codebuild batch-get-projects --names smartassist-build \
-    --query "projects[0].environment.privilegedMode"
-
-# 2. 無効の場合、有効化
-aws codebuild update-project \
-    --name smartassist-build \
-    --environment '{
-        "type": "LINUX_CONTAINER",
-        "image": "aws/codebuild/amazonlinux2-x86_64-standard:5.0",
-        "computeType": "BUILD_GENERAL1_SMALL",
-        "privilegedMode": true
-    }'
-
-# 3. または buildspec.yml で docker-in-docker を使用
-# install:
-#   commands:
-#     - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock &
-#     - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
-```
-</details>
-
-### Challenge 2: Blue/Greenデプロイでヘルスチェックが失敗する
-
-```
-問題:
-新しいタスクセットがデプロイされたが、ヘルスチェックが失敗して
-デプロイがロールバックされる。
-
-エラー:
-The deployment timed out while waiting for the replacement task set
-to become healthy.
-
-調査項目:
-1. ターゲットグループのヘルスチェック設定
-2. コンテナの起動ログ
-3. セキュリティグループの設定
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. CloudWatchログで起動エラーを確認
-aws logs get-log-events \
-    --log-group-name /ecs/smartassist \
-    --log-stream-name chatbot/chatbot/xxxxx \
-    --limit 50
-
-# 2. ターゲットグループのヘルスチェック設定確認
-aws elbv2 describe-target-groups \
-    --names smartassist-blue-tg smartassist-green-tg \
-    --query "TargetGroups[*].{Name:TargetGroupName,Path:HealthCheckPath,Interval:HealthCheckIntervalSeconds,Timeout:HealthCheckTimeoutSeconds}"
-
-# 3. ヘルスチェックパスを修正
-aws elbv2 modify-target-group \
-    --target-group-arn arn:aws:elasticloadbalancing:...:targetgroup/smartassist-green-tg/... \
-    --health-check-path /health \
-    --health-check-interval-seconds 30 \
-    --healthy-threshold-count 2 \
-    --unhealthy-threshold-count 5
-
-# 4. コンテナのヘルスチェックコマンド確認
-# タスク定義のhealthCheckが正しく設定されているか
-# コンテナ内でcurlがインストールされているか
-
-# 5. セキュリティグループでALBからの通信が許可されているか
-aws ec2 describe-security-groups \
-    --group-ids sg-xxxxx \
-    --query "SecurityGroups[0].IpPermissions"
-```
-</details>
-
-### Challenge 3: デプロイ後にメモリ不足でタスクが再起動する
-
-```
-問題:
-デプロイ後しばらくするとタスクがOOMKilledで再起動する。
-
-CloudWatchメトリクス:
-- MemoryUtilization: 95%以上
-- タスク再起動頻度: 10分に1回
-
-調査項目:
-1. タスク定義のメモリ設定
-2. アプリケーションのメモリ使用パターン
-3. コンテナのリソース制限
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# 1. 現在のメモリ使用状況を確認
-aws cloudwatch get-metric-statistics \
-    --namespace AWS/ECS \
-    --metric-name MemoryUtilization \
-    --dimensions Name=ClusterName,Value=smartassist-cluster Name=ServiceName,Value=smartassist-service \
-    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
-    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
-    --period 300 \
-    --statistics Average Maximum
-
-# 2. タスク定義のメモリを増やす
-# taskdef.jsonで "memory": "1024" に変更
-
-# 3. アプリケーション側の最適化
-# gunicorn のワーカー数を調整
-# gunicorn --workers 2 --threads 2 ではなく
-# gunicorn --workers 1 --threads 4 に変更
-
-# 4. Pythonのメモリ使用を最適化
-# requirements.txt に memory-profiler を追加してプロファイリング
-
-# 5. Container Insightsで詳細分析
-# CloudWatch Container Insights ダッシュボードで
-# コンテナごとのメモリ使用パターンを確認
-```
-</details>
-
----
-
-## 9. 設計考慮ポイント
-
-### デプロイ戦略の選択
-
-```yaml
-Blue/Green デプロイ（本課題で採用）:
-  メリット:
-    - ゼロダウンタイム
-    - 即時ロールバック可能
-    - テスト環境で事前検証可能
-  デメリット:
-    - 一時的にリソースが2倍必要
-    - 設定が複雑
-
-ローリングアップデート:
-  メリット:
-    - リソース効率が良い
-    - シンプルな設定
-  デメリット:
-    - ロールバックに時間がかかる
-    - 新旧バージョンが混在する期間がある
-
-カナリアデプロイ:
-  メリット:
-    - 段階的なリリースで影響範囲を限定
-    - A/Bテストに活用可能
-  デメリット:
-    - 設定がさらに複雑
-    - モニタリングが必須
-```
-
-### イメージタグ戦略
-
-```bash
-# 推奨: 不変タグ + セマンティックバージョニング
-
-# コミットハッシュ（CI/CDで自動付与）
-smartassist/chatbot:abc1234
-
-# 環境タグ
-smartassist/chatbot:prod-abc1234
-smartassist/chatbot:staging-abc1234
-
-# バージョンタグ（リリース時）
-smartassist/chatbot:v1.2.3
-smartassist/chatbot:v1.2.3-abc1234
-
-# 避けるべき: mutableタグの使用
-# smartassist/chatbot:latest を本番で使わない
-```
-
-### セキュリティ考慮事項
-
-```yaml
-コンテナセキュリティ:
-  - 非rootユーザーで実行
-  - イメージの脆弱性スキャン（ECR自動スキャン）
-  - 最小権限のIAMロール
-  - Secrets Managerで機密情報管理
-
-ネットワークセキュリティ:
-  - ECSタスクをプライベートサブネットに配置
-  - ALBのみがタスクにアクセス可能
-  - VPCエンドポイントでAWSサービスにアクセス
-
-CI/CDセキュリティ:
-  - 最小権限のビルドロール
-  - Secrets Manager でDockerHub認証情報管理
-  - ビルドログの機密情報マスキング
-```
-
----
-
-## 10. 発展課題
-
-### 上級チャレンジ1: マルチステージパイプライン
-
-```yaml
-# 開発 → ステージング → 本番 の多段階パイプライン
-
-Stages:
-  - Source
-  - Build
-  - DeployToStaging:
-      - ECS Staging環境にデプロイ
-      - 自動テスト実行
-  - ManualApproval:
-      - 手動承認ステージ
-  - DeployToProduction:
-      - ECS Production環境にBlue/Greenデプロイ
-
-# 環境別設定の分離
-environments/
-├── staging/
-│   ├── taskdef.json
-│   └── appspec.yaml
-└── production/
-    ├── taskdef.json
-    └── appspec.yaml
-```
-
-### 上級チャレンジ2: カナリアデプロイ実装
-
-```yaml
-# appspec.yaml - カナリア設定
-version: 0.0
-Resources:
-  - TargetService:
-      Type: AWS::ECS::Service
-      Properties:
-        TaskDefinition: <TASK_DEFINITION>
-        LoadBalancerInfo:
-          ContainerName: "chatbot"
-          ContainerPort: 8080
-
-Hooks:
-  - BeforeAllowTraffic: "arn:aws:lambda:...:function:ValidateCanary"
-  - AfterAllowTraffic: "arn:aws:lambda:...:function:MonitorCanary"
-
-# CodeDeploy設定でカナリア比率を指定
-# CodeDeployDefault.ECSCanary10Percent5Minutes
-# - 10%のトラフィックで5分間テスト
-# - 問題なければ残り90%に切り替え
-```
-
-### 上級チャレンジ3: GitOps実装
-
-```yaml
-# ArgoCD + EKS構成への発展
-# GitリポジトリがSingle Source of Truth
-
-argocd/
-├── applications/
-│   └── smartassist-chatbot.yaml
-└── manifests/
-    ├── deployment.yaml
-    ├── service.yaml
-    └── hpa.yaml
-
-# ArgoCD Application
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: smartassist-chatbot
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/smartassist/chatbot
-    targetRevision: HEAD
-    path: argocd/manifests
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: production
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-```
-
----
-
-## 11. コスト見積もり
-
-### 月額コスト概算
-
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| ECS Fargate | 2タスク × 0.25vCPU × 0.5GB | $15 |
-| ALB | 1 ALB + LCU | $25 |
-| NAT Gateway | 1 AZ | $45 |
-| ECR | 10GB ストレージ | $1 |
-| CodePipeline | 1パイプライン | $1 |
-| CodeBuild | 100分/月 | $5 |
-| CloudWatch | ログ5GB + メトリクス | $10 |
-| **合計** | | **約 $102/月** |
-
-### スケール時の見積もり
-
-```
-ピーク時（10タスク）:
-- ECS Fargate: $75/月
-- ALB LCU増加: +$10/月
-- その他は同じ
-
-月間合計: 約 $170/月
-
-1日10回のデプロイ:
-- CodeBuild: 300分/月 → $15/月
-- 合計: 約 $180/月
-```
-
-### コスト最適化ポイント
-
-```
-1. Fargate Spot活用:
-   - 開発・ステージング環境でSpot使用
-   - 最大70%削減
-
-2. Auto Scaling最適化:
-   - 夜間・週末の最小タスク数を1に
-   - CPU/メモリの適切なサイジング
-
-3. NAT Gateway最適化:
-   - VPCエンドポイント使用でNAT通信削減
-   - 1AZのみNAT Gateway（可用性とのトレードオフ）
-```
-
----
-
-## 12. 学習のポイント
-
-### 今回学んだこと
-
-```
-1. ECRによるコンテナ管理
-   □ プライベートリポジトリの作成
-   □ ライフサイクルポリシーでコスト最適化
-   □ 脆弱性スキャンの有効化
-
-2. CodePipelineによるCI/CD
-   □ GitHub連携（CodeStar Connections）
-   □ CodeBuildでのテスト・ビルド自動化
-   □ アーティファクト管理
-
-3. ECS Fargateによるコンテナ運用
-   □ タスク定義とサービス設定
-   □ Blue/Greenデプロイメント
-   □ Auto Scalingの構成
-
-4. 運用のベストプラクティス
-   □ ヘルスチェックの重要性
-   □ ログ集約とモニタリング
-   □ ロールバック手順の確立
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (ECS + CodePipeline) | GCP (Cloud Run + Cloud Build) |
-|------|--------------------------|-------------------------------|
-| サーバーレスコンテナ | ECS Fargate | Cloud Run |
-| ビルド | CodeBuild | Cloud Build |
-| デプロイ | CodeDeploy | Cloud Deploy |
-| 設定の複雑さ | 中〜高 | 低〜中 |
-| カスタマイズ性 | 高 | 中 |
-| Blue/Green | CodeDeploy統合 | Traffic splitting |
-
-### 次のステップ
-
-```
-1. 発展学習:
-   - EKS (Kubernetes) への移行
-   - Argo CDによるGitOps
-   - カナリアデプロイの自動化
-
-2. 運用改善:
-   - 本番監視ダッシュボードの構築
-   - アラート自動化（PagerDuty/Slack連携）
-   - カオスエンジニアリングの導入
-
-3. 認定資格:
-   - AWS Certified DevOps Engineer - Professional
-   - AWS Certified Solutions Architect - Associate
-```
+### 5. AI校正による品質向上
+機械翻訳の結果をLLMで校正する「翻訳後編集（Post-editing）」パターン。コストと品質のバランスを取りながら、実用的な品質を実現する。

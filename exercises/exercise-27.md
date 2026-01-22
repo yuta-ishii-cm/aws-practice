@@ -1,4 +1,4 @@
-# 課題27: 小売業のデータウェアハウス構築
+# 課題27: 〇〇株式会社 SageMaker モデル基盤 - 需要予測モデルの構築とデプロイ
 
 **難易度: 🟡 中級**
 
@@ -9,718 +9,599 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | データ基盤 |
+| カテゴリ | 機械学習 / SageMaker |
 | 処理タイプ | バッチ |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 6-7時間 |
+| 想定所要時間 | 6-8時間 |
 
 ---
 
-## 2. シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロファイル
-
-| 項目 | 内容 |
-|------|------|
-| **企業名** | ShopSmart株式会社 |
-| **業種** | 小売チェーン（総合スーパー） |
-| **従業員数** | 3,000名（本部100名、店舗2,900名） |
-| **店舗数** | 全国150店舗 |
-| **月間売上** | 50億円 |
-| **日次トランザクション** | 300万件 |
-| **SKU数** | 5万点 |
-
-### 現状の課題
+### 企業プロファイル: 〇〇株式会社
 
 ```
-ShopSmart株式会社は全国展開する総合スーパーチェーンです。
-データ活用において以下の課題を抱えています：
-
-1. データの分散
-   - 各店舗のPOSデータが店舗サーバーに分散
-   - 本部への日次連携に遅延が発生
-   - 在庫データと売上データの不整合
-
-2. レポート作成の非効率
-   - Excelベースの手作業レポート
-   - 月次決算に1週間かかる
-   - 経営層への報告が遅い
-
-3. 分析の限界
-   - 店舗横断の分析ができない
-   - 顧客購買行動の把握が困難
-   - 需要予測ができない
-
-4. データ品質の問題
-   - 店舗ごとのデータ形式が異なる
-   - マスタデータの不整合
-   - 欠損データの把握が困難
+┌─────────────────────────────────────────────────────────────────┐
+│                   〇〇株式会社                                   │
+│                  小売チェーン運営企業                            │
+├─────────────────────────────────────────────────────────────────┤
+│  設立: 2010年    従業員: 3000名    本社: 大阪                    │
+│  事業: コンビニエンスストアチェーン（全国500店舗）              │
+│  年商: 800億円    SKU数: 3000品目    1日販売数: 200万個         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【現在の課題】                                                  │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │                                                              ││
+│  │  ┌─────────────────────────────────────────────────────┐    ││
+│  │  │  発注業務の問題                                      │    ││
+│  │  │  ・各店舗の店長が経験と勘で発注量を決定             │    ││
+│  │  │  ・欠品率: 8%（機会損失 月間2億円）                 │    ││
+│  │  │  ・廃棄ロス率: 5%（月間4000万円）                   │    ││
+│  │  │  ・発注作業時間: 1店舗あたり2時間/日                │    ││
+│  │  └─────────────────────────────────────────────────────┘    ││
+│  │                                                              ││
+│  │  ┌─────────────────────────────────────────────────────┐    ││
+│  │  │  データはあるが活用できていない                      │    ││
+│  │  │  ・POSデータ: 3年分（10億レコード）                 │    ││
+│  │  │  ・気象データ: 連携済み                              │    ││
+│  │  │  ・イベント情報: 手動管理                            │    ││
+│  │  └─────────────────────────────────────────────────────┘    ││
+│  │                                                              ││
+│  └────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【目指す姿】                                                    │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │                                                              ││
+│  │         ┌─────────────────────────────────────┐             ││
+│  │         │    AI需要予測システム               │             ││
+│  │         │                                     │             ││
+│  │         │  ┌───────┐  ┌───────┐  ┌───────┐  │             ││
+│  │         │  │  POS  │  │ 気象  │  │ Event │  │             ││
+│  │         │  │ Data  │  │ Data  │  │ Data  │  │             ││
+│  │         │  └───┬───┘  └───┬───┘  └───┬───┘  │             ││
+│  │         │      └──────────┼──────────┘      │             ││
+│  │         │                 ▼                  │             ││
+│  │         │         ┌─────────────┐           │             ││
+│  │         │         │  SageMaker  │           │             ││
+│  │         │         │   Model     │           │             ││
+│  │         │         └──────┬──────┘           │             ││
+│  │         │                ▼                  │             ││
+│  │         │    商品×店舗×日 の需要予測        │             ││
+│  │         │    → 自動発注推奨                 │             ││
+│  │         │                                     │             ││
+│  │         └─────────────────────────────────────┘             ││
+│  │                                                              ││
+│  └────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### ビジネス目標
+### ビジネス要件と KPI
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| データ反映時間 | 翌日午後 | 当日午前6時 |
-| 月次決算レポート | 1週間 | 翌営業日 |
-| 分析対応時間 | 2-3日 | 1時間以内（セルフサービス） |
-| データ品質スコア | 不明 | 95%以上 |
-| 分析カバレッジ | 売上のみ | 売上・在庫・顧客・トレンド |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    プロジェクト KPI                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【予測精度目標】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  指標              │ 現状        │ 目標        │ 改善      ││
+│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
+│  │  MAPE（平均絶対    │ 手動: 25%   │ < 15%       │ 40%↓     ││
+│  │  パーセント誤差）  │             │             │           ││
+│  │  欠品率            │ 8%          │ < 3%        │ 62%↓     ││
+│  │  廃棄ロス率        │ 5%          │ < 2%        │ 60%↓     ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【ビジネス効果目標】                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  項目              │ 現状        │ 目標        │ 効果      ││
+│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
+│  │  機会損失削減      │ 2億円/月    │ 0.8億円/月  │ 1.2億円↓ ││
+│  │  廃棄ロス削減      │ 4000万/月   │ 1600万/月   │ 2400万↓  ││
+│  │  発注作業時間      │ 2時間/日/店 │ 30分/日/店  │ 75%↓     ││
+│  │  年間コスト削減    │ -           │ 約15億円    │ -         ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【システム要件】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  ・推論レイテンシ: < 500ms（バッチ推論は許容）               ││
+│  │  ・モデル更新頻度: 週次再学習                                ││
+│  │  ・予測対象: 500店舗 × 3000SKU × 7日先                       ││
+│  │  ・1日あたり推論回数: 約1050万回（バッチ）                   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. 達成目標（ゴール）
+## 3. 学習目標
 
-### 主要な学習成果
+### 習得スキル
 
 ```
-この課題を完了すると、以下ができるようになります：
-
-1. Amazon Redshiftによるデータウェアハウス構築
-   - Redshift Serverlessの設定と運用
-   - スタースキーマのデータモデリング
-   - クエリパフォーマンス最適化
-
-2. AWS Glueによるデータパイプライン
-   - ETLジョブの設計と実装
-   - Data Catalogによるメタデータ管理
-   - 増分ロードの実装
-
-3. dbtによるデータ変換
-   - dbtプロジェクトの構築
-   - モデルの階層化（staging/intermediate/marts）
-   - テストとドキュメント生成
-
-4. 経営ダッシュボードの構築
-   - QuickSightでのBI構築
-   - KPIダッシュボードの設計
-   - セルフサービス分析の実現
+┌─────────────────────────────────────────────────────────────────┐
+│                       学習目標マップ                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【主要スキル】                                                  │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  1. SageMaker基礎                                           ││
+│  │     ├── SageMaker Studio / Notebooks                        ││
+│  │     ├── 組み込みアルゴリズム（XGBoost, DeepAR等）           ││
+│  │     ├── Training Job / Processing Job                       ││
+│  │     └── Model / Endpoint / Batch Transform                  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  2. モデル開発ライフサイクル                                ││
+│  │     ├── データ前処理（SageMaker Processing）                ││
+│  │     ├── 特徴量エンジニアリング                              ││
+│  │     ├── ハイパーパラメータチューニング                      ││
+│  │     └── モデル評価・検証                                    ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  3. モデルデプロイ                                          ││
+│  │     ├── リアルタイム推論エンドポイント                      ││
+│  │     ├── バッチ変換（Batch Transform）                       ││
+│  │     ├── サーバーレス推論                                    ││
+│  │     └── マルチモデルエンドポイント                          ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  4. CloudFormationによるML基盤構築                          ││
+│  │     ├── SageMaker Domain / Studio                           ││
+│  │     ├── S3バケット設計                                      ││
+│  │     ├── IAMロール設計                                       ││
+│  │     └── VPCネットワーク設計                                 ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【副次スキル】                                                  │
+│  ・時系列予測の基礎知識                                          │
+│  ・Feature Storeの活用                                           │
+│  ・Model Registry                                                │
+│  ・コスト最適化                                                  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 合格基準
+### GCPとの対応関係
 
-| 項目 | 基準 |
-|------|------|
-| DWH構築 | Redshiftにスタースキーマでテーブルが構築されていること |
-| ETL | Glueで日次データパイプラインが動作すること |
-| dbt | dbtモデルでマートテーブルが生成されること |
-| ダッシュボード | QuickSightで経営ダッシュボードが表示されること |
-| パフォーマンス | 主要クエリが30秒以内に完了すること |
+| AWS サービス | GCP 対応サービス | 主な違い |
+|-------------|-----------------|---------|
+| SageMaker | Vertex AI | 統合ML プラットフォーム |
+| SageMaker Studio | Vertex AI Workbench | ノートブック環境 |
+| SageMaker Endpoints | Vertex AI Predictions | モデルサービング |
+| SageMaker Processing | Dataflow / Dataproc | データ処理 |
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### コア技術スタック
-
-```yaml
-データウェアハウス:
-  - Amazon Redshift Serverless: サーバーレスDWH
-  - Amazon Redshift Spectrum: S3データ直接クエリ
-
-データ統合:
-  - AWS Glue: ETL、データカタログ
-  - AWS Glue DataBrew: データプロファイリング
-  - Amazon S3: データレイク
-
-データ変換:
-  - dbt (data build tool): SQL変換、テスト、ドキュメント
-  - dbt Cloud / dbt Core: 実行環境
-
-可視化:
-  - Amazon QuickSight: BIダッシュボード
-  - Amazon Athena: アドホッククエリ
-
-オーケストレーション:
-  - AWS Step Functions: ワークフロー管理
-  - Amazon EventBridge: スケジュール実行
-  - Amazon MWAA (Airflow): 複雑なワークフロー（オプション）
-
-監視:
-  - Amazon CloudWatch: メトリクス・ログ
-  - AWS Glue Data Quality: データ品質監視
 ```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| DWH | Redshift | BigQuery |
-| ETL | Glue | Dataflow / Dataproc |
-| 変換ツール | dbt (両対応) | dbt (両対応) |
-| BI | QuickSight | Looker |
-| スキーマ管理 | Glue Data Catalog | Data Catalog |
+┌─────────────────────────────────────────────────────────────────┐
+│                    使用AWSサービス一覧                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【コアサービス】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  SageMaker         │ ML開発・デプロイ        │ ★★★★★      ││
+│  │  S3                │ データ・モデル保存      │ ★★★★★      ││
+│  │  CloudFormation    │ インフラ定義            │ ★★★★★      ││
+│  │  IAM               │ アクセス制御            │ ★★★★☆      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【支援サービス】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  CloudWatch        │ 監視・ログ              │ ★★★★☆      ││
+│  │  EventBridge       │ スケジュール実行        │ ★★★☆☆      ││
+│  │  Lambda            │ 推論トリガー            │ ★★★☆☆      ││
+│  │  Step Functions    │ ML パイプライン         │ ★★★☆☆      ││
+│  │  ECR               │ カスタムコンテナ        │ ★★☆☆☆      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 5. 前提条件
+## 5. 前提条件と事前準備
 
-### 技術要件
+### 必要な環境
 
 ```bash
-# 必要なCLIツール
-aws --version          # 2.x
-python --version       # 3.9+
-dbt --version          # 1.7+
-psql --version         # 14+
+# AWS CLI バージョン確認
+aws --version
+# aws-cli/2.x.x 以上
 
-# AWS設定
-aws configure
+# Python環境
+python3 --version
+# Python 3.9以上
+
+# 必要なPythonパッケージ
+pip install boto3 sagemaker pandas numpy scikit-learn
+```
+
+### AWS環境の準備
+
+```bash
+# 環境変数設定
 export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export PROJECT_NAME=smartretail
+export ENVIRONMENT=dev
+
+# 作業ディレクトリ作成
+mkdir -p ~/smartretail-sagemaker/{cfn,notebooks,scripts,data}
+cd ~/smartretail-sagemaker
 ```
 
-### 事前準備
+### IAMポリシー（必要な権限）
 
-```bash
-# dbtのインストール
-pip install dbt-redshift
-
-# プロジェクト構造
-shopsmart-dwh/
-├── dbt_project/
-│   ├── dbt_project.yml
-│   ├── profiles.yml
-│   ├── models/
-│   │   ├── staging/
-│   │   ├── intermediate/
-│   │   └── marts/
-│   ├── tests/
-│   ├── macros/
-│   └── seeds/
-├── glue_jobs/
-│   ├── extract_pos_data.py
-│   └── load_to_redshift.py
-├── terraform/
-│   └── main.tf
-└── dashboards/
-    └── quicksight/
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sagemaker:*",
+        "s3:*",
+        "ecr:*",
+        "cloudwatch:*",
+        "logs:*",
+        "iam:PassRole",
+        "iam:CreateServiceLinkedRole",
+        "cloudformation:*",
+        "ec2:*",
+        "kms:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
 ```
 
 ---
 
-## 6. アーキテクチャ図
+## 6. アーキテクチャ設計
 
-### 全体構成
+### ML基盤全体像
 
 ```mermaid
 architecture-beta
-    group datasources(cloud)[Data Sources]
     group aws(cloud)[AWS Cloud]
-    group datalake(disk)[Data Lake] in aws
-    group etl(server)[ETL Layer] in aws
-    group dwh(database)[Data Warehouse] in aws
-    group bi(server)[BI Layer] in aws
 
-    service pos(server)[店舗POS システム] in datasources
-    service inventory_sys(server)[在庫管理 システム] in datasources
-    service customer_sys(server)[顧客管理 システム] in datasources
-    service external(server)[外部データ 天気・競合] in datasources
+    group data_layer(server)[Data Layer] in aws
+    service pos(database)[POS Data RDS/S3] in data_layer
+    service weather(server)[Weather Data API to S3] in data_layer
+    service event(disk)[Event Data Manual to S3] in data_layer
+    service datalake(disk)[S3 Data Lake raw/processed/features] in data_layer
 
-    service s3_raw(disk)[S3 Data Lake Raw Zone] in datalake
-    service glue_catalog(database)[Glue Data Catalog] in etl
-    service glue_etl(server)[Glue ETL] in etl
+    group ml_layer(server)[ML Layer] in aws
+    service studio(server)[SageMaker Studio Jupyter Notebooks] in ml_layer
+    service processing(server)[Processing Job 前処理] in ml_layer
+    service training(server)[Training Job モデル学習] in ml_layer
+    service registry(database)[Model Registry モデル管理] in ml_layer
 
-    service redshift(database)[Redshift Serverless] in dwh
-    service staging(database)[Schema: staging] in dwh
-    service intermediate(database)[Schema: intermediate] in dwh
-    service marts(database)[Schema: marts] in dwh
+    group inference_layer(server)[Inference Layer] in aws
+    service batch(server)[Batch Transform 日次バッチ予測] in inference_layer
+    service endpoint(server)[Real-time Endpoint オンデマンド] in inference_layer
+    service s3results(disk)[S3 Results 予測結果] in inference_layer
+    service apigw(internet)[API Gateway 予測API] in inference_layer
 
-    service quicksight(server)[Amazon QuickSight] in bi
-
-    pos:B --> T:s3_raw
-    inventory_sys:B --> T:s3_raw
-    customer_sys:B --> T:s3_raw
-    external:B --> T:s3_raw
-    s3_raw:R --> L:glue_etl
-    glue_etl:R --> L:glue_catalog
-    glue_catalog:B --> T:redshift
-    staging:B --> T:intermediate
-    intermediate:B --> T:marts
-    marts:B --> T:quicksight
+    pos:B --> T:datalake
+    weather:B --> T:datalake
+    event:B --> T:datalake
+    datalake:B --> T:studio
+    studio:B --> T:processing
+    processing:R --> L:training
+    training:B --> T:registry
+    registry:B --> T:batch
+    registry:B --> T:endpoint
+    batch:B --> T:s3results
+    endpoint:B --> T:apigw
 ```
 
-**Redshift Serverless 設定:**
-- Workgroup: shopsmart-analytics
-- Namespace: shopsmart-dwh
-- Base Capacity: 32 RPU
+### データフロー設計
 
-**dbt Schema 構成:**
-- **staging**: stg_pos_transactions, stg_inventory, stg_customers
-- **intermediate**: int_daily_sales, int_product_performance, int_customer_segments
-- **marts**: Dimension Tables (dim_date, dim_store, dim_product, dim_customer, dim_time) + Fact Tables (fct_sales, fct_inventory, fct_customer_activity)
+#### 入力データ
 
-**QuickSight Dashboards:**
-- 売上概要 / 店舗別分析 / 商品分析 / 在庫分析 / 顧客分析 / トレンド
+| データソース | 形式 | 更新頻度 | サイズ |
+|-------------|------|---------|--------|
+| POSトランザクション | CSV/Parquet | 日次 | 10GB/日 |
+| 商品マスタ | CSV | 週次 | 10MB |
+| 店舗マスタ | CSV | 月次 | 1MB |
+| 気象データ | JSON→CSV | 日次 | 100MB |
+| イベントカレンダー | CSV | 週次 | 1MB |
 
-### データパイプラインフロー
+#### 特徴量設計
 
-```
-1. データ抽出（毎日 AM 2:00）
-   店舗POS → S3 Raw Zone (Parquet形式)
+| カテゴリ | 特徴量例 |
+|---------|---------|
+| 時間特徴 | 曜日, 月, 祝日フラグ, 給料日フラグ |
+| ラグ特徴 | 過去7日/14日/28日の販売数 |
+| ローリング統計 | 7日/14日移動平均, 標準偏差 |
+| 商品特徴 | カテゴリ, 価格帯, 新商品フラグ |
+| 店舗特徴 | 立地タイプ, 面積, 客層 |
+| 気象特徴 | 気温, 降水確率, 天気カテゴリ |
+| イベント特徴 | 近隣イベント, 店舗イベント |
 
-2. Glue ETL（AM 3:00）
-   S3 Raw → クレンジング → S3 Processed
+#### 出力データ
 
-3. Redshift ロード（AM 4:00）
-   S3 Processed → Redshift Staging Tables
-
-4. dbt 変換（AM 5:00）
-   Staging → Intermediate → Marts
-   + テスト実行
-   + ドキュメント生成
-
-5. QuickSight 更新（AM 6:00）
-   SPICE データセットリフレッシュ
+```mermaid
+flowchart LR
+    input[店舗ID × 商品ID × 予測日] --> model[予測モデル]
+    model --> output[予測販売数<br/>+ 信頼区間 上限/下限<br/>+ 推奨発注数]
 ```
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 7. トラブルシューティング演習
 
-### Challenge 1: Redshiftクエリが遅い
-
-```
-問題:
-店舗別売上レポートクエリが5分以上かかる。
-
-クエリ:
-SELECT s.store_name, SUM(f.net_amount)
-FROM marts.fct_sales f
-JOIN marts.dim_store s ON f.store_key = s.store_key
-WHERE f.date_key BETWEEN '2024-01-01' AND '2024-01-31'
-GROUP BY 1;
-
-EXPLAIN結果:
-- Seq Scan on fct_sales (rows=50,000,000)
-- 大量のディスクI/O
-
-調査項目:
-1. テーブル設計（DISTKEY, SORTKEY）
-2. 統計情報
-3. クエリプラン
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```sql
--- 1. テーブル設計の確認
-SELECT "table", diststyle, sortkey1
-FROM svv_table_info
-WHERE schema = 'marts';
-
--- 2. DISTKEY/SORTKEYの最適化
-ALTER TABLE marts.fct_sales
-ALTER DISTSTYLE KEY DISTKEY (store_key);
-
-ALTER TABLE marts.fct_sales
-ALTER SORTKEY (date_key, store_key);
-
--- 3. 統計情報更新
-ANALYZE marts.fct_sales;
-
--- 4. テーブル最適化（VACUUM）
-VACUUM FULL marts.fct_sales;
-
--- 5. クエリの書き換え（日付フィルタを先に）
-WITH filtered_sales AS (
-    SELECT store_key, net_amount
-    FROM marts.fct_sales
-    WHERE date_key >= '2024-01-01' AND date_key < '2024-02-01'
-)
-SELECT s.store_name, SUM(fs.net_amount)
-FROM filtered_sales fs
-JOIN marts.dim_store s ON fs.store_key = s.store_key
-GROUP BY 1;
-
--- 6. マテリアライズドビューの活用
-CREATE MATERIALIZED VIEW mv_monthly_store_sales AS
-SELECT
-    date_trunc('month', date_key) as month,
-    store_key,
-    SUM(net_amount) as total_sales
-FROM marts.fct_sales
-GROUP BY 1, 2;
-```
-</details>
-
-### Challenge 2: dbtモデルのテストが失敗する
+### 演習7-1: モデル精度の劣化
 
 ```
-問題:
-fct_salesのstore_key参照整合性テストが失敗する。
-一部のトランザクションのstore_keyがdim_storeに存在しない。
-
-エラー:
-Failure in test relationships_fct_sales_store_key__store_key__ref_dim_store_
-Got 1523 results, configured to fail if != 0
-
-調査項目:
-1. ソースデータの確認
-2. ETL処理の確認
-3. マスタデータの整合性
+┌─────────────────────────────────────────────────────────────────┐
+│              トラブルシューティング演習 7-1                      │
+│                  モデル精度の劣化                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【状況】                                                        │
+│  本番稼働後3ヶ月で、予測精度が徐々に低下している。              │
+│  MAPEが当初15%だったが、現在は25%まで悪化。                     │
+│                                                                  │
+│  【観測データ】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  時期        │ MAPE  │ 特記事項                            ││
+│  ├─────────────┼───────┼─────────────────────────────────────┤│
+│  │  1ヶ月目    │ 15%   │ 正常                                ││
+│  │  2ヶ月目    │ 18%   │ 新商品50品追加                      ││
+│  │  3ヶ月目    │ 25%   │ 夏季セール開始                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【課題】                                                        │
+│  1. 精度劣化の原因を分析してください                             │
+│  2. データドリフト検出の仕組みを設計してください                 │
+│  3. モデル再学習の自動化を提案してください                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-<details>
-<summary>解決のヒント</summary>
-
-```sql
--- 1. 問題のあるレコードを特定
-SELECT DISTINCT f.store_key
-FROM marts.fct_sales f
-LEFT JOIN marts.dim_store s ON f.store_key = s.store_key
-WHERE s.store_key IS NULL;
-
--- 2. ソースデータを確認
-SELECT DISTINCT store_id
-FROM staging.stg_pos_transactions
-WHERE store_id NOT IN (SELECT store_id FROM staging.stg_stores);
-
--- 3. dbtテストを条件付きに変更（schema.yml）
-- name: store_key
-  tests:
-    - relationships:
-        to: ref('dim_store')
-        field: store_key
-        config:
-          where: "store_key != 'UNKNOWN'"
-
--- 4. 不明な店舗を扱うサロゲートキー追加
--- dim_store.sql に追加
-UNION ALL
-SELECT
-    'UNKNOWN' as store_key,
-    'UNKNOWN' as store_id,
-    'Unknown Store' as store_name,
-    'Unknown' as region,
-    ...
-
--- 5. fct_sales.sql でCOALESCE
-SELECT
-    ...
-    COALESCE(t.store_id, 'UNKNOWN') as store_key,
-    ...
-```
-</details>
-
-### Challenge 3: 日次パイプラインがタイムアウト
+### 演習7-2: 推論エンドポイントのレイテンシ問題
 
 ```
-問題:
-Glue ETLジョブがタイムアウトし、dbt実行まで到達しない。
-朝6時のダッシュボード更新に間に合わない。
-
-ログ:
-- Glue job duration: 4時間（タイムアウト）
-- S3へのParquet書き込みで停滞
-
-データ量:
-- 日次トランザクション: 300万件
-- ファイルサイズ: 5GB
-
-調査項目:
-1. Glueジョブの設定
-2. Spark設定
-3. パーティショニング
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```python
-# 1. Glueジョブのワーカー数を増やす
-aws glue update-job \
-    --job-name shopsmart-extract-pos \
-    --job-update '{
-        "NumberOfWorkers": 20,
-        "WorkerType": "G.2X"
-    }'
-
-# 2. Sparkパーティション最適化
-# glue_jobs/daily_pos_etl.py
-spark.conf.set("spark.sql.shuffle.partitions", "200")
-spark.conf.set("spark.default.parallelism", "200")
-
-# 3. 書き込み時のパーティション数を制御
-pos_cleaned.repartition(100).write \
-    .format("parquet") \
-    .mode("overwrite") \
-    .save(output_path)
-
-# 4. Glueブックマークで増分処理
-# すでにロード済みのデータをスキップ
-
-# 5. COPY コマンドに変更（Glue → S3 → COPY）
-# Redshiftへの直接書き込みより高速
-
-COPY staging.stg_pos_transactions
-FROM 's3://shopsmart-datalake/processed/pos/'
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
-FORMAT AS PARQUET;
-
-# 6. 並列処理を分割
-# 店舗グループごとに並列実行
-```
-</details>
-
----
-
-## 9. 設計考慮ポイント
-
-### データモデリング戦略
-
-```yaml
-スタースキーマ vs スノーフレークスキーマ:
-
-スタースキーマ（本課題で採用）:
-  特徴:
-    - ファクトテーブルを中心にディメンションが直接結合
-    - JOINが少なくクエリがシンプル
-    - Redshiftに最適（カラムナーストレージ）
-  適用ケース:
-    - 定型レポート
-    - BI ダッシュボード
-    - アドホック分析
-
-スノーフレークスキーマ:
-  特徴:
-    - ディメンションが正規化
-    - ストレージ効率が良い
-    - 更新が容易
-  適用ケース:
-    - マスタデータの頻繁な更新
-    - 複雑な階層構造
-
-SCD (Slowly Changing Dimensions):
-  Type 1: 上書き更新
-  Type 2: 履歴保持（有効期間管理）
-  Type 3: 限定的な履歴（現在値 + 前回値）
-```
-
-### Redshift最適化
-
-```sql
--- テーブル設計のベストプラクティス
-
--- ファクトテーブル
-CREATE TABLE marts.fct_sales (
-    transaction_id VARCHAR(32) NOT NULL ENCODE zstd,
-    date_key DATE NOT NULL ENCODE az64,
-    store_key VARCHAR(10) NOT NULL ENCODE zstd,
-    customer_key VARCHAR(12) NOT NULL ENCODE zstd,
-    net_amount DECIMAL(12,2) NOT NULL ENCODE az64,
-    ...
-)
-DISTSTYLE KEY
-DISTKEY (store_key)  -- 頻繁にJOINするキー
-SORTKEY (date_key, store_key);  -- 範囲クエリ用
-
--- ディメンションテーブル
-CREATE TABLE marts.dim_store (
-    store_key VARCHAR(10) NOT NULL,
-    ...
-)
-DISTSTYLE ALL;  -- 小さいテーブルは全ノードに配布
-
--- エンコーディング自動選択
-ANALYZE COMPRESSION marts.fct_sales;
+┌─────────────────────────────────────────────────────────────────┐
+│              トラブルシューティング演習 7-2                      │
+│              推論レイテンシの問題                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【状況】                                                        │
+│  リアルタイム推論エンドポイントのレイテンシが                    │
+│  SLO（500ms）を超えるケースが増加している。                     │
+│                                                                  │
+│  【メトリクス】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  ・平均レイテンシ: 300ms                                    ││
+│  │  ・P99レイテンシ: 1200ms                                    ││
+│  │  ・モデル読み込み時間: 800ms                                ││
+│  │  ・コールドスタート発生率: 15%                              ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【課題】                                                        │
+│  1. レイテンシ問題の根本原因を特定してください                   │
+│  2. コールドスタート対策を提案してください                       │
+│  3. Serverless Inferenceの適用を検討してください                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. 発展課題
+## 8. 設計課題
 
-### 上級チャレンジ1: 需要予測モデル統合
+### 設計課題8-1: マルチモデル戦略
 
-```python
-# Amazon SageMaker + Redshift ML
-
-# Redshiftから直接機械学習モデルを呼び出し
-CREATE MODEL demand_forecast_model
-FROM (
-    SELECT
-        store_id,
-        product_id,
-        transaction_date,
-        SUM(quantity) as daily_sales,
-        AVG(SUM(quantity)) OVER (
-            PARTITION BY store_id, product_id
-            ORDER BY transaction_date
-            ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
-        ) as rolling_avg_7d
-    FROM staging.stg_transaction_items ti
-    JOIN staging.stg_pos_transactions t ON ti.transaction_id = t.transaction_id
-    GROUP BY 1, 2, 3
-)
-TARGET daily_sales
-FUNCTION predict_demand
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftMLRole'
-SETTINGS (
-    S3_BUCKET 'shopsmart-ml-artifacts',
-    MAX_RUNTIME 3600
-);
-
--- 予測実行
-SELECT
-    store_id,
-    product_id,
-    predict_demand(rolling_avg_7d) as predicted_demand
-FROM ...;
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      設計課題 8-1                                │
+│                 マルチモデル戦略                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【課題】                                                        │
+│  商品カテゴリごとに異なるモデルを使い分ける                      │
+│  マルチモデル戦略を設計してください。                            │
+│                                                                  │
+│  【要件】                                                        │
+│  ・飲料/食品/日用品/菓子で異なるモデル                          │
+│  ・各モデルは独立して更新可能                                    │
+│  ・推論時にカテゴリに応じて適切なモデルを選択                    │
+│  ・コスト効率の良いエンドポイント設計                            │
+│                                                                  │
+│  【成果物】                                                      │
+│  1. マルチモデルエンドポイントの設計                             │
+│  2. モデルルーティングロジック                                   │
+│  3. CloudFormationテンプレート                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 上級チャレンジ2: リアルタイムダッシュボード
+### 設計課題8-2: A/Bテスト基盤
 
-```yaml
-# Redshift Streaming Ingestion
-
--- Kinesis からのリアルタイム取り込み
-CREATE EXTERNAL SCHEMA kinesis_schema
-FROM KINESIS
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftKinesisRole';
-
-CREATE MATERIALIZED VIEW mv_realtime_sales
-AUTO REFRESH YES AS
-SELECT
-    ApproximateArrivalTimestamp as event_time,
-    json_extract_path_text(kinesis_data, 'store_id') as store_id,
-    json_extract_path_text(kinesis_data, 'total_amount')::decimal as amount
-FROM kinesis_schema.pos_stream
-WHERE is_valid_json(kinesis_data);
-
--- 5分間隔で自動リフレッシュ
-ALTER MATERIALIZED VIEW mv_realtime_sales
-AUTO REFRESH YES
-INTERVAL 5 MINUTES;
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      設計課題 8-2                                │
+│                   A/Bテスト基盤                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【課題】                                                        │
+│  新しいモデルバージョンを安全にデプロイするための                │
+│  A/Bテスト基盤を設計してください。                               │
+│                                                                  │
+│  【要件】                                                        │
+│  ・トラフィックの10%を新モデルに振り分け                        │
+│  ・モデル間の精度比較を自動化                                    │
+│  ・問題発生時の自動ロールバック                                  │
+│  ・統計的有意性の判定                                            │
+│                                                                  │
+│  【成果物】                                                      │
+│  1. A/Bテストアーキテクチャ図                                    │
+│  2. トラフィック分割設定                                         │
+│  3. 評価ダッシュボード設計                                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 上級チャレンジ3: データメッシュアーキテクチャ
+---
 
-```yaml
-# ドメイン別データプロダクト
+## 9. 発展課題
 
-Domains:
-  - Sales Domain:
-      Owner: 営業本部
-      Data Products:
-        - fct_sales (Platinum)
-        - dim_store (Gold)
-        - daily_sales_summary (Silver)
-      SLA: 99.9%
-      Freshness: 6時間以内
+### 発展課題9-1: Feature Store の活用
 
-  - Inventory Domain:
-      Owner: 物流部門
-      Data Products:
-        - fct_inventory
-        - dim_product
-        - stock_alerts
-      SLA: 99.5%
-      Freshness: 1時間以内
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      発展課題 9-1                               │
+│                 Feature Store の活用                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【シナリオ】                                                    │
+│  特徴量の管理と再利用を効率化するため、                          │
+│  SageMaker Feature Storeを導入したい。                           │
+│                                                                  │
+│  【技術要件】                                                    │
+│  ・オフラインストア（学習用）とオンラインストア（推論用）       │
+│  ・特徴量のバージョン管理                                        │
+│  ・リアルタイム特徴量取得（<10ms）                              │
+│  ・特徴量の共有と再利用                                          │
+│                                                                  │
+│  【成果物】                                                      │
+│  1. Feature Group設計                                            │
+│  2. 特徴量パイプライン                                           │
+│  3. CloudFormationテンプレート                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-  - Customer Domain:
-      Owner: マーケティング部
-      Data Products:
-        - dim_customer
-        - customer_segments
-        - purchase_history
-      SLA: 99.0%
-      Freshness: 24時間以内
+---
 
-Data Contracts:
-  - Schema versioning
-  - Quality SLAs
-  - Access policies
+## 10. 学習のまとめ
+
+### 学習チェックリスト
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     学習チェックリスト                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【SageMaker基礎】                                               │
+│  □ SageMaker Studioの環境構築ができる                           │
+│  □ Processing Jobでデータ前処理ができる                         │
+│  □ Training Jobでモデル訓練ができる                             │
+│  □ Batch Transformでバッチ推論ができる                          │
+│                                                                  │
+│  【モデル開発】                                                  │
+│  □ 組み込みアルゴリズム（XGBoost等）を使用できる                │
+│  □ ハイパーパラメータチューニングができる                       │
+│  □ モデル評価指標を適切に選択できる                             │
+│  □ Model Registryを活用できる                                   │
+│                                                                  │
+│  【デプロイ】                                                    │
+│  □ リアルタイムエンドポイントを構築できる                       │
+│  □ Auto Scalingを設定できる                                     │
+│  □ Data Captureを設定できる                                     │
+│  □ A/Bテスト環境を構築できる                                    │
+│                                                                  │
+│  【CloudFormation】                                              │
+│  □ SageMaker Domainを構築できる                                 │
+│  □ IAMロールを適切に設計できる                                  │
+│  □ VPCエンドポイントを設定できる                                │
+│  □ エンドポイントをIaCで管理できる                              │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 11. コスト見積もり
 
-### 月額コスト概算
-
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| Redshift Serverless | 32 RPU × 200時間/月 | $960 |
-| S3 | 1TB (データレイク) | $24 |
-| Glue ETL | 100 DPU時間/月 | $44 |
-| Glue Data Catalog | 100万オブジェクト | $1 |
-| QuickSight | 5 Author + 50 Reader | $275 |
-| Step Functions | 10,000実行/月 | $3 |
-| CloudWatch | ログ・メトリクス | $20 |
-| **合計** | | **約 $1,327/月** |
-
-### コスト最適化
+### 想定コスト（月額）
 
 ```
-1. Redshift Serverless の使用量最適化:
-   - 営業時間のみ高RPU
-   - 夜間・週末は最小RPU
-   - 想定削減: 30%
-
-2. クエリ最適化:
-   - マテリアライズドビュー活用
-   - 適切なDISTKEY/SORTKEY
-   - キャッシュ活用
-
-3. ストレージ最適化:
-   - S3 ライフサイクル
-   - 不要データのアーカイブ
-   - Parquet圧縮
+┌─────────────────────────────────────────────────────────────────┐
+│                      コスト見積もり                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【開発環境】                                                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  項目                    │ 数量            │ 月額（USD）    ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  SageMaker Studio        │ 40時間/月       │ $12            ││
+│  │  Training Job (m5.xl)    │ 10時間/月       │ $2.30          ││
+│  │  Processing Job          │ 5時間/月        │ $1.15          ││
+│  │  S3 Storage              │ 50GB            │ $1.15          ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  小計                    │                 │ 約 $17         ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【本番環境想定】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  項目                    │ 数量            │ 月額（USD）    ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  Endpoint (ml.m5.large)  │ 2台 × 24h       │ $210           ││
+│  │  Batch Transform (週次)  │ 4回 × 2時間     │ $18            ││
+│  │  Training Job (週次)     │ 4回 × 3時間     │ $28            ││
+│  │  S3 Storage              │ 500GB           │ $11.50         ││
+│  │  CloudWatch              │ ログ・メトリクス│ $15            ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  小計                    │                 │ 約 $283        ││
+│  │                          │                 │ (約 ¥42,000)   ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【コスト最適化のポイント】                                      │
+│  ・Spot Instancesの活用（Training: 最大90%削減）                │
+│  ・Serverless Inferenceの検討（低トラフィック時）                │
+│  ・適切なインスタンスサイズ選定                                  │
+│  ・不要なリソースの自動停止                                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 12. 学習のポイント
+## リソースのクリーンアップ
 
-### 今回学んだこと
+```bash
+# エンドポイント削除
+aws sagemaker delete-endpoint \
+  --endpoint-name smartretail-demand-forecast-dev
 
+aws sagemaker delete-endpoint-config \
+  --endpoint-config-name smartretail-demand-forecast-config-dev
+
+aws sagemaker delete-model \
+  --model-name smartretail-demand-forecast-dev
+
+# CloudFormationスタック削除
+aws cloudformation delete-stack --stack-name smartretail-sagemaker-domain-dev
+aws cloudformation delete-stack --stack-name smartretail-storage-iam-dev
+aws cloudformation delete-stack --stack-name smartretail-network-dev
+
+# S3バケット削除（中身がある場合は先に空にする）
+aws s3 rb s3://smartretail-ml-data-dev-${ACCOUNT_ID} --force
+aws s3 rb s3://smartretail-ml-models-dev-${ACCOUNT_ID} --force
+
+echo "Cleanup completed!"
 ```
-1. Redshift Serverless
-   □ ワークグループとネームスペースの設定
-   □ RPUベースの課金モデル
-   □ 外部スキーマ（Spectrum）の活用
 
-2. dbt (data build tool)
-   □ staging/intermediate/martsの階層化
-   □ テストとドキュメント生成
-   □ 増分処理の実装
+---
 
-3. データモデリング
-   □ スタースキーマの設計
-   □ ディメンションとファクトの分離
-   □ SCD（緩やかに変化するディメンション）
+**次の課題**: [課題37: 〇〇株式会社 MLOpsパイプライン](exercise-37.md)
 
-4. データパイプライン
-   □ Glue ETLでのデータ統合
-   □ Step Functionsでのオーケストレーション
-   □ データ品質管理
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (Redshift + dbt) | GCP (BigQuery + dbt) |
-|------|---------------------|---------------------|
-| 課金モデル | RPU時間課金 | スキャン量課金 |
-| パフォーマンス | 専用リソース | 自動スケール |
-| ETL | Glue | Dataflow |
-| 運用複雑さ | 中 | 低 |
-| カスタマイズ性 | 高 | 中 |
-
-### 次のステップ
-
-```
-1. 発展学習:
-   - Amazon Redshift RA3 インスタンス
-   - Redshift ML での機械学習
-   - AWS Data Exchange
-
-2. 実務応用:
-   - 経営ダッシュボードの高度化
-   - 需要予測との連携
-   - リアルタイムデータ統合
-
-3. 認定資格:
-   - AWS Certified Data Analytics - Specialty
-   - dbt Certification
-```
+**前の課題**: [課題35: ShopNow Chaos Engineering](exercise-35.md)

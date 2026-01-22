@@ -1,6 +1,6 @@
-# 課題14: 配車サービスの統合監視基盤構築
+# 課題14: スタートアップの開発環境自動構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -9,1014 +9,365 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | オブザーバビリティ・監視 |
-| 処理タイプ | リアルタイム |
-| 使用IaC | CloudFormation |
+| カテゴリ | IaC・DevOps |
+| 処理タイプ | バッチ |
+| 使用IaC | Terraform |
 | 想定所要時間 | 4-5時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## 2. シナリオ
 
-### 企業プロファイル
-- **企業名**: RideShare株式会社
-- **業種**: モビリティ・配車サービス
-- **規模**: 従業員200名、エンジニア40名
-- **サービス規模**: 月間配車100万件、15個のマイクロサービス
-- **現状インフラ**: AWS上でEKS + マイクロサービスアーキテクチャ
+### 企業プロフィール
+**〇〇株式会社**は、B2B SaaSプロダクトを開発するスタートアップです。現在エンジニアは15名で、毎月2-3名のペースで採用を進めています。
 
 ### 現状の課題
-RideShare株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
+新規エンジニアのオンボーディング時、開発環境の構築に多大な時間がかかっています：
 
-1. **障害検知の遅延**
-   - ユーザーからの問い合わせで障害に気づくことが多い
-   - どのサービスが原因か特定に時間がかかる
-   - 夜間・休日の検知が特に遅い
+1. **環境構築の属人化**：手順書はあるが、個人のローカル環境差異で動作しないことが多い
+2. **AWS権限設定の煩雑さ**：IAMユーザー作成、ポリシー設定を手動で実施
+3. **開発用AWSリソースの管理不全**：個人の検証環境が乱立し、コスト管理が困難
+4. **セキュリティリスク**：認証情報の共有や、過剰な権限付与が発生
 
-2. **トラブルシュートの困難さ**
-   - 分散トレーシングがなく、リクエストの流れが追えない
-   - ログが各サービスに分散し、相関分析ができない
-   - パフォーマンス問題のボトルネック特定が困難
-
-3. **監視の属人化**
-   - 各チームが独自の監視ツールを使用
-   - アラートルールが統一されていない
-   - SLI/SLO が定義されていない
-
-### ビジネス要件
-```
-機能要件:
-- 全マイクロサービスのメトリクス統合監視
-- 分散トレーシングによるリクエスト追跡
-- 統合ログ管理と検索
-- SLI/SLO ダッシュボードの構築
-
-非機能要件:
-- 障害検知から通知まで1分以内
-- メトリクス保持期間：15ヶ月
-- ログ検索レスポンス：5秒以内
-- ダッシュボードリフレッシュ：10秒間隔
-```
+### 数値で見る問題
+- 新規エンジニアの環境構築時間：平均 **30分**（目標：5分）
+- 環境構築での質問対応：月 **20時間**（シニアエンジニアの工数）
+- 未使用の検証リソース：月額 **$500** の無駄なコスト
+- セキュリティインシデント（権限関連）：四半期 **3件**
 
 ### 成功指標（KPI）
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 平均検知時間（MTTD） | 30分 | 1分 |
-| 平均復旧時間（MTTR） | 2時間 | 15分 |
-| 障害原因特定時間 | 45分 | 5分 |
-| SLO 達成率 | 測定なし | 99.9% |
-| アラート精度（真陽性率） | 40% | 90% |
+| 環境構築時間 | 30分 | 5分以内 |
+| 質問対応工数 | 20時間/月 | 5時間/月 |
+| 無駄な検証リソースコスト | $500/月 | $100/月 |
+| 権限関連インシデント | 3件/四半期 | 0件/四半期 |
 
 ---
 
-## 3. 学習目標
+## 3. 達成目標
 
-### 本課題で習得するスキル
+### 主要な学習成果
+1. Terraformによるマルチ環境インフラ管理の基礎を習得
+2. GitHub Actionsを使ったインフラCI/CDパイプラインの構築
+3. AWS IAM Identity Center（旧SSO）によるアクセス管理の理解
+4. Terraform Stateの安全な管理方法の習得
 
-```
-1. メトリクス監視（理解度：詳細）
-   - CloudWatch メトリクス・アラーム設定
-   - Amazon Managed Prometheus（AMP）
-   - カスタムメトリクスの設計
-
-2. 分散トレーシング（理解度：実装）
-   - AWS X-Ray によるトレース収集
-   - サービスマップの活用
-   - パフォーマンス分析
-
-3. 統合ダッシュボード（理解度：実装）
-   - Amazon Managed Grafana（AMG）
-   - CloudWatch ダッシュボード
-   - SLI/SLO 可視化
-
-4. ログ管理（理解度：基礎）
-   - CloudWatch Logs Insights
-   - ログの構造化と相関付け
-```
-
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Cloud Monitoring → CloudWatch
-- Cloud Trace → X-Ray
-- Cloud Logging → CloudWatch Logs
-- Google Cloud Managed Prometheus → Amazon Managed Prometheus
-- (Grafana Cloud) → Amazon Managed Grafana
-
-主な違い:
-1. CloudWatch: メトリクス・ログ・トレースの統合サービス
-   （GCPは3つの別サービス）
-
-2. X-Ray: AWS サービスとの深い統合
-   （Lambda, API Gateway, ECS などの自動計装）
-
-3. AMP/AMG: オープンソース互換のマネージドサービス
-   （既存の Prometheus/Grafana 資産を活用可能）
-
-4. Container Insights: EKS/ECS の包括的な監視
-   （GKE のモニタリングに相当）
-```
+### 習得するスキル
+- Terraform modules による再利用可能なコード設計
+- GitHub Actions workflow の作成と管理
+- tfenv / terraform workspace の使い分け
+- Pre-commit hooks による IaC コード品質管理
+- OIDC を使った GitHub Actions ↔ AWS 認証
 
 ---
 
-## 4. 使用するAWSサービス
+## 4. 学習するAWSサービス
 
-### メインサービス
-| サービス | 役割 | 使用機能 |
-|----------|------|----------|
-| **Amazon CloudWatch** | メトリクス・ログ監視 | Metrics, Alarms, Logs Insights, Container Insights |
-| **AWS X-Ray** | 分散トレーシング | トレース収集、サービスマップ、分析 |
-| **Amazon Managed Grafana** | ダッシュボード | 可視化、アラート、データソース統合 |
-| **Amazon Managed Prometheus** | メトリクス収集 | Prometheus互換メトリクス |
+### コアサービス
+| サービス | 用途 | 重要度 |
+|----------|------|--------|
+| IAM Identity Center | エンジニアのAWSアクセス管理 | 高 |
+| S3 | Terraform State 保存 | 高 |
+| DynamoDB | Terraform State Lock | 高 |
+| VPC | 開発環境ネットワーク | 高 |
+| EC2 | 開発用踏み台サーバー | 中 |
+| RDS | 開発用データベース | 中 |
 
-### サポートサービス
+### 補助サービス
 | サービス | 用途 |
 |----------|------|
-| **Amazon EKS** | マイクロサービス実行基盤 |
-| **AWS Distro for OpenTelemetry** | テレメトリ収集 |
-| **Amazon SNS** | アラート通知 |
-| **AWS Lambda** | アラートアクション |
-| **Amazon S3** | ログアーカイブ |
+| CloudWatch | リソース監視・アラート |
+| SNS | 通知配信 |
+| Secrets Manager | 認証情報管理 |
+| CloudTrail | 操作ログ記録 |
 
-### アーキテクチャ図
+---
+
+## 5. 最終構成図
+
+### システム構成図
 ```mermaid
 flowchart TB
-    subgraph RideShare["RideShare 統合監視基盤"]
-        subgraph EKS["Amazon EKS Cluster"]
-            subgraph Services["Microservices"]
-                Rider["Rider<br/>Service"]
-                Driver["Driver<br/>Service"]
-                Matching["Matching<br/>Service"]
-                Payment["Payment<br/>Service"]
-                Pricing["Pricing<br/>Service"]
-            end
-            subgraph ADOT["AWS Distro for OpenTelemetry"]
-                TracesCol["Traces<br/>Collector"]
-                MetricsCol["Metrics<br/>Collector"]
-                LogsCol["Logs<br/>Collector"]
-            end
-        end
-
-        subgraph Storage["データ保存層"]
-            subgraph XRay["AWS X-Ray"]
-                ServiceMap["Service Map"]
-                Traces["Traces"]
-            end
-            subgraph AMP["Amazon Managed<br/>Prometheus"]
-                TSDB["Time Series DB"]
-            end
-            subgraph CWLogs["CloudWatch Logs"]
-                LogsInsights["Logs Insights"]
-            end
-        end
-
-        subgraph Grafana["Amazon Managed Grafana"]
-            SLISLO["SLI/SLO<br/>Dashboard"]
-            ServiceHealth["Service<br/>Health"]
-            InfraDash["Infrastructure<br/>Dashboard"]
-            AlertRules["Alert Rules<br/>P99 Latency > 500ms → PagerDuty<br/>Error Rate > 1% → Slack"]
-        end
-
-        subgraph Notifications["Notifications"]
-            PagerDuty["PagerDuty"]
-            Slack["Slack"]
-            Email["Email"]
+    subgraph GitHub["GitHub"]
+        TFRepo["Terraform Repo"]
+        subgraph GHA["GitHub Actions"]
+            Plan["Plan"]
+            Review["Review"]
+            Apply["Apply/Destroy"]
         end
     end
 
-    Services --> ADOT
-    TracesCol --> XRay
-    MetricsCol --> AMP
-    LogsCol --> CWLogs
-    XRay --> Grafana
-    AMP --> Grafana
-    CWLogs --> Grafana
-    Grafana --> Notifications
+    subgraph AWS["AWS"]
+        subgraph Management["Management Account"]
+            IAM["IAM Identity Center"]
+            S3State["S3 (Terraform State)<br/>DynamoDB (State Lock)"]
+        end
+        subgraph DevAccount["Development Account"]
+            subgraph VPC["VPC"]
+                subgraph PublicSubnet["Public Subnet"]
+                    Bastion["Bastion (EC2)"]
+                end
+                PrivateApp["Private Subnet (App)"]
+                subgraph PrivateDB["Private Subnet (DB)"]
+                    RDS[("RDS")]
+                end
+            end
+        end
+    end
+
+    TFRepo --> Plan
+    Plan --> Review
+    Review --> Apply
+    Apply -->|OIDC| Management
+    IAM -->|Assume Role| DevAccount
 ```
+
+### データフロー
+1. エンジニアがTerraformコードをGitHubにPush
+2. GitHub ActionsでPRにterraform planの結果をコメント
+3. レビュー後、mainマージでterraform applyを自動実行
+4. 開発者はIAM Identity Center経由で各環境にアクセス
 
 ---
 
-## 5. 前提条件と事前準備
+## 6. 前提条件
 
-### 必要な環境
-```bash
-# AWS CLI v2
-aws --version  # 2.x以上
+### 必要な知識
+- AWSの基本的なサービス理解（VPC、EC2、IAM）
+- Gitの基本操作（clone, commit, push, PR）
+- 基本的なLinuxコマンド
 
-# kubectl
-kubectl version --client
+### 事前準備
+1. AWSアカウント（Organizations設定済みが望ましい）
+2. GitHubアカウント
+3. Terraform CLI（v1.5以上）のローカルインストール
+4. AWS CLI v2 のインストールと設定
 
-# Helm
-helm version  # 3.x以上
-
-# eksctl
-eksctl version
-
-# jq
-jq --version
-```
-
-### AWSアカウント要件
-```
-- EKS クラスターが作成済み、または作成可能
-- IAM 権限：EKS管理、CloudWatch管理、Prometheus管理、Grafana管理
-- SSO/IAM Identity Center（Grafana認証用、オプション）
-```
-
-### 事前準備スクリプト
-```bash
-#!/bin/bash
-# setup-observability-baseline.sh
-
-# 変数設定
-CLUSTER_NAME="rideshare-cluster"
-REGION="ap-northeast-1"
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-# ディレクトリ構造の作成
-mkdir -p rideshare-observability/{kubernetes,grafana,alerting,sample-app}
-cd rideshare-observability
-
-# EKS クラスターの確認（存在しない場合は作成）
-echo "=== Checking EKS Cluster ==="
-if ! eksctl get cluster --name $CLUSTER_NAME --region $REGION 2>/dev/null; then
-    echo "Creating EKS cluster..."
-    cat > cluster-config.yaml << EOF
-apiVersion: eksctl.io/v1alpha5
-kind: ClusterConfig
-
-metadata:
-  name: ${CLUSTER_NAME}
-  region: ${REGION}
-
-managedNodeGroups:
-  - name: ng-1
-    instanceType: t3.medium
-    desiredCapacity: 3
-    minSize: 2
-    maxSize: 5
-    iam:
-      withAddonPolicies:
-        cloudWatch: true
-        xRay: true
-
-cloudWatch:
-  clusterLogging:
-    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-iam:
-  withOIDC: true
-EOF
-    eksctl create cluster -f cluster-config.yaml
-fi
-
-# kubeconfig の更新
-aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
-
-# 現在のコンテキスト確認
-kubectl config current-context
-kubectl get nodes
-```
+### 環境要件
+- macOS / Linux / WSL2
+- VS Code + Terraform 拡張機能推奨
 
 ---
 
-## 6. アーキテクチャ設計
+## 6. アーキテクチャ概要
 
-### 監視設計（Three Pillars of Observability）
-```yaml
-# observability-design.yaml
-observability:
-  metrics:
-    sources:
-      - cloudwatch_container_insights  # インフラメトリクス
-      - prometheus_scraping            # アプリケーションメトリクス
-      - custom_metrics                 # ビジネスメトリクス
-    storage:
-      - amazon_managed_prometheus      # 長期保存（13ヶ月）
-      - cloudwatch_metrics             # AWS統合メトリクス
-    key_metrics:
-      # RED メトリクス（サービス）
-      - request_rate          # リクエストレート
-      - error_rate            # エラー率
-      - duration              # レイテンシ
-      # USE メトリクス（リソース）
-      - utilization           # CPU/Memory使用率
-      - saturation            # キュー長/スレッドプール
-      - errors                # リソースエラー
+### システム構成図
+```mermaid
+flowchart TB
+    subgraph GitHub["GitHub"]
+        TFRepo["Terraform Repo"]
+        subgraph GHA["GitHub Actions"]
+            Plan["Plan"]
+            Review["Review"]
+            Apply["Apply/Destroy"]
+        end
+    end
 
-  traces:
-    collector: aws_xray
-    sampling:
-      default: 0.05           # 5% サンプリング
-      errors: 1.0             # エラーは100%収集
-      slow_requests: 1.0      # 遅いリクエストは100%収集
-    correlation:
-      - trace_id → logs
-      - trace_id → metrics
+    subgraph AWS["AWS"]
+        subgraph Management["Management Account"]
+            IAM["IAM Identity Center"]
+            S3State["S3 (Terraform State)<br/>DynamoDB (State Lock)"]
+        end
+        subgraph DevAccount["Development Account"]
+            subgraph VPC["VPC"]
+                subgraph PublicSubnet["Public Subnet"]
+                    Bastion["Bastion (EC2)"]
+                end
+                PrivateApp["Private Subnet (App)"]
+                subgraph PrivateDB["Private Subnet (DB)"]
+                    RDS[("RDS")]
+                end
+            end
+        end
+    end
 
-  logs:
-    collector: fluent_bit
-    storage: cloudwatch_logs
-    structure:
-      format: json
-      fields:
-        - timestamp
-        - level
-        - service
-        - trace_id
-        - span_id
-        - message
-        - metadata
-    retention:
-      hot: 7_days
-      warm: 30_days
-      cold: 365_days
+    TFRepo --> Plan
+    Plan --> Review
+    Review --> Apply
+    Apply -->|OIDC| Management
+    IAM -->|Assume Role| DevAccount
 ```
 
-### SLI/SLO 定義
-```yaml
-# sli-slo-definitions.yaml
-services:
-  rider_service:
-    slis:
-      availability:
-        description: "サービスが正常にリクエストを処理できる割合"
-        metric: "sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
-        unit: percentage
-      latency:
-        description: "リクエストのP99レイテンシ"
-        metric: "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"
-        unit: seconds
-      error_rate:
-        description: "エラーリクエストの割合"
-        metric: "sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
-        unit: percentage
-    slos:
-      availability:
-        target: 99.9%
-        window: 30d
-        budget: 43.2min  # 月間ダウンタイム許容
-      latency_p99:
-        target: 500ms
-        window: 30d
-      error_rate:
-        target: 0.1%
-        window: 30d
-
-  matching_service:
-    slis:
-      availability:
-        metric: "..."
-      latency:
-        metric: "..."
-      match_success_rate:
-        description: "配車マッチング成功率"
-        metric: "sum(rate(matching_success_total[5m])) / sum(rate(matching_attempts_total[5m]))"
-    slos:
-      availability:
-        target: 99.95%
-      latency_p99:
-        target: 200ms
-      match_success_rate:
-        target: 95%
-```
+### データフロー
+1. エンジニアがTerraformコードをGitHubにPush
+2. GitHub ActionsでPRにterraform planの結果をコメント
+3. レビュー後、mainマージでterraform applyを自動実行
+4. 開発者はIAM Identity Center経由で各環境にアクセス
 
 ---
 
 ## 8. トラブルシューティング課題
 
-### 課題1: Prometheus メトリクスが AMP に書き込まれない
+### Challenge 1: State Lock問題
+**状況**: terraform applyを実行中に別のエンジニアが同じ環境でapplyを実行しようとしてエラーが発生
 
-**症状**:
 ```
-Grafana で AMP をデータソースとして設定したが、
-メトリクスが表示されない。Prometheus Pod のログには
-"remote_write" 関連のエラーが出ている。
+Error: Error acquiring the state lock
+Lock Info:
+  ID:        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  Path:      devboost-terraform-state-XXXXX/environments/dev/terraform.tfstate
+  Operation: OperationTypeApply
+  Who:       user@ip-xxx-xxx-xxx-xxx
+  Created:   2024-01-15 10:30:00.000000000 +0000 UTC
 ```
 
-**調査コマンド**:
+**調査ポイント**:
+1. DynamoDBのLockテーブルを確認
+2. 実行中のGitHub Actionsを確認
+3. 必要に応じて強制解除
+
+**解決手順の例**:
 ```bash
-# Prometheus Pod のログ確認
-kubectl logs -n prometheus deployment/prometheus-server | grep -i "remote"
-
-# Service Account の確認
-kubectl get sa prometheus-server -n prometheus -o yaml
-
-# IAM ロールの確認
-aws iam get-role --role-name amp-prometheus-role
+# 注意: 他のapplyが本当に実行されていないことを確認してから実行
+terraform force-unlock LOCK_ID
 ```
 
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
+### Challenge 2: OIDC認証エラー
+**状況**: GitHub Actionsでterraform planが失敗
 
-**原因**: IRSA（IAM Roles for Service Accounts）の設定が正しくない
-
-**解決手順**:
-```bash
-# 1. OIDC プロバイダーの確認
-aws eks describe-cluster --name rideshare-cluster \
-    --query "cluster.identity.oidc.issuer" --output text
-
-# 2. OIDC プロバイダーが IAM に登録されているか確認
-aws iam list-open-id-connect-providers
-
-# 3. OIDC プロバイダーが未登録の場合、登録
-eksctl utils associate-iam-oidc-provider \
-    --cluster rideshare-cluster \
-    --approve
-
-# 4. Service Account のアノテーション確認
-kubectl get sa prometheus-server -n prometheus -o yaml | grep -A 5 annotations
-
-# 5. アノテーションが不足している場合、更新
-kubectl annotate sa prometheus-server -n prometheus \
-    eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/amp-prometheus-role \
-    --overwrite
-
-# 6. Prometheus Pod を再起動
-kubectl rollout restart deployment prometheus-server -n prometheus
-
-# 7. Pod が新しい認証情報を取得したか確認
-kubectl exec -n prometheus deployment/prometheus-server -- \
-    cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token | cut -d '.' -f 2 | base64 -d
+```
+Error: Could not assume role with OIDC:
+Not authorized to perform sts:AssumeRoleWithWebIdentity
 ```
 
-**追加確認事項**:
-- IAM ロールの信頼ポリシーで OIDC の subject が正しいか
-- AMP ワークスペースが正しいリージョンにあるか
-- remote_write の URL が正しいか
-</details>
+**調査ポイント**:
+1. IAMロールの信頼ポリシーを確認
+2. GitHubリポジトリ名が正しいか確認
+3. OIDCプロバイダーの設定を確認
 
-### 課題2: X-Ray トレースが表示されない
+### Challenge 3: モジュール変更の影響範囲
+**状況**: VPCモジュールを変更したら、予期せず複数の環境に影響が出た
 
-**症状**:
-```
-アプリケーションで X-Ray SDK を使用しているが、
-X-Ray コンソールにトレースが表示されない。
-サービスマップも空のまま。
-```
-
-**調査コマンド**:
-```bash
-# X-Ray Daemon Pod の状態確認
-kubectl get pods -l app=xray-daemon
-
-# X-Ray Daemon のログ確認
-kubectl logs daemonset/xray-daemon
-
-# アプリケーション Pod からの接続確認
-kubectl exec -it deployment/rider-service -- \
-    nc -vz xray-service.default 2000
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: 複数の原因が考えられる
-
-**パターン1: X-Ray Daemon への接続失敗**
-```bash
-# アプリケーションの環境変数確認
-kubectl get deployment rider-service -o yaml | grep -A 5 AWS_XRAY
-
-# 環境変数が設定されていない場合
-kubectl set env deployment/rider-service \
-    AWS_XRAY_DAEMON_ADDRESS=xray-service.default:2000
-```
-
-**パターン2: IAM 権限不足**
-```bash
-# Service Account の IAM ロール確認
-kubectl get sa xray-daemon -o yaml
-
-# 必要な権限があるか確認
-aws iam simulate-principal-policy \
-    --policy-source-arn arn:aws:iam::ACCOUNT_ID:role/xray-daemon-role \
-    --action-names xray:PutTraceSegments xray:PutTelemetryRecords
-```
-
-**パターン3: サンプリングルールの問題**
-```bash
-# デフォルトサンプリングルールの確認
-aws xray get-sampling-rules
-
-# サンプリングレートが低すぎる場合、調整
-aws xray update-sampling-rule --sampling-rule-update '{
-    "RuleName": "Default",
-    "FixedRate": 0.1,
-    "ReservoirSize": 10
-}'
-```
-
-**パターン4: アプリケーションコードの問題**
-```python
-# X-Ray SDK の初期化を確認
-from aws_xray_sdk.core import xray_recorder
-
-# 明示的にサービス名を設定
-xray_recorder.configure(
-    service='rider-service',
-    sampling=False,  # デバッグ時は全トレース収集
-    daemon_address='xray-service.default:2000'
-)
-```
-</details>
-
-### 課題3: Grafana アラートが発火しない
-
-**症状**:
-```
-SLO 違反が発生しているはずなのに、Grafana のアラートが
-発火しない。ダッシュボードではメトリクスが正常に表示されている。
-```
-
-**調査手順**:
-```bash
-# Grafana のアラート状態確認（API経由）
-curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
-    "https://your-grafana.grafana.net/api/v1/alerts"
-
-# アラートルールの確認
-curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
-    "https://your-grafana.grafana.net/api/v1/provisioning/alert-rules"
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: アラートルールの評価設定の問題
-
-**確認・解決手順**:
-
-1. **アラートルールの `for` 期間を確認**
-```yaml
-# for が長すぎる場合、アラートが発火しにくい
-for: 2m  # 2分間継続して条件を満たす必要がある
-```
-
-2. **データソースの設定確認**
-```yaml
-# データソース UID が正しいか確認
-datasourceUid: prometheus  # 実際のデータソース UID と一致しているか
-```
-
-3. **評価間隔の確認**
-```yaml
-# interval が長すぎるとアラートの遅延が発生
-interval: 1m  # 1分間隔で評価
-```
-
-4. **クエリの検証**
-```bash
-# Grafana の Explore で直接クエリを実行して結果を確認
-# アラート条件と同じクエリを実行
-sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m])) * 100
-```
-
-5. **通知チャネルの確認**
-```yaml
-# Contact Point が正しく設定されているか
-# Slack/PagerDuty の Webhook URL が有効か
-```
-
-6. **Grafana Alerting のデバッグログ有効化**
-```bash
-# AMG ではログレベルの変更はサポートされていないため、
-# CloudWatch Logs で Grafana のログを確認
-aws logs filter-log-events \
-    --log-group-name "/aws/grafana/rideshare-dashboard" \
-    --filter-pattern "alert"
-```
-</details>
+**調査ポイント**:
+1. terraform planで全環境の変更を確認
+2. モジュールのバージョニング戦略を検討
+3. 破壊的変更のハンドリング方法
 
 ---
 
-## 9. 設計課題
+## 9. 設計考慮ポイント
 
-### 設計課題: 大規模マイクロサービスのオブザーバビリティ戦略
+### ディスカッション1: State管理戦略
+**テーマ**: 単一State vs 環境別State vs サービス別State
 
-**シナリオ**:
-RideShare社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
-以下の要件を満たすオブザーバビリティ戦略を設計してください。
+| 戦略 | メリット | デメリット |
+|------|----------|------------|
+| 単一State | シンプル、依存関係の管理が容易 | スケールしにくい、ロック競合 |
+| 環境別State | 環境の独立性、並列実行可能 | 環境間の依存管理が複雑 |
+| サービス別State | マイクロサービス向け、チーム独立 | 依存関係の管理が複雑 |
 
-**要件**:
-```
-1. サービス規模
-   - マイクロサービス：50個
-   - 月間リクエスト：10億件
-   - 開発チーム：15チーム
+**考慮すべき点**:
+- チーム規模と成長見込み
+- 環境間の依存関係
+- デプロイ頻度
 
-2. 機能要件
-   - 全サービスの統合監視
-   - チーム単位でのダッシュボード分離
-   - サービス間依存関係の可視化
-   - カスタムビジネスメトリクス対応
+### ディスカッション2: モジュールバージョニング
+**テーマ**: モジュールの変更をどう管理するか
 
-3. 非機能要件
-   - メトリクス保持：13ヶ月（コンプライアンス要件）
-   - ログ検索：リアルタイム〜30日前
-   - アラート遅延：1分以内
-   - コスト効率：現状の2倍以内
-```
+**選択肢**:
+1. Git tags でバージョニング
+2. Terraform Registry（private）の活用
+3. monorepo での相対パス参照
 
-**設計すべき項目**:
-```
-1. メトリクス収集・保存戦略
-2. トレーシング戦略（サンプリング設計）
-3. ログ管理戦略（保持・検索）
-4. ダッシュボード・アラート設計
-5. チーム間の責任分界
-```
+### ディスカッション3: 秘密情報の管理
+**テーマ**: データベースパスワード等の管理方法
 
-<details>
-<summary>設計例を見る</summary>
-
-### 大規模オブザーバビリティアーキテクチャ
-
-```mermaid
-architecture-beta
-    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
-
-    group collection(server)[データ収集層] in aws
-    service rider_team(server)[Rider Team Services 5 svcs] in collection
-    service driver_team(server)[Driver Team Services 4 svcs] in collection
-    service payment_team(server)[Payment Team Services 3 svcs] in collection
-    service other_teams(server)[Other Teams x15] in collection
-    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
-    service sampling(server)[Sampling Processor] in collection
-    service filtering(server)[Filtering Processor] in collection
-
-    group storage(database)[データ保存層] in aws
-    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
-    service amp(server)[AMP Metrics Retention 13 months] in storage
-    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
-
-    group visualization(server)[可視化・アラート層] in aws
-    service grafana(server)[Amazon Managed Grafana] in visualization
-    service platform_dash(server)[Platform Overview SRE] in visualization
-    service team_dash(server)[Team Dashboards 15 folders] in visualization
-    service business_dash(server)[Business Metrics Product] in visualization
-    service pagerduty(internet)[PagerDuty Critical/High] in visualization
-    service slack(internet)[Slack Alerts Warning/Info] in visualization
-
-    rider_team:B --> T:otel_collector
-    driver_team:B --> T:otel_collector
-    payment_team:B --> T:otel_collector
-    other_teams:B --> T:otel_collector
-    otel_collector:B --> T:xray
-    otel_collector:B --> T:amp
-    otel_collector:B --> T:cwlogs
-    xray:B --> T:grafana
-    amp:B --> T:grafana
-    cwlogs:B --> T:grafana
-    grafana:R --> L:pagerduty
-    grafana:R --> L:slack
-```
-
-### 1. メトリクス収集・保存戦略
-
-```yaml
-metrics_strategy:
-  collection:
-    method: pull  # Prometheus スタイル
-    interval: 15s
-    timeout: 10s
-
-  labeling_guidelines:
-    required_labels:
-      - service    # サービス名
-      - team       # 担当チーム
-      - env        # 環境
-    cardinality_control:
-      # 高カーディナリティラベルの制限
-      forbidden_labels:
-        - user_id
-        - request_id
-        - trace_id
-      max_label_values: 1000
-
-  storage:
-    primary: amazon_managed_prometheus
-    retention: 13_months
-    estimated_series: 80000  # 50サービス × 1600シリーズ/サービス
-
-  aggregation:
-    # 長期保存用に集約
-    raw_retention: 15_days
-    5m_aggregation: 90_days
-    1h_aggregation: 13_months
-```
-
-### 2. トレーシング戦略
-
-```yaml
-tracing_strategy:
-  sampling:
-    head_based:
-      default_rate: 0.05  # 5%
-      rules:
-        - service: payment-*
-          rate: 0.1  # 決済は10%
-        - service: matching-*
-          rate: 0.1  # マッチングは10%
-
-    tail_based:
-      enabled: true
-      policies:
-        - type: always_sample
-          conditions:
-            - status_code >= 500
-            - latency > 2s
-        - type: probabilistic
-          rate: 0.5
-          conditions:
-            - latency > 500ms
-
-  storage:
-    service: aws_xray
-    retention: 30_days
-    groups:
-      - name: errors
-        filter: "fault = true"
-      - name: slow_requests
-        filter: "responsetime > 1"
-
-  service_map:
-    refresh_interval: 1m
-    depth: 5  # 依存関係の深さ
-```
-
-### 3. ログ管理戦略
-
-```yaml
-log_strategy:
-  structure:
-    format: json
-    required_fields:
-      - timestamp
-      - level
-      - service
-      - team
-      - trace_id
-      - message
-    optional_fields:
-      - user_id  # マスキング必須
-      - request_path
-
-  storage:
-    primary: cloudwatch_logs
-    log_groups:
-      pattern: /rideshare/{team}/{service}
-    retention_policy:
-      hot: 7_days     # CloudWatch Logs
-      warm: 30_days   # CloudWatch Logs (Infrequent Access)
-      cold: 365_days  # S3 Glacier
-
-  export:
-    destination: s3
-    format: parquet  # Athena でクエリ可能
-    schedule: daily
-    bucket: rideshare-logs-archive
-
-  search:
-    tool: cloudwatch_logs_insights
-    max_scan_range: 30_days
-    query_timeout: 30s
-```
-
-### 4. チーム責任分界
-
-```yaml
-responsibility_matrix:
-  platform_sre:
-    owns:
-      - 全体 SLO ダッシュボード
-      - インフラメトリクス
-      - 共通アラートルール
-      - オンコールエスカレーション
-    maintains:
-      - AMP/AMG インフラ
-      - OpenTelemetry Collector
-      - 共通ライブラリ
-
-  application_teams:
-    owns:
-      - チームダッシュボード
-      - サービス固有アラート
-      - ビジネスメトリクス定義
-      - トラブルシューティング
-    maintains:
-      - アプリケーション計装
-      - ログ出力
-
-  access_control:
-    grafana:
-      - role: Viewer (全社員)
-      - role: Editor (チームメンバー) - チームフォルダのみ
-      - role: Admin (SRE)
-```
-
-### 推定コスト
-
-| サービス | 使用量 | 月額コスト |
-|----------|--------|-----------|
-| AMP | 80K series, 13M samples/month | $800 |
-| AMG | 1 workspace, 50 users | $250 |
-| CloudWatch Logs | 500GB/month | $250 |
-| CloudWatch Metrics | Container Insights | $150 |
-| X-Ray | 10M traces/month | $50 |
-| S3 (ログアーカイブ) | 1TB | $25 |
-| **合計** | | **$1,525/月** |
-
-</details>
+**選択肢と比較**:
+| 方法 | セキュリティ | 運用負荷 | コスト |
+|------|-------------|---------|--------|
+| Secrets Manager | 高 | 低 | $0.40/secret/month |
+| SSM Parameter Store | 中 | 低 | 無料（Standard） |
+| HashiCorp Vault | 最高 | 高 | 要インフラ |
 
 ---
 
 ## 10. 発展課題
 
-### 発展課題1: OpenTelemetry への移行（難易度：中級）
+### Advanced 1: Terraform Cloud/Enterprise移行
+**課題**: 現在のS3バックエンドをTerraform Cloudに移行し、以下を実現
+- チーム向けのState管理UI
+- Cost Estimation機能
+- Policy as Code (Sentinel)
 
-**課題内容**:
-現在の X-Ray SDK から OpenTelemetry に移行し、ベンダーロックインを回避しつつ
-同等以上のオブザーバビリティを実現してください。
+### Advanced 2: Atlantis導入
+**課題**: GitHub Actionsの代わりにAtlantisを導入
+- PRコメントでのterraform plan/apply
+- 承認フローの実装
+- ロック管理の可視化
 
-**要件**:
-- 既存の X-Ray トレースとの互換性維持
-- メトリクス・ログ・トレースの統合収集
-- Kubernetes 環境での自動計装
-
-```yaml
-# ヒント: AWS Distro for OpenTelemetry の設定
-apiVersion: opentelemetry.io/v1alpha1
-kind: OpenTelemetryCollector
-metadata:
-  name: adot-collector
-spec:
-  mode: deployment
-  config: |
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-
-    processors:
-      batch:
-        timeout: 1s
-        send_batch_size: 50
-
-    exporters:
-      awsxray:
-        region: ap-northeast-1
-      awsprometheusremotewrite:
-        endpoint: https://aps-workspaces.ap-northeast-1.amazonaws.com/...
-      awscloudwatchlogs:
-        log_group_name: /rideshare/otel
-
-    service:
-      pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [awsxray]
-        metrics:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [awsprometheusremotewrite]
-```
-
-### 発展課題2: AIOps の導入（難易度：上級）
-
-**課題内容**:
-Amazon DevOps Guru を導入し、ML ベースの異常検知と
-インシデント予測を実現してください。
-
-**要件**:
-- CloudWatch メトリクスの異常検知
-- インシデントの自動分類と優先度付け
-- 推奨アクションの自動生成
-
-### 発展課題3: カオスエンジニアリング統合（難易度：上級）
-
-**課題内容**:
-AWS Fault Injection Simulator を使用して、
-オブザーバビリティ基盤の有効性を検証するカオス実験を設計・実行してください。
-
-**要件**:
-- サービス障害時の検知時間測定
-- アラート精度の検証
-- ダッシュボードの有用性評価
+### Advanced 3: 複数AWSアカウント対応
+**課題**: AWS Organizationsを使った本格的なマルチアカウント構成
+- Control Tower の活用
+- Account Factory for Terraform (AFT)
+- 共有サービスVPCの設計
 
 ---
 
-## 11. 振り返りと次のステップ
+## 11. コスト見積もり
 
-### 学習のまとめ
+### 月額コスト概算（開発環境1つの場合）
 
-```
-本課題で学んだこと:
-□ CloudWatch Container Insights による EKS 監視
-□ AWS X-Ray による分散トレーシング
-□ Amazon Managed Prometheus/Grafana の設定
-□ SLI/SLO の設計と可視化
-□ アラート設計のベストプラクティス
-□ 構造化ログと相関分析
+| サービス | リソース | 月額コスト |
+|----------|----------|------------|
+| EC2 (Bastion) | t3.micro × 1 | $7.59 |
+| RDS | db.t3.micro (Single-AZ) | $12.41 |
+| NAT Gateway | 2 AZ | $64.80 |
+| S3 | State保存 | $0.50 |
+| DynamoDB | Lock用（オンデマンド） | $0.10 |
+| Secrets Manager | 1 シークレット | $0.40 |
 
-GCP との主な違い:
-- CloudWatch は統合サービス（メトリクス・ログ・トレース）
-- X-Ray は AWS サービスとの深い統合
-- AMP/AMG はオープンソース互換のマネージドサービス
-- Container Insights は EKS 専用の包括的監視
-```
+**合計**: 約 **$86/月**（約13,000円）
 
-### GCP経験者向けポイント
+### コスト削減のヒント
 
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| メトリクス監視 | Cloud Monitoring | CloudWatch Metrics | メトリクス名・ラベル命名規則が異なる |
-| 分散トレーシング | Cloud Trace | X-Ray | トレースフォーマットが異なる（W3C vs X-Ray） |
-| ログ管理 | Cloud Logging | CloudWatch Logs | クエリ言語が異なる（LogQL vs Insights） |
-| Prometheus | Managed Prometheus | AMP | ほぼ同等、remote_write 設定のみ異なる |
-| Grafana | (Grafana Cloud) | AMG | データソース設定が異なる |
+1. **NAT Gateway削減**: 開発環境では1 AZのみにする
+   - 削減額: $32.40/月
 
-### 推奨される次のステップ
+2. **Bastion停止スケジュール**: 夜間・休日は自動停止
+   - 削減額: 約$5/月
 
-```
-1. AWS Certified DevOps Engineer の学習
-   - オブザーバビリティの深い理解
-   - CI/CD との統合
-
-2. OpenTelemetry の習得
-   - ベンダー中立なテレメトリ
-   - 将来性のある技術スタック
-
-3. SRE プラクティスの導入
-   - SLO ベースのアラート設計
-   - エラーバジェットの運用
-
-4. 関連課題への挑戦
-   - 課題27: セキュリティ監視
-   - 課題29: コスト最適化
-```
+3. **RDS停止**: 未使用時の自動停止
+   ```hcl
+   # 開発環境のみ
+   resource "aws_rds_event_subscription" "auto_stop" {
+     # 実装は発展課題
+   }
+   ```
 
 ---
 
-## 12. 推定コストと注意事項
+## 12. 学習のポイント
 
-### 本課題の推定コスト
+### 重要な概念の整理
 
-| サービス | 使用量 | 推定コスト（演習時） |
-|----------|--------|---------------------|
-| EKS | 1クラスター、3ノード | $75 |
-| CloudWatch | Container Insights | $5-10 |
-| X-Ray | 10万トレース | $5 |
-| AMP | 1万シリーズ | $5-10 |
-| AMG | 1ワークスペース | $9 |
-| **合計** | | **$100-110** |
+1. **Terraform State**
+   - リソースの現在の状態を追跡
+   - チームでの共有にはリモートバックエンド必須
+   - Lockによる同時実行制御
 
-### コスト最適化のヒント
+2. **GitHub Actions OIDC**
+   - 長期的な認証情報を保存しない
+   - 一時的な認証トークンを使用
+   - リポジトリ単位でのアクセス制御
 
-```
-1. EKS のコスト削減
-   - Spot インスタンスの活用
-   - 演習後はクラスター削除
+3. **モジュール設計**
+   - 再利用性を考慮した入出力設計
+   - 環境差異は変数で吸収
+   - デフォルト値の活用
 
-2. CloudWatch のコスト削減
-   - 不要なメトリクスの除外
-   - ログ保持期間の短縮
+### GCPとの比較
 
-3. X-Ray のコスト削減
-   - サンプリングレートの調整
-   - 不要なサービスの除外
+| 概念 | AWS | GCP |
+|------|-----|-----|
+| IaC State保存 | S3 + DynamoDB | GCS |
+| CI/CD | GitHub Actions | Cloud Build |
+| シークレット管理 | Secrets Manager | Secret Manager |
+| SSO | IAM Identity Center | Cloud Identity |
+| 踏み台アクセス | SSM Session Manager | IAP Tunnel |
 
-4. AMP のコスト削減
-   - カーディナリティの管理
-   - 不要なメトリクスの除外
-```
-
-### 注意事項
-
-```
-⚠️ EKS クラスター
-- クラスターは課金が継続するため、演習後は削除を推奨
-- eksctl delete cluster コマンドで削除可能
-
-⚠️ マネージドサービス
-- AMP/AMG は有効化すると課金開始
-- 使用しない場合はワークスペースを削除
-
-⚠️ データ保持
-- 本番環境でのログ・メトリクス保持期間は要件に応じて設定
-- コンプライアンス要件がある場合は適切な保持期間を設定
-```
-
----
-
-**課題作成日**: 2024年1月
-**最終更新日**: 2024年1月
-**作成者**: AWS学習プログラム
+### 次のステップ
+1. 複数環境（stg/prod）の追加
+2. アプリケーションデプロイパイプラインの構築
+3. モニタリング・アラートの設定
+4. コスト管理の自動化
