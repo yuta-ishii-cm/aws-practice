@@ -1,4 +1,4 @@
-# 課題29: 物流企業のイベント駆動配送管理
+# 課題29: Fintech企業のゼロダウンタイムデプロイ
 
 **難易度: 🟡 中級**
 
@@ -9,9 +9,9 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | マイクロサービス・API |
+| カテゴリ | IaC・DevOps |
 | 処理タイプ | 非同期 |
-| 使用IaC | CDK |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---
@@ -19,45 +19,46 @@
 ## 2. シナリオ
 
 ### 企業プロフィール
-**QuickDeliver株式会社**は、EC事業者向けの配送代行サービスを提供する物流企業です。日次配送件数は1万件を超え、荷主、倉庫、配送ドライバー、エンドユーザーなど多くのステークホルダーと連携しています。
+**PayEasy株式会社**は、中小企業向けの決済代行サービスを提供するFintech企業です。月間取引件数は100万件を超え、24時間365日の安定稼働が求められています。
 
 ### 現状の課題
-配送状況の通知システムが各所に分散し、リアルタイム性と一貫性に問題があります：
+サービスの成長に伴い、リリース頻度を上げたいが、ダウンタイムが許容されない状況です：
 
-1. **通知の遅延**：配送状況の更新がバッチ処理のため、30分〜1時間遅れる
-2. **通知漏れ**：システム間連携の不整合で、通知が届かないケースが発生
-3. **拡張性の低さ**：新しい通知チャネル（LINE、アプリプッシュ）の追加が困難
-4. **トレーサビリティ不足**：配送の状態遷移履歴が追跡しにくい
+1. **メンテナンス時間の確保困難**：深夜帯でも取引があり、停止できる時間帯がない
+2. **リリース失敗時のリスク**：ロールバックに時間がかかり、障害が長期化
+3. **データベースマイグレーション**：スキーマ変更を伴うリリースが特に危険
+4. **テスト不足**：本番環境でしか発覚しない問題が多い
 
 ### 数値で見る問題
-- 通知遅延：平均 **45分**
-- 通知漏れ率：**2%**（月200件）
-- 顧客問い合わせ：月 **500件**（「荷物はどこ？」）
-- 新チャネル追加：**3ヶ月**かかる
+- 計画メンテナンス時間：月 **4時間**（深夜リリース）
+- 直近1年のリリース失敗：**8件**
+- 平均ロールバック時間：**45分**
+- リリース起因の障害損失：年間約 **2,000万円**
 
 ### 成功指標（KPI）
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 通知遅延 | 45分 | 1分以内 |
-| 通知漏れ率 | 2% | 0.1%以下 |
-| 顧客問い合わせ | 500件/月 | 100件/月 |
-| 新チャネル追加 | 3ヶ月 | 1週間 |
+| デプロイ時ダウンタイム | 30分/回 | 0分 |
+| ロールバック時間 | 45分 | 5分以内 |
+| リリース失敗率 | 8件/年 | 2件以下/年 |
+| リリース頻度 | 月2回 | 週1回以上 |
 
 ---
 
 ## 3. 学習目標
 
 ### 主要な学習成果
-1. EventBridgeを使ったイベント駆動アーキテクチャの構築
-2. Fan-outパターンによる複数通知チャネルへの配信
-3. DynamoDB Streamsによるイベント発行
-4. デッドレターキューによるエラーハンドリング
+1. CodeDeployによるブルーグリーンデプロイの実装
+2. ALBのターゲットグループ切り替えによる無停止リリース
+3. Lambda Hooksを使ったデプロイ検証の自動化
+4. データベースマイグレーションのベストプラクティス
 
 ### 習得するスキル
-- EventBridge Rules / Event Bus の設計
-- Lambda と SQS / SNS の連携
-- イベントスキーマの設計
-- 冪等性の実装
+- CodeDeploy Blue/Green Deployment設定
+- ALB Listener Rules の動的切り替え
+- AppSpec.yml の記述方法
+- カナリアリリースの設計
+- 本番トラフィックを使った検証
 
 ---
 
@@ -66,187 +67,187 @@
 ### コアサービス
 | サービス | 用途 | 重要度 |
 |----------|------|--------|
-| EventBridge | イベントバス・ルーティング | 高 |
-| Lambda | イベント処理 | 高 |
-| SQS | メッセージキューイング | 高 |
-| SNS | Fan-out配信 | 高 |
-| DynamoDB | 配送データ・イベント履歴 | 高 |
+| CodeDeploy | ブルーグリーンデプロイ制御 | 高 |
+| ECS Fargate | アプリケーション実行環境 | 高 |
+| ALB | トラフィック制御・切り替え | 高 |
+| Lambda | デプロイHooks実行 | 高 |
+| RDS (Aurora) | 決済データベース | 高 |
 
 ### 補助サービス
 | サービス | 用途 |
 |----------|------|
-| API Gateway | 外部システム連携API |
-| SES | メール通知 |
-| CloudWatch | ログ・メトリクス・アラーム |
+| CodePipeline | CI/CDパイプライン |
+| CloudWatch | メトリクス監視・アラーム |
 | X-Ray | 分散トレーシング |
-| Step Functions | 複雑なワークフロー |
+| Secrets Manager | DB認証情報管理 |
+| SNS | デプロイ通知 |
 
 ---
 
 ## 5. 前提条件
 
 ### 必要な知識
-- イベント駆動アーキテクチャの基本概念
-- AWS Lambda の基本操作
-- TypeScript の基礎
+- ECSの基本概念（タスク定義、サービス）
+- ALBの仕組み（ターゲットグループ、リスナー）
+- Lambdaの基本的な使い方
+- データベースマイグレーションの概念
 
 ### 事前準備
 1. AWSアカウント
 2. AWS CLI v2
-3. Node.js 18.x
-4. AWS CDK CLI
+3. Docker Desktop
+4. 決済APIのサンプルアプリケーション
+
+### 環境要件
+```bash
+# 必要なツール
+aws --version  # 2.x
+docker --version
+```
 
 ---
 
 ## 6. アーキテクチャ概要
 
-### システム構成図
+### システム構成図（ブルーグリーン構成）
 
 ```mermaid
 architecture-beta
-    group sources(cloud)[Event Sources]
     group aws(cloud)[AWS Cloud]
-    group ingestion(server)[Ingestion Layer] in aws
-    group eventbus(server)[EventBridge] in aws
-    group targets(server)[Event Targets] in aws
-    group notifications(server)[Notification Handlers] in aws
 
-    service wms(server)[WMS Warehouse] in sources
-    service tms(server)[TMS Transport] in sources
-    service driver_app(internet)[Driver App] in sources
-    service external_api(server)[External API] in sources
+    group cicd(server)[CI/CD] in aws
+    service codepipeline(server)[CodePipeline Source Build Deploy] in cicd
 
-    service apigw(server)[API Gateway POST /events] in ingestion
-    service lambda_ingest(server)[Lambda EventIngestion] in ingestion
+    group alb_layer(server)[Application Load Balancer] in aws
+    service prod_listener(internet)[Production Listener 443] in alb_layer
+    service test_listener(internet)[Test Listener 8443] in alb_layer
+    service blue_tg(server)[Blue Target Group Active] in alb_layer
+    service green_tg(server)[Green Target Group Standby] in alb_layer
 
-    service eventbridge(server)[EventBridge Custom Event Bus] in eventbus
+    group ecs_cluster(server)[ECS Cluster] in aws
+    service blue_env(server)[Blue Environment v1.0 Tasks] in ecs_cluster
+    service green_env(server)[Green Environment v1.1 Tasks] in ecs_cluster
 
-    service sns_customer(server)[SNS Customer] in targets
-    service sqs_shipper(server)[SQS Shipper] in targets
-    service lambda_dashboard(server)[Lambda Dashboard] in targets
-    service s3_archive(disk)[S3 Archive] in targets
+    group database(database)[Database Layer] in aws
+    service aurora(database)[Aurora PostgreSQL Primary Read/Write] in database
 
-    service lambda_email(server)[Lambda EmailNotify] in notifications
-    service lambda_sms(server)[Lambda SMSNotify] in notifications
-    service lambda_push(server)[Lambda PushNotify] in notifications
-    service lambda_webhook(server)[Lambda WebhookCall] in notifications
-
-    service ses(server)[SES Email] in notifications
-    service sns_sms(server)[SNS SMS] in notifications
-    service pinpoint(server)[Pinpoint Push] in notifications
-
-    wms:B --> T:apigw
-    tms:B --> T:apigw
-    driver_app:B --> T:apigw
-    external_api:B --> T:apigw
-    apigw:B --> T:lambda_ingest
-    lambda_ingest:B --> T:eventbridge
-    eventbridge:B --> T:sns_customer
-    eventbridge:B --> T:sqs_shipper
-    eventbridge:B --> T:lambda_dashboard
-    eventbridge:B --> T:s3_archive
-    sns_customer:B --> T:lambda_email
-    sns_customer:B --> T:lambda_sms
-    sns_customer:B --> T:lambda_push
-    sqs_shipper:B --> T:lambda_webhook
+    codepipeline:B --> T:prod_listener
+    prod_listener:B --> T:blue_tg
+    test_listener:B --> T:green_tg
+    blue_tg:B --> T:blue_env
+    green_tg:B --> T:green_env
+    blue_env:B --> T:aurora
+    green_env:B --> T:aurora
 ```
 
-**EventBridge Rules:**
-- NotifyCustomer: status = OUT_FOR_DELIVERY, DELIVERED
-- NotifyShipper: status = *
-- UpdateDashboard: status = *
-- Archive: status = *
-
-### イベントフロー
+### デプロイフロー
 
 ```mermaid
-stateDiagram-v2
-    [*] --> ORDER_RECEIVED
-    ORDER_RECEIVED --> PROCESSING
-    PROCESSING --> PICKED_UP
-    PROCESSING --> CANCELLED
-    PICKED_UP --> IN_TRANSIT
-    PICKED_UP --> RETURNED_TO_SENDER
-    IN_TRANSIT --> OUT_FOR_DELIVERY
-    OUT_FOR_DELIVERY --> DELIVERED
-    OUT_FOR_DELIVERY --> DELIVERY_FAILED
-    DELIVERY_FAILED --> RESCHEDULED
-    RESCHEDULED --> OUT_FOR_DELIVERY
-    DELIVERED --> [*]
-    CANCELLED --> [*]
-    RETURNED_TO_SENDER --> [*]
+architecture-beta
+    group deploy_flow(server)[Blue/Green Deployment Flow]
+
+    service step1(server)[1. BeforeInstall Hook Lambda Pre-deployment checks] in deploy_flow
+    service step2(server)[2. Install New tasks in Green TG] in deploy_flow
+    service step3(server)[3. AfterInstall Hook Lambda Smoke tests] in deploy_flow
+    service step4(server)[4. AllowTestTraffic Test listener routes to Green] in deploy_flow
+    service step5(server)[5. AfterAllowTestTraffic Hook Lambda Integration tests] in deploy_flow
+    service step6(server)[6. BeforeAllowTraffic Hook Lambda Final validation] in deploy_flow
+    service step7(server)[7. AllowTraffic Production listener switches] in deploy_flow
+    service step8(server)[8. AfterAllowTraffic Hook Lambda Post-deployment validation] in deploy_flow
+
+    step1:B --> T:step2
+    step2:B --> T:step3
+    step3:B --> T:step4
+    step4:B --> T:step5
+    step5:B --> T:step6
+    step6:B --> T:step7
+    step7:B --> T:step8
 ```
 
 ---
 
 ## 8. トラブルシューティング課題
 
-### Challenge 1: イベントの重複処理
-**状況**: 同じ配送ステータス更新が複数回処理されている
+### Challenge 1: デプロイが "In Progress" のまま止まる
+**状況**: CodeDeployのステータスがAfterInstallで停止し、進まない
 
 **調査ポイント**:
-1. Lambda の冪等性実装を確認
-2. SQS のVisibility Timeoutを確認
-3. DynamoDB の条件付き書き込みを確認
+1. Lambda Hookのログを確認
+2. ECSタスクのヘルスチェック状態を確認
+3. ターゲットグループのヘルス状態を確認
 
-### Challenge 2: 通知の順序保証
-**状況**: OUT_FOR_DELIVERY より先に DELIVERED の通知が届く
+**解決コマンド**:
+```bash
+# Lambda Hookのログ確認
+aws logs tail /aws/lambda/payeasy-prod-after-install --follow
+
+# ECSタスクの状態確認
+aws ecs describe-tasks \
+  --cluster payeasy-prod \
+  --tasks $(aws ecs list-tasks --cluster payeasy-prod --query 'taskArns' --output text)
+
+# ターゲットグループのヘルス確認
+aws elbv2 describe-target-health \
+  --target-group-arn arn:aws:elasticloadbalancing:ap-northeast-1:ACCOUNT:targetgroup/payeasy-prod-green-tg/xxx
+```
+
+### Challenge 2: 自動ロールバックが発生
+**状況**: デプロイ完了後、CloudWatch Alarmがトリガーされて自動ロールバック
 
 **調査ポイント**:
-1. SQS FIFO キューの利用を検討
-2. イベントにシーケンス番号を付与
-3. 消費側での順序制御
+1. どのアラームがトリガーされたか確認
+2. メトリクスの推移を確認
+3. アプリケーションログでエラーを特定
 
-### Challenge 3: 外部Webhookのタイムアウト
-**状況**: 荷主のWebhookが応答しない場合にLambdaがタイムアウト
+### Challenge 3: DBマイグレーション後の不整合
+**状況**: 新バージョンと旧バージョンで異なるスキーマを参照してエラー
 
 **調査ポイント**:
-1. Webhook呼び出しのタイムアウト設定
-2. 非同期呼び出しへの変更
-3. Circuit Breakerパターンの導入
+1. マイグレーションが後方互換性を保っているか確認
+2. 両バージョンのSQLクエリを確認
+3. トランザクション分離レベルを確認
 
 ---
 
 ## 9. 設計考慮ポイント
 
-### ディスカッション1: イベントスキーマの設計
-**テーマ**: スキーマバージョニングと互換性
+### ディスカッション1: デプロイ戦略の選択
+**テーマ**: Linear vs Canary vs All-at-once
 
-| 戦略 | メリット | デメリット |
-|------|----------|------------|
-| バージョン埋め込み | 明示的 | スキーマ増加 |
-| 後方互換性維持 | シンプル | 制約が多い |
-| イベントストア | 完全な履歴 | 複雑性増加 |
+| 戦略 | 特徴 | ユースケース |
+|------|------|-------------|
+| Linear10PercentEvery1Minutes | 均等に段階的切り替え | 標準的なリリース |
+| Canary10Percent5Minutes | 最初に少量、問題なければ残り全部 | リスクの高いリリース |
+| AllAtOnce | 即座に全切り替え | ホットフィックス |
 
-### ディスカッション2: At-least-once vs Exactly-once
-**テーマ**: メッセージ配信保証
+### ディスカッション2: ロールバック戦略
+**テーマ**: 自動 vs 手動ロールバック
 
 **考慮点**:
-- SQS標準キューは At-least-once
-- 冪等性の実装が必須
-- FIFO キューでの重複排除
+1. **自動ロールバック**: アラーム連動で即座に戻せるが、誤検知のリスク
+2. **手動ロールバック**: 判断に時間がかかるが、慎重な対応が可能
+3. **ハイブリッド**: 重大なメトリクスのみ自動、その他は手動
 
-### ディスカッション3: Fan-outパターン
-**テーマ**: SNS vs EventBridge
+### ディスカッション3: データベーススキーマ変更
+**テーマ**: オンラインスキーママイグレーション
 
-| 観点 | SNS | EventBridge |
-|------|-----|-------------|
-| フィルタリング | シンプル | 高度 |
-| ターゲット数 | 多い | 5ルール/バス |
-| スキーマレジストリ | なし | あり |
+**パターン**:
+1. **Expand and Contract**: 新旧両対応→旧削除
+2. **Ghost Tables**: シャドーテーブルでの段階的移行
+3. **Feature Flags**: 新スキーマの段階的有効化
 
 ---
 
 ## 10. 発展課題
 
-### Advanced 1: Event Replay 機能
-**課題**: EventBridge Archive を使って、特定期間のイベントを再処理
+### Advanced 1: カナリアリリースの実装
+**課題**: ALB Weighted Target Groupsを使って、5%のトラフィックを新バージョンに流し、問題なければ徐々に増加
 
-### Advanced 2: CQRS + Event Sourcing
-**課題**: イベントストアを構築し、配送状態を完全に再構築可能に
+### Advanced 2: Feature Flagsとの連携
+**課題**: AWS AppConfigと連携して、デプロイとリリースを分離。デプロイ後にFeature Flagで機能を段階的に有効化
 
-### Advanced 3: Step Functions Saga
-**課題**: 複雑な配送ワークフロー（ピックアップ→配送→返品）をStep Functionsで実装
+### Advanced 3: Chaos Engineering
+**課題**: AWS Fault Injection Simulatorを使って、デプロイ中の障害シナリオをテスト
 
 ---
 
@@ -254,17 +255,25 @@ stateDiagram-v2
 
 ### 月額コスト概算
 
-| サービス | 使用量 | 月額コスト |
-|----------|--------|------------|
-| EventBridge | 100万イベント | $1 |
-| Lambda | 100万回 × 1秒 × 256MB | $2 |
-| SQS | 100万メッセージ | $0.40 |
-| SNS | 100万通知 | $0.50 |
-| DynamoDB | 10GB + 100万WCU/RCU | $30 |
-| SES | 10万通 | $1 |
-| CloudWatch | ログ10GB | $5 |
+| サービス | リソース | 月額コスト |
+|----------|----------|------------|
+| ECS Fargate (Blue) | 0.5 vCPU / 1GB × 2タスク | $29 |
+| ECS Fargate (Green) | デプロイ時のみ | $5（概算） |
+| ALB | 1 | $16 |
+| NAT Gateway | 1 | $32 |
+| Aurora PostgreSQL | db.r6g.large (Multi-AZ) | $350 |
+| CodeDeploy | 無料 | $0 |
+| Lambda (Hooks) | 月100回デプロイ想定 | $1 |
+| CloudWatch | ログ・メトリクス | $15 |
+| X-Ray | トレース | $5 |
 
-**合計**: 約 **$40/月**（約6,000円）
+**合計**: 約 **$453/月**（約68,000円）
+
+### コスト削減のヒント
+
+1. **デプロイ時間の短縮**: Green環境の稼働時間を最小化
+2. **開発環境の簡素化**: dev/stgはSingle-AZで運用
+3. **Savings Plans**: Fargateの長期コミット割引
 
 ---
 
@@ -272,32 +281,32 @@ stateDiagram-v2
 
 ### 重要な概念の整理
 
-1. **イベント駆動アーキテクチャ**
-   - 疎結合で拡張性が高い
-   - 新しい消費者を簡単に追加
-   - 障害の分離
+1. **Blue/Green Deployment**
+   - 2つの同一環境を維持
+   - トラフィック切り替えで無停止リリース
+   - 即座のロールバックが可能
 
-2. **冪等性**
-   - 同じイベントを複数回処理しても結果が同じ
-   - DynamoDBの条件付き書き込み活用
-   - イベントIDでの重複チェック
+2. **CodeDeploy Lifecycle Hooks**
+   - 各フェーズでカスタムロジックを実行
+   - テスト、検証、通知などを自動化
+   - 失敗時は自動でデプロイ停止
 
-3. **Fan-outパターン**
-   - 1つのイベントを複数の消費者に配信
-   - SNS + SQSの組み合わせ
-   - フィルタリングによる効率化
+3. **後方互換性のあるマイグレーション**
+   - 新旧バージョンが共存できる設計
+   - カラム追加はNULL許容で
+   - 削除は全環境更新後に別リリースで
 
 ### GCPとの比較
 
 | 概念 | AWS | GCP |
 |------|-----|-----|
-| イベントバス | EventBridge | Eventarc |
-| メッセージング | SNS/SQS | Pub/Sub |
-| サーバーレス関数 | Lambda | Cloud Functions |
-| NoSQL DB | DynamoDB | Firestore |
-| メール送信 | SES | SendGrid等 |
+| Blue/Green Deploy | CodeDeploy | Cloud Deploy |
+| コンテナ実行 | ECS Fargate | Cloud Run |
+| ロードバランサー | ALB | Cloud Load Balancing |
+| トラフィック分割 | Target Group Weight | Traffic Splitting |
+| デプロイHooks | Lambda | Cloud Functions |
 
 ### 次のステップ
-1. リアルタイムダッシュボードの構築
-2. 機械学習による配送時間予測
-3. 異常検知アラートの実装
+1. Progressive Deliveryの実装（Argo Rollouts等）
+2. サービスメッシュでのトラフィック制御
+3. GitOpsワークフローの導入

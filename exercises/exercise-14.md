@@ -1,6 +1,6 @@
-# 課題14: リーガルパートナーズ法律事務所の契約書レビュー支援システム構築
+# 課題14: 配車サービスの統合監視基盤構築
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,479 +8,1015 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | AI / ドキュメント処理 / リーガルテック |
-| 処理タイプ | バッチ / 非同期 |
-| 使用IaC | CDK (TypeScript) |
-| 所要時間 | 8〜10時間 |
+| 難易度 | 初級〜中級 |
+| カテゴリ | オブザーバビリティ・監視 |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
-## シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロフィール
-
-**リーガルパートナーズ法律事務所**は、企業法務を専門とする中堅法律事務所です。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | 法律事務所（企業法務特化） |
-| 設立 | 2005年 |
-| 弁護士数 | 20名（パートナー5名、アソシエイト15名） |
-| パラリーガル | 8名 |
-| 事務スタッフ | 7名 |
-| 年間売上 | 8億円 |
-| 主要クライアント | IT企業、製造業、スタートアップ |
-| 主な業務 | 契約書レビュー、M&A、知財、労務 |
+### 企業プロファイル
+- **企業名**: RideShare株式会社
+- **業種**: モビリティ・配車サービス
+- **規模**: 従業員200名、エンジニア40名
+- **サービス規模**: 月間配車100万件、15個のマイクロサービス
+- **現状インフラ**: AWS上でEKS + マイクロサービスアーキテクチャ
 
 ### 現状の課題
+RideShare株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
 
-契約書レビュー業務が事務所の主要な収益源ですが、増加する案件数に対応しきれず、若手弁護士の残業が常態化しています。また、レビュー品質にばらつきがあり、重要条項の見落としリスクが懸念されています。
+1. **障害検知の遅延**
+   - ユーザーからの問い合わせで障害に気づくことが多い
+   - どのサービスが原因か特定に時間がかかる
+   - 夜間・休日の検知が特に遅い
 
-### 数値で示された問題
+2. **トラブルシュートの困難さ**
+   - 分散トレーシングがなく、リクエストの流れが追えない
+   - ログが各サービスに分散し、相関分析ができない
+   - パフォーマンス問題のボトルネック特定が困難
 
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 月間レビュー件数 | 200件 | 350件対応可能に |
-| 平均レビュー時間 | 3時間/件 | 1.5時間/件 |
-| アソシエイト残業 | 月60時間/人 | 月30時間/人以下 |
-| 重要条項見落とし | 年5件程度発生 | ゼロ |
-| クライアント待機時間 | 平均5営業日 | 2営業日以内 |
-| 定型契約書比率 | 65% | - |
+3. **監視の属人化**
+   - 各チームが独自の監視ツールを使用
+   - アラートルールが統一されていない
+   - SLI/SLO が定義されていない
 
-### レビュー対象の契約書内訳
+### ビジネス要件
+```
+機能要件:
+- 全マイクロサービスのメトリクス統合監視
+- 分散トレーシングによるリクエスト追跡
+- 統合ログ管理と検索
+- SLI/SLO ダッシュボードの構築
 
-| 契約書タイプ | 月間件数 | 平均ページ数 | 複雑度 |
-|--------------|----------|--------------|--------|
-| 秘密保持契約（NDA） | 50件 | 5ページ | 低 |
-| 業務委託契約 | 45件 | 15ページ | 中 |
-| ソフトウェアライセンス | 35件 | 20ページ | 中〜高 |
-| 売買基本契約 | 30件 | 25ページ | 中 |
-| 共同開発契約 | 20件 | 30ページ | 高 |
-| その他（賃貸借、雇用等） | 20件 | 10ページ | 低〜中 |
-
-### 解決したいこと
-
-1. 契約書の自動OCR・テキスト抽出（PDF/スキャン画像対応）
-2. 重要条項（免責、損害賠償、契約解除、秘密保持等）の自動抽出・ハイライト
-3. 自社標準ひな形との差分検出
-4. リスク条項の自動検出とリスクレベル評価
-5. レビューレポートの自動生成
-6. 過去の類似契約書・レビューコメントの検索
+非機能要件:
+- 障害検知から通知まで1分以内
+- メトリクス保持期間：15ヶ月
+- ログ検索レスポンス：5秒以内
+- ダッシュボードリフレッシュ：10秒間隔
+```
 
 ### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| レビュー時間短縮率 | - | 50%以上 | 3ヶ月後 |
-| 重要条項抽出精度 | - | 95%以上 | 2ヶ月後 |
-| リスク検出精度 | - | 90%以上 | 3ヶ月後 |
-| クライアント待機時間 | 5営業日 | 2営業日以内 | 3ヶ月後 |
-| 見落とし件数 | 5件/年 | 0件 | 6ヶ月後 |
-
----
-
-## 達成目標
-
-この演習で習得できるスキル：
-
-### 技術的な学習ポイント
-
-1. **Amazon Textractの実践活用**
-   - PDF/画像からのテキスト抽出
-   - テーブル・フォーム認識
-   - AnalyzeDocument API
-
-2. **Amazon Comprehendの活用**
-   - エンティティ認識（日付、組織名、金額）
-   - カスタム分類（契約条項分類）
-
-3. **Amazon Bedrockによる高度な分析**
-   - 契約書解析のプロンプトエンジニアリング
-   - リスク評価ロジック
-   - レビューレポート生成
-
-4. **AWS CDK（TypeScript）によるインフラ構築**
-   - スタック設計と分割
-   - L2 Constructの活用
-   - 環境変数管理
-
-5. **Step Functionsによるワークフロー管理**
-   - 複数処理の連携
-   - エラーハンドリング
-   - 並列処理
-
-### 実務で活かせる知識
-
-- ドキュメント処理パイプラインの設計
-- 法務業務におけるAI活用パターン
-- CDKによるモダンなIaC実践
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| OCR/ドキュメント処理 | Amazon Textract | Document AI |
-| NLP | Amazon Comprehend | Natural Language API |
-| 生成AI | Bedrock (Claude 3) | Vertex AI (Gemini) |
-| ワークフロー | Step Functions | Cloud Workflows |
-| IaC | CDK | Deployment Manager / Terraform |
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 平均検知時間（MTTD） | 30分 | 1分 |
+| 平均復旧時間（MTTR） | 2時間 | 15分 |
+| 障害原因特定時間 | 45分 | 5分 |
+| SLO 達成率 | 測定なし | 99.9% |
+| アラート精度（真陽性率） | 40% | 90% |
 
 ---
 
-## 使用するAWSサービス
+## 3. 学習目標
+
+### 本課題で習得するスキル
+
+```
+1. メトリクス監視（理解度：詳細）
+   - CloudWatch メトリクス・アラーム設定
+   - Amazon Managed Prometheus（AMP）
+   - カスタムメトリクスの設計
+
+2. 分散トレーシング（理解度：実装）
+   - AWS X-Ray によるトレース収集
+   - サービスマップの活用
+   - パフォーマンス分析
+
+3. 統合ダッシュボード（理解度：実装）
+   - Amazon Managed Grafana（AMG）
+   - CloudWatch ダッシュボード
+   - SLI/SLO 可視化
+
+4. ログ管理（理解度：基礎）
+   - CloudWatch Logs Insights
+   - ログの構造化と相関付け
+```
+
+### GCPエンジニア向け補足
+```
+GCP → AWS マッピング:
+- Cloud Monitoring → CloudWatch
+- Cloud Trace → X-Ray
+- Cloud Logging → CloudWatch Logs
+- Google Cloud Managed Prometheus → Amazon Managed Prometheus
+- (Grafana Cloud) → Amazon Managed Grafana
+
+主な違い:
+1. CloudWatch: メトリクス・ログ・トレースの統合サービス
+   （GCPは3つの別サービス）
+
+2. X-Ray: AWS サービスとの深い統合
+   （Lambda, API Gateway, ECS などの自動計装）
+
+3. AMP/AMG: オープンソース互換のマネージドサービス
+   （既存の Prometheus/Grafana 資産を活用可能）
+
+4. Container Insights: EKS/ECS の包括的な監視
+   （GKE のモニタリングに相当）
+```
+
+---
+
+## 4. 使用するAWSサービス
 
 ### メインサービス
-
-| サービス | 役割 | 選定理由 |
+| サービス | 役割 | 使用機能 |
 |----------|------|----------|
-| Amazon Textract | PDF/画像からテキスト抽出 | 高精度OCR、テーブル認識対応 |
-| Amazon Comprehend | エンティティ認識、分類 | 日本語対応、カスタム分類可能 |
-| Amazon Bedrock | 契約書分析、リスク評価、レポート生成 | Claude 3の高度な推論能力 |
-| AWS Step Functions | ワークフローオーケストレーション | 複数処理の連携、可視化 |
-| Amazon S3 | 契約書ファイル保存 | 大容量、バージョニング |
-| Amazon DynamoDB | メタデータ・分析結果保存 | 柔軟なスキーマ、高速 |
-| Amazon OpenSearch Service | 過去契約書・コメント検索 | 全文検索、日本語対応 |
+| **Amazon CloudWatch** | メトリクス・ログ監視 | Metrics, Alarms, Logs Insights, Container Insights |
+| **AWS X-Ray** | 分散トレーシング | トレース収集、サービスマップ、分析 |
+| **Amazon Managed Grafana** | ダッシュボード | 可視化、アラート、データソース統合 |
+| **Amazon Managed Prometheus** | メトリクス収集 | Prometheus互換メトリクス |
 
-### 補助サービス
-
-| サービス | 役割 |
+### サポートサービス
+| サービス | 用途 |
 |----------|------|
-| AWS Lambda | 各処理ステップの実行 |
-| Amazon SQS | 非同期処理キュー |
-| Amazon SNS | 処理完了・レビュー依頼通知 |
-| Amazon CloudWatch | 監視・ログ・アラート |
-| AWS Secrets Manager | API キー管理 |
+| **Amazon EKS** | マイクロサービス実行基盤 |
+| **AWS Distro for OpenTelemetry** | テレメトリ収集 |
+| **Amazon SNS** | アラート通知 |
+| **AWS Lambda** | アラートアクション |
+| **Amazon S3** | ログアーカイブ |
+
+### アーキテクチャ図
+```mermaid
+flowchart TB
+    subgraph RideShare["RideShare 統合監視基盤"]
+        subgraph EKS["Amazon EKS Cluster"]
+            subgraph Services["Microservices"]
+                Rider["Rider<br/>Service"]
+                Driver["Driver<br/>Service"]
+                Matching["Matching<br/>Service"]
+                Payment["Payment<br/>Service"]
+                Pricing["Pricing<br/>Service"]
+            end
+            subgraph ADOT["AWS Distro for OpenTelemetry"]
+                TracesCol["Traces<br/>Collector"]
+                MetricsCol["Metrics<br/>Collector"]
+                LogsCol["Logs<br/>Collector"]
+            end
+        end
+
+        subgraph Storage["データ保存層"]
+            subgraph XRay["AWS X-Ray"]
+                ServiceMap["Service Map"]
+                Traces["Traces"]
+            end
+            subgraph AMP["Amazon Managed<br/>Prometheus"]
+                TSDB["Time Series DB"]
+            end
+            subgraph CWLogs["CloudWatch Logs"]
+                LogsInsights["Logs Insights"]
+            end
+        end
+
+        subgraph Grafana["Amazon Managed Grafana"]
+            SLISLO["SLI/SLO<br/>Dashboard"]
+            ServiceHealth["Service<br/>Health"]
+            InfraDash["Infrastructure<br/>Dashboard"]
+            AlertRules["Alert Rules<br/>P99 Latency > 500ms → PagerDuty<br/>Error Rate > 1% → Slack"]
+        end
+
+        subgraph Notifications["Notifications"]
+            PagerDuty["PagerDuty"]
+            Slack["Slack"]
+            Email["Email"]
+        end
+    end
+
+    Services --> ADOT
+    TracesCol --> XRay
+    MetricsCol --> AMP
+    LogsCol --> CWLogs
+    XRay --> Grafana
+    AMP --> Grafana
+    CWLogs --> Grafana
+    Grafana --> Notifications
+```
 
 ---
 
-## 前提条件
+## 5. 前提条件と事前準備
 
-### 必要な事前知識
-
-- AWSの基本サービス（S3, Lambda, DynamoDB）
-- TypeScript基礎（型定義、async/await）
-- Node.js環境でのnpm/yarn操作
-- Step Functionsの基本概念
-- 契約書の基本構造（条項、別紙等）
-
-### 準備するもの
-
-1. **AWSアカウント**
-   - Bedrockのモデルアクセス有効化（Claude 3 Sonnet）
-   - 適切なIAM権限（AdministratorAccess推奨、学習時）
-
-2. **開発環境**
-   - Node.js 18.x以上
-   - AWS CDK CLI v2（`npm install -g aws-cdk`）
-   - AWS CLI v2（設定済み）
-   - TypeScript（`npm install -g typescript`）
-   - VS Code + AWS Toolkit拡張
-
-3. **テストデータ**
-   - サンプル契約書PDF（3-5件）
-   - 自社標準ひな形（テスト用に作成）
-
-### CDK初期設定
-
+### 必要な環境
 ```bash
-# CDK CLIインストール
-npm install -g aws-cdk
+# AWS CLI v2
+aws --version  # 2.x以上
 
-# バージョン確認
-cdk --version
+# kubectl
+kubectl version --client
 
-# プロジェクト作成
-mkdir legal-contract-review && cd legal-contract-review
-cdk init app --language typescript
+# Helm
+helm version  # 3.x以上
 
-# 必要な依存関係追加
-npm install @aws-cdk/aws-lambda-python-alpha
+# eksctl
+eksctl version
+
+# jq
+jq --version
 ```
 
----
-
-## アーキテクチャ概要
-
-### システム全体構成
-
+### AWSアカウント要件
 ```
-[弁護士/パラリーガル]
-        ↓ アップロード
-[S3: 入力バケット]
-        ↓ S3イベント
-[Step Functions: ContractReviewWorkflow]
-        │
-        ├─[1] Lambda: ExtractText
-        │     └── Textract: PDF→テキスト変換
-        │
-        ├─[2] Lambda: AnalyzeEntities
-        │     └── Comprehend: エンティティ抽出
-        │
-        ├─[3] Lambda: ClassifyClauses
-        │     └── Bedrock: 条項分類・リスク評価
-        │
-        ├─[4] Lambda: CompareTemplate
-        │     └── Bedrock: ひな形との差分検出
-        │
-        └─[5] Lambda: GenerateReport
-              └── Bedrock: レビューレポート生成
-        │
-        ↓
-[DynamoDB: 分析結果保存]
-[S3: レポート出力]
-[OpenSearch: 検索インデックス]
-        ↓
-[SNS: 完了通知]
-        ↓
-[弁護士にメール通知]
+- EKS クラスターが作成済み、または作成可能
+- IAM 権限：EKS管理、CloudWatch管理、Prometheus管理、Grafana管理
+- SSO/IAM Identity Center（Grafana認証用、オプション）
 ```
 
-### 処理フロー詳細
-
-1. **ドキュメントアップロード**: 弁護士がS3に契約書PDFをアップロード
-2. **テキスト抽出**: TextractでOCR処理、テーブル・フォーム認識
-3. **エンティティ認識**: Comprehendで日付、金額、組織名を抽出
-4. **条項分類**: Bedrockで各条項を分類（免責、損害賠償、解除等）
-5. **リスク評価**: Bedrockでリスク条項を検出・評価
-6. **差分検出**: 標準ひな形との違いを特定
-7. **レポート生成**: 分析結果をレビューレポートとして出力
-8. **通知**: 担当弁護士にメール通知
-
----
-
-## トラブルシューティング課題
-
-### 問題1: Textractのジョブが失敗
-
-**症状:**
-```
-Textract job failed: Unable to process the document
-Step Functions実行がExtractTextステップで失敗
-```
-
-**ヒント:**
-1. PDFファイルが破損していないか確認
-2. PDFのページ数制限（3000ページ）を超えていないか
-3. PDFのファイルサイズ制限（500MB）を超えていないか
-4. S3へのアクセス権限があるか
-
-**解決方法:**
-```python
-# Lambdaにバリデーション追加
-def validate_document(bucket, key):
-    response = s3.head_object(Bucket=bucket, Key=key)
-    size_mb = response['ContentLength'] / (1024 * 1024)
-
-    if size_mb > 500:
-        raise ValueError(f"File too large: {size_mb}MB (max 500MB)")
-
-    if not key.lower().endswith('.pdf'):
-        raise ValueError(f"Unsupported file type: {key}")
-```
-
-### 問題2: Bedrockのレスポンスが不完全
-
-**症状:**
-```
-JSONパースエラーが発生
-レスポンスが途中で切れている
-```
-
-**ヒント:**
-1. max_tokensの設定を確認
-2. 入力テキストが長すぎないか
-3. プロンプトが明確か
-
-**解決方法:**
-```python
-# max_tokens増加
-body = json.dumps({
-    "anthropic_version": "bedrock-2023-05-31",
-    "max_tokens": 8192,  # 4096から増加
-    "messages": [...]
-})
-
-# 入力テキストの切り詰め
-full_text = full_text[:25000]  # Claude 3の入力制限に合わせる
-```
-
-### 問題3: Step Functions実行タイムアウト
-
-**症状:**
-```
-States.Timeout エラー
-特定のステップで30分以上かかる
-```
-
-**ヒント:**
-1. 各Lambdaのタイムアウト設定を確認
-2. Textractの処理時間が長いPDFかどうか
-3. Step Functionsのタイムアウト設定
-
-**解決方法:**
-```typescript
-// CDKでタイムアウト延長
-const stateMachine = new sfn.StateMachine(this, 'ContractReviewWorkflow', {
-  timeout: cdk.Duration.hours(1),  // 30分から1時間に延長
-  // ...
-});
-
-// Lambda個別のタイムアウトも延長
-const extractTextFn = new lambda.Function(this, 'ExtractTextFunction', {
-  timeout: cdk.Duration.minutes(10),  // 5分から10分に
-  // ...
-});
-```
-
----
-
-## 設計の考察ポイント
-
-### 1. なぜStep Functionsで処理を分割したのか？
-
-**考察ポイント:**
-- 単一Lambdaで全処理を行う場合の問題（タイムアウト、デバッグ困難）
-- 処理の可視化とモニタリング
-- 部分的な再実行の容易さ
-- 各ステップの独立したスケーリング
-
-### 2. CDKを選択した理由は？
-
-**考察ポイント:**
-- TypeScriptによる型安全性
-- プログラマブルなインフラ定義
-- CloudFormationとの比較
-- Terraformとの比較（チームのスキルセット）
-
-### 3. 契約書の機密性にどう対応するか？
-
-**考察ポイント:**
-- S3の暗号化（SSE-S3 vs SSE-KMS）
-- VPCエンドポイントの利用
-- アクセスログの監査
-- データ保持期間とライフサイクル
-
-### 4. AIの判断をどこまで信頼するか？
-
-**考察ポイント:**
-- AIはあくまで支援ツール
-- 最終判断は弁護士が行う設計
-- 信頼度スコアの活用
-- フォールバック（人間へのエスカレーション）
-
-### 5. 本番環境でのスケーラビリティは？
-
-**考察ポイント:**
-- Lambda同時実行制限
-- Textractのスロットリング
-- Bedrockのレート制限
-- SQSによるバッファリングの必要性
-
----
-
-## 発展課題（オプション）
-
-### 1. OpenSearchによる類似契約検索
-- 過去の契約書をベクトル化して保存
-- 類似契約書の検索機能
-- 過去のレビューコメント参照
-
-### 2. カスタムComprehend分類器
-- 契約条項に特化した分類モデル
-- 自社の過去データで学習
-- 精度の継続的改善
-
-### 3. Webフロントエンド構築
-- React + Amplifyでのダッシュボード
-- 分析結果の可視化
-- 承認ワークフローの実装
-
-### 4. 多言語対応
-- 英文契約書の処理
-- Amazon Translateとの連携
-- 言語自動検出
-
-### 5. バージョン管理と差分追跡
-- 契約書改訂版の差分表示
-- 変更履歴の追跡
-- 承認ワークフローとの連携
-
----
-
-## 想定コストと削減方法
-
-### 月額概算コスト（月間200件処理想定）
-
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| Amazon Textract | 200件 × 20ページ = 4,000ページ | $6 |
-| Amazon Comprehend | 200件 × 50KBテキスト = 10MB | $2 |
-| Amazon Bedrock | 200件 × 4回呼び出し × 約5000トークン | $40 |
-| AWS Lambda | 200件 × 5関数 × 平均60秒 | $5 |
-| AWS Step Functions | 200件 × 7ステート遷移 | $0.04 |
-| Amazon S3 | 50GB保存 + リクエスト | $2 |
-| Amazon DynamoDB | オンデマンド | $2 |
-| Amazon SNS | 200件通知 | $0.01 |
-| CloudWatch | ログ・メトリクス | $5 |
-| **合計** | | **約$62（約9,300円）** |
-
-### コスト削減のポイント
-
-1. **Bedrockモデルの最適化**
-   - 簡単な分類はClaude 3 Haikuで
-   - 複雑な分析のみSonnet使用
-   - → 最大40%削減
-
-2. **Textractの使い分け**
-   - テキストPDFはDetectDocumentText（安価）
-   - スキャンPDFのみAnalyzeDocument
-   - → 最大50%削減
-
-3. **キャッシング**
-   - 同じテンプレートとの比較結果をキャッシュ
-   - 類似契約のパターンマッチング
-
-4. **バッチ処理**
-   - 夜間バッチで処理
-   - Spot Instanceの活用（ECS移行時）
-
-### リソース削除手順
-
+### 事前準備スクリプト
 ```bash
-# CDKで全削除
-cdk destroy -c environment=dev
+#!/bin/bash
+# setup-observability-baseline.sh
 
-# S3バケットが残る場合
-INPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`InputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
-OUTPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`OutputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
+# 変数設定
+CLUSTER_NAME="rideshare-cluster"
+REGION="ap-northeast-1"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-if [ -n "$INPUT_BUCKET" ]; then
-  aws s3 rm s3://${INPUT_BUCKET} --recursive
-fi
-if [ -n "$OUTPUT_BUCKET" ]; then
-  aws s3 rm s3://${OUTPUT_BUCKET} --recursive
+# ディレクトリ構造の作成
+mkdir -p rideshare-observability/{kubernetes,grafana,alerting,sample-app}
+cd rideshare-observability
+
+# EKS クラスターの確認（存在しない場合は作成）
+echo "=== Checking EKS Cluster ==="
+if ! eksctl get cluster --name $CLUSTER_NAME --region $REGION 2>/dev/null; then
+    echo "Creating EKS cluster..."
+    cat > cluster-config.yaml << EOF
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: ${CLUSTER_NAME}
+  region: ${REGION}
+
+managedNodeGroups:
+  - name: ng-1
+    instanceType: t3.medium
+    desiredCapacity: 3
+    minSize: 2
+    maxSize: 5
+    iam:
+      withAddonPolicies:
+        cloudWatch: true
+        xRay: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
+iam:
+  withOIDC: true
+EOF
+    eksctl create cluster -f cluster-config.yaml
 fi
 
-# 再度destroy
-cdk destroy -c environment=dev --force
+# kubeconfig の更新
+aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
+
+# 現在のコンテキスト確認
+kubectl config current-context
+kubectl get nodes
 ```
 
 ---
 
-## 学習のポイント
+## 6. アーキテクチャ設計
 
-### 1. ドキュメント処理パイプラインの設計
-Textract（OCR）→ Comprehend（NLP）→ Bedrock（生成AI）の組み合わせは、ドキュメント処理の典型的なパターン。各サービスの得意分野を理解して使い分ける。
+### 監視設計（Three Pillars of Observability）
+```yaml
+# observability-design.yaml
+observability:
+  metrics:
+    sources:
+      - cloudwatch_container_insights  # インフラメトリクス
+      - prometheus_scraping            # アプリケーションメトリクス
+      - custom_metrics                 # ビジネスメトリクス
+    storage:
+      - amazon_managed_prometheus      # 長期保存（13ヶ月）
+      - cloudwatch_metrics             # AWS統合メトリクス
+    key_metrics:
+      # RED メトリクス（サービス）
+      - request_rate          # リクエストレート
+      - error_rate            # エラー率
+      - duration              # レイテンシ
+      # USE メトリクス（リソース）
+      - utilization           # CPU/Memory使用率
+      - saturation            # キュー長/スレッドプール
+      - errors                # リソースエラー
 
-### 2. AWS CDKの実践
-TypeScriptでインフラを定義することで、型チェック、コード補完、ユニットテストが可能になる。CloudFormationの直接記述と比べて生産性が大幅に向上する。
+  traces:
+    collector: aws_xray
+    sampling:
+      default: 0.05           # 5% サンプリング
+      errors: 1.0             # エラーは100%収集
+      slow_requests: 1.0      # 遅いリクエストは100%収集
+    correlation:
+      - trace_id → logs
+      - trace_id → metrics
 
-### 3. Step Functionsによるワークフロー管理
-複数のLambdaを連携させる場合、Step Functionsを使うことで処理の可視化、エラーハンドリング、再実行が容易になる。
+  logs:
+    collector: fluent_bit
+    storage: cloudwatch_logs
+    structure:
+      format: json
+      fields:
+        - timestamp
+        - level
+        - service
+        - trace_id
+        - span_id
+        - message
+        - metadata
+    retention:
+      hot: 7_days
+      warm: 30_days
+      cold: 365_days
+```
 
-### 4. 法務AIの設計原則
-AIは「支援ツール」として位置づけ、最終判断は専門家（弁護士）が行う設計にする。これは法務に限らず、専門性が求められる領域でのAI活用の基本原則。
+### SLI/SLO 定義
+```yaml
+# sli-slo-definitions.yaml
+services:
+  rider_service:
+    slis:
+      availability:
+        description: "サービスが正常にリクエストを処理できる割合"
+        metric: "sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+        unit: percentage
+      latency:
+        description: "リクエストのP99レイテンシ"
+        metric: "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"
+        unit: seconds
+      error_rate:
+        description: "エラーリクエストの割合"
+        metric: "sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
+        unit: percentage
+    slos:
+      availability:
+        target: 99.9%
+        window: 30d
+        budget: 43.2min  # 月間ダウンタイム許容
+      latency_p99:
+        target: 500ms
+        window: 30d
+      error_rate:
+        target: 0.1%
+        window: 30d
 
-### 5. セキュリティと機密性への配慮
-契約書は機密情報を含むため、暗号化、アクセス制御、監査ログを最初から設計に組み込む。特に法律事務所では守秘義務が重要。
+  matching_service:
+    slis:
+      availability:
+        metric: "..."
+      latency:
+        metric: "..."
+      match_success_rate:
+        description: "配車マッチング成功率"
+        metric: "sum(rate(matching_success_total[5m])) / sum(rate(matching_attempts_total[5m]))"
+    slos:
+      availability:
+        target: 99.95%
+      latency_p99:
+        target: 200ms
+      match_success_rate:
+        target: 95%
+```
+
+---
+
+## 8. トラブルシューティング課題
+
+### 課題1: Prometheus メトリクスが AMP に書き込まれない
+
+**症状**:
+```
+Grafana で AMP をデータソースとして設定したが、
+メトリクスが表示されない。Prometheus Pod のログには
+"remote_write" 関連のエラーが出ている。
+```
+
+**調査コマンド**:
+```bash
+# Prometheus Pod のログ確認
+kubectl logs -n prometheus deployment/prometheus-server | grep -i "remote"
+
+# Service Account の確認
+kubectl get sa prometheus-server -n prometheus -o yaml
+
+# IAM ロールの確認
+aws iam get-role --role-name amp-prometheus-role
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: IRSA（IAM Roles for Service Accounts）の設定が正しくない
+
+**解決手順**:
+```bash
+# 1. OIDC プロバイダーの確認
+aws eks describe-cluster --name rideshare-cluster \
+    --query "cluster.identity.oidc.issuer" --output text
+
+# 2. OIDC プロバイダーが IAM に登録されているか確認
+aws iam list-open-id-connect-providers
+
+# 3. OIDC プロバイダーが未登録の場合、登録
+eksctl utils associate-iam-oidc-provider \
+    --cluster rideshare-cluster \
+    --approve
+
+# 4. Service Account のアノテーション確認
+kubectl get sa prometheus-server -n prometheus -o yaml | grep -A 5 annotations
+
+# 5. アノテーションが不足している場合、更新
+kubectl annotate sa prometheus-server -n prometheus \
+    eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/amp-prometheus-role \
+    --overwrite
+
+# 6. Prometheus Pod を再起動
+kubectl rollout restart deployment prometheus-server -n prometheus
+
+# 7. Pod が新しい認証情報を取得したか確認
+kubectl exec -n prometheus deployment/prometheus-server -- \
+    cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token | cut -d '.' -f 2 | base64 -d
+```
+
+**追加確認事項**:
+- IAM ロールの信頼ポリシーで OIDC の subject が正しいか
+- AMP ワークスペースが正しいリージョンにあるか
+- remote_write の URL が正しいか
+</details>
+
+### 課題2: X-Ray トレースが表示されない
+
+**症状**:
+```
+アプリケーションで X-Ray SDK を使用しているが、
+X-Ray コンソールにトレースが表示されない。
+サービスマップも空のまま。
+```
+
+**調査コマンド**:
+```bash
+# X-Ray Daemon Pod の状態確認
+kubectl get pods -l app=xray-daemon
+
+# X-Ray Daemon のログ確認
+kubectl logs daemonset/xray-daemon
+
+# アプリケーション Pod からの接続確認
+kubectl exec -it deployment/rider-service -- \
+    nc -vz xray-service.default 2000
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: 複数の原因が考えられる
+
+**パターン1: X-Ray Daemon への接続失敗**
+```bash
+# アプリケーションの環境変数確認
+kubectl get deployment rider-service -o yaml | grep -A 5 AWS_XRAY
+
+# 環境変数が設定されていない場合
+kubectl set env deployment/rider-service \
+    AWS_XRAY_DAEMON_ADDRESS=xray-service.default:2000
+```
+
+**パターン2: IAM 権限不足**
+```bash
+# Service Account の IAM ロール確認
+kubectl get sa xray-daemon -o yaml
+
+# 必要な権限があるか確認
+aws iam simulate-principal-policy \
+    --policy-source-arn arn:aws:iam::ACCOUNT_ID:role/xray-daemon-role \
+    --action-names xray:PutTraceSegments xray:PutTelemetryRecords
+```
+
+**パターン3: サンプリングルールの問題**
+```bash
+# デフォルトサンプリングルールの確認
+aws xray get-sampling-rules
+
+# サンプリングレートが低すぎる場合、調整
+aws xray update-sampling-rule --sampling-rule-update '{
+    "RuleName": "Default",
+    "FixedRate": 0.1,
+    "ReservoirSize": 10
+}'
+```
+
+**パターン4: アプリケーションコードの問題**
+```python
+# X-Ray SDK の初期化を確認
+from aws_xray_sdk.core import xray_recorder
+
+# 明示的にサービス名を設定
+xray_recorder.configure(
+    service='rider-service',
+    sampling=False,  # デバッグ時は全トレース収集
+    daemon_address='xray-service.default:2000'
+)
+```
+</details>
+
+### 課題3: Grafana アラートが発火しない
+
+**症状**:
+```
+SLO 違反が発生しているはずなのに、Grafana のアラートが
+発火しない。ダッシュボードではメトリクスが正常に表示されている。
+```
+
+**調査手順**:
+```bash
+# Grafana のアラート状態確認（API経由）
+curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
+    "https://your-grafana.grafana.net/api/v1/alerts"
+
+# アラートルールの確認
+curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
+    "https://your-grafana.grafana.net/api/v1/provisioning/alert-rules"
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: アラートルールの評価設定の問題
+
+**確認・解決手順**:
+
+1. **アラートルールの `for` 期間を確認**
+```yaml
+# for が長すぎる場合、アラートが発火しにくい
+for: 2m  # 2分間継続して条件を満たす必要がある
+```
+
+2. **データソースの設定確認**
+```yaml
+# データソース UID が正しいか確認
+datasourceUid: prometheus  # 実際のデータソース UID と一致しているか
+```
+
+3. **評価間隔の確認**
+```yaml
+# interval が長すぎるとアラートの遅延が発生
+interval: 1m  # 1分間隔で評価
+```
+
+4. **クエリの検証**
+```bash
+# Grafana の Explore で直接クエリを実行して結果を確認
+# アラート条件と同じクエリを実行
+sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m])) * 100
+```
+
+5. **通知チャネルの確認**
+```yaml
+# Contact Point が正しく設定されているか
+# Slack/PagerDuty の Webhook URL が有効か
+```
+
+6. **Grafana Alerting のデバッグログ有効化**
+```bash
+# AMG ではログレベルの変更はサポートされていないため、
+# CloudWatch Logs で Grafana のログを確認
+aws logs filter-log-events \
+    --log-group-name "/aws/grafana/rideshare-dashboard" \
+    --filter-pattern "alert"
+```
+</details>
+
+---
+
+## 9. 設計課題
+
+### 設計課題: 大規模マイクロサービスのオブザーバビリティ戦略
+
+**シナリオ**:
+RideShare社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
+以下の要件を満たすオブザーバビリティ戦略を設計してください。
+
+**要件**:
+```
+1. サービス規模
+   - マイクロサービス：50個
+   - 月間リクエスト：10億件
+   - 開発チーム：15チーム
+
+2. 機能要件
+   - 全サービスの統合監視
+   - チーム単位でのダッシュボード分離
+   - サービス間依存関係の可視化
+   - カスタムビジネスメトリクス対応
+
+3. 非機能要件
+   - メトリクス保持：13ヶ月（コンプライアンス要件）
+   - ログ検索：リアルタイム〜30日前
+   - アラート遅延：1分以内
+   - コスト効率：現状の2倍以内
+```
+
+**設計すべき項目**:
+```
+1. メトリクス収集・保存戦略
+2. トレーシング戦略（サンプリング設計）
+3. ログ管理戦略（保持・検索）
+4. ダッシュボード・アラート設計
+5. チーム間の責任分界
+```
+
+<details>
+<summary>設計例を見る</summary>
+
+### 大規模オブザーバビリティアーキテクチャ
+
+```mermaid
+architecture-beta
+    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
+
+    group collection(server)[データ収集層] in aws
+    service rider_team(server)[Rider Team Services 5 svcs] in collection
+    service driver_team(server)[Driver Team Services 4 svcs] in collection
+    service payment_team(server)[Payment Team Services 3 svcs] in collection
+    service other_teams(server)[Other Teams x15] in collection
+    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
+    service sampling(server)[Sampling Processor] in collection
+    service filtering(server)[Filtering Processor] in collection
+
+    group storage(database)[データ保存層] in aws
+    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
+    service amp(server)[AMP Metrics Retention 13 months] in storage
+    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
+
+    group visualization(server)[可視化・アラート層] in aws
+    service grafana(server)[Amazon Managed Grafana] in visualization
+    service platform_dash(server)[Platform Overview SRE] in visualization
+    service team_dash(server)[Team Dashboards 15 folders] in visualization
+    service business_dash(server)[Business Metrics Product] in visualization
+    service pagerduty(internet)[PagerDuty Critical/High] in visualization
+    service slack(internet)[Slack Alerts Warning/Info] in visualization
+
+    rider_team:B --> T:otel_collector
+    driver_team:B --> T:otel_collector
+    payment_team:B --> T:otel_collector
+    other_teams:B --> T:otel_collector
+    otel_collector:B --> T:xray
+    otel_collector:B --> T:amp
+    otel_collector:B --> T:cwlogs
+    xray:B --> T:grafana
+    amp:B --> T:grafana
+    cwlogs:B --> T:grafana
+    grafana:R --> L:pagerduty
+    grafana:R --> L:slack
+```
+
+### 1. メトリクス収集・保存戦略
+
+```yaml
+metrics_strategy:
+  collection:
+    method: pull  # Prometheus スタイル
+    interval: 15s
+    timeout: 10s
+
+  labeling_guidelines:
+    required_labels:
+      - service    # サービス名
+      - team       # 担当チーム
+      - env        # 環境
+    cardinality_control:
+      # 高カーディナリティラベルの制限
+      forbidden_labels:
+        - user_id
+        - request_id
+        - trace_id
+      max_label_values: 1000
+
+  storage:
+    primary: amazon_managed_prometheus
+    retention: 13_months
+    estimated_series: 80000  # 50サービス × 1600シリーズ/サービス
+
+  aggregation:
+    # 長期保存用に集約
+    raw_retention: 15_days
+    5m_aggregation: 90_days
+    1h_aggregation: 13_months
+```
+
+### 2. トレーシング戦略
+
+```yaml
+tracing_strategy:
+  sampling:
+    head_based:
+      default_rate: 0.05  # 5%
+      rules:
+        - service: payment-*
+          rate: 0.1  # 決済は10%
+        - service: matching-*
+          rate: 0.1  # マッチングは10%
+
+    tail_based:
+      enabled: true
+      policies:
+        - type: always_sample
+          conditions:
+            - status_code >= 500
+            - latency > 2s
+        - type: probabilistic
+          rate: 0.5
+          conditions:
+            - latency > 500ms
+
+  storage:
+    service: aws_xray
+    retention: 30_days
+    groups:
+      - name: errors
+        filter: "fault = true"
+      - name: slow_requests
+        filter: "responsetime > 1"
+
+  service_map:
+    refresh_interval: 1m
+    depth: 5  # 依存関係の深さ
+```
+
+### 3. ログ管理戦略
+
+```yaml
+log_strategy:
+  structure:
+    format: json
+    required_fields:
+      - timestamp
+      - level
+      - service
+      - team
+      - trace_id
+      - message
+    optional_fields:
+      - user_id  # マスキング必須
+      - request_path
+
+  storage:
+    primary: cloudwatch_logs
+    log_groups:
+      pattern: /rideshare/{team}/{service}
+    retention_policy:
+      hot: 7_days     # CloudWatch Logs
+      warm: 30_days   # CloudWatch Logs (Infrequent Access)
+      cold: 365_days  # S3 Glacier
+
+  export:
+    destination: s3
+    format: parquet  # Athena でクエリ可能
+    schedule: daily
+    bucket: rideshare-logs-archive
+
+  search:
+    tool: cloudwatch_logs_insights
+    max_scan_range: 30_days
+    query_timeout: 30s
+```
+
+### 4. チーム責任分界
+
+```yaml
+responsibility_matrix:
+  platform_sre:
+    owns:
+      - 全体 SLO ダッシュボード
+      - インフラメトリクス
+      - 共通アラートルール
+      - オンコールエスカレーション
+    maintains:
+      - AMP/AMG インフラ
+      - OpenTelemetry Collector
+      - 共通ライブラリ
+
+  application_teams:
+    owns:
+      - チームダッシュボード
+      - サービス固有アラート
+      - ビジネスメトリクス定義
+      - トラブルシューティング
+    maintains:
+      - アプリケーション計装
+      - ログ出力
+
+  access_control:
+    grafana:
+      - role: Viewer (全社員)
+      - role: Editor (チームメンバー) - チームフォルダのみ
+      - role: Admin (SRE)
+```
+
+### 推定コスト
+
+| サービス | 使用量 | 月額コスト |
+|----------|--------|-----------|
+| AMP | 80K series, 13M samples/month | $800 |
+| AMG | 1 workspace, 50 users | $250 |
+| CloudWatch Logs | 500GB/month | $250 |
+| CloudWatch Metrics | Container Insights | $150 |
+| X-Ray | 10M traces/month | $50 |
+| S3 (ログアーカイブ) | 1TB | $25 |
+| **合計** | | **$1,525/月** |
+
+</details>
+
+---
+
+## 10. 発展課題
+
+### 発展課題1: OpenTelemetry への移行（難易度：中級）
+
+**課題内容**:
+現在の X-Ray SDK から OpenTelemetry に移行し、ベンダーロックインを回避しつつ
+同等以上のオブザーバビリティを実現してください。
+
+**要件**:
+- 既存の X-Ray トレースとの互換性維持
+- メトリクス・ログ・トレースの統合収集
+- Kubernetes 環境での自動計装
+
+```yaml
+# ヒント: AWS Distro for OpenTelemetry の設定
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: adot-collector
+spec:
+  mode: deployment
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 50
+
+    exporters:
+      awsxray:
+        region: ap-northeast-1
+      awsprometheusremotewrite:
+        endpoint: https://aps-workspaces.ap-northeast-1.amazonaws.com/...
+      awscloudwatchlogs:
+        log_group_name: /rideshare/otel
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [awsxray]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [awsprometheusremotewrite]
+```
+
+### 発展課題2: AIOps の導入（難易度：上級）
+
+**課題内容**:
+Amazon DevOps Guru を導入し、ML ベースの異常検知と
+インシデント予測を実現してください。
+
+**要件**:
+- CloudWatch メトリクスの異常検知
+- インシデントの自動分類と優先度付け
+- 推奨アクションの自動生成
+
+### 発展課題3: カオスエンジニアリング統合（難易度：上級）
+
+**課題内容**:
+AWS Fault Injection Simulator を使用して、
+オブザーバビリティ基盤の有効性を検証するカオス実験を設計・実行してください。
+
+**要件**:
+- サービス障害時の検知時間測定
+- アラート精度の検証
+- ダッシュボードの有用性評価
+
+---
+
+## 11. 振り返りと次のステップ
+
+### 学習のまとめ
+
+```
+本課題で学んだこと:
+□ CloudWatch Container Insights による EKS 監視
+□ AWS X-Ray による分散トレーシング
+□ Amazon Managed Prometheus/Grafana の設定
+□ SLI/SLO の設計と可視化
+□ アラート設計のベストプラクティス
+□ 構造化ログと相関分析
+
+GCP との主な違い:
+- CloudWatch は統合サービス（メトリクス・ログ・トレース）
+- X-Ray は AWS サービスとの深い統合
+- AMP/AMG はオープンソース互換のマネージドサービス
+- Container Insights は EKS 専用の包括的監視
+```
+
+### GCP経験者向けポイント
+
+| 観点 | GCP | AWS | 移行時の注意 |
+|------|-----|-----|-------------|
+| メトリクス監視 | Cloud Monitoring | CloudWatch Metrics | メトリクス名・ラベル命名規則が異なる |
+| 分散トレーシング | Cloud Trace | X-Ray | トレースフォーマットが異なる（W3C vs X-Ray） |
+| ログ管理 | Cloud Logging | CloudWatch Logs | クエリ言語が異なる（LogQL vs Insights） |
+| Prometheus | Managed Prometheus | AMP | ほぼ同等、remote_write 設定のみ異なる |
+| Grafana | (Grafana Cloud) | AMG | データソース設定が異なる |
+
+### 推奨される次のステップ
+
+```
+1. AWS Certified DevOps Engineer の学習
+   - オブザーバビリティの深い理解
+   - CI/CD との統合
+
+2. OpenTelemetry の習得
+   - ベンダー中立なテレメトリ
+   - 将来性のある技術スタック
+
+3. SRE プラクティスの導入
+   - SLO ベースのアラート設計
+   - エラーバジェットの運用
+
+4. 関連課題への挑戦
+   - 課題27: セキュリティ監視
+   - 課題29: コスト最適化
+```
+
+---
+
+## 12. 推定コストと注意事項
+
+### 本課題の推定コスト
+
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| EKS | 1クラスター、3ノード | $75 |
+| CloudWatch | Container Insights | $5-10 |
+| X-Ray | 10万トレース | $5 |
+| AMP | 1万シリーズ | $5-10 |
+| AMG | 1ワークスペース | $9 |
+| **合計** | | **$100-110** |
+
+### コスト最適化のヒント
+
+```
+1. EKS のコスト削減
+   - Spot インスタンスの活用
+   - 演習後はクラスター削除
+
+2. CloudWatch のコスト削減
+   - 不要なメトリクスの除外
+   - ログ保持期間の短縮
+
+3. X-Ray のコスト削減
+   - サンプリングレートの調整
+   - 不要なサービスの除外
+
+4. AMP のコスト削減
+   - カーディナリティの管理
+   - 不要なメトリクスの除外
+```
+
+### 注意事項
+
+```
+⚠️ EKS クラスター
+- クラスターは課金が継続するため、演習後は削除を推奨
+- eksctl delete cluster コマンドで削除可能
+
+⚠️ マネージドサービス
+- AMP/AMG は有効化すると課金開始
+- 使用しない場合はワークスペースを削除
+
+⚠️ データ保持
+- 本番環境でのログ・メトリクス保持期間は要件に応じて設定
+- コンプライアンス要件がある場合は適切な保持期間を設定
+```
+
+---
+
+**課題作成日**: 2024年1月
+**最終更新日**: 2024年1月
+**作成者**: AWS学習プログラム

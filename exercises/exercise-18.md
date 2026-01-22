@@ -1,6 +1,6 @@
-# 課題18: 小売業のデータウェアハウス構築
+# 課題18: MedConnect Cognito認証基盤 - 医療情報プラットフォームの認証システム
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,719 +8,502 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | データ基盤 |
-| 処理タイプ | バッチ |
+| 難易度 | 初級〜中級 |
+| カテゴリ | 認証・認可 / セキュリティ |
+| 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 6-7時間 |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
-## 2. シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロファイル
-
-| 項目 | 内容 |
-|------|------|
-| **企業名** | ShopSmart株式会社 |
-| **業種** | 小売チェーン（総合スーパー） |
-| **従業員数** | 3,000名（本部100名、店舗2,900名） |
-| **店舗数** | 全国150店舗 |
-| **月間売上** | 50億円 |
-| **日次トランザクション** | 300万件 |
-| **SKU数** | 5万点 |
-
-### 現状の課題
+### 企業プロファイル: MedConnect株式会社
 
 ```
-ShopSmart株式会社は全国展開する総合スーパーチェーンです。
-データ活用において以下の課題を抱えています：
-
-1. データの分散
-   - 各店舗のPOSデータが店舗サーバーに分散
-   - 本部への日次連携に遅延が発生
-   - 在庫データと売上データの不整合
-
-2. レポート作成の非効率
-   - Excelベースの手作業レポート
-   - 月次決算に1週間かかる
-   - 経営層への報告が遅い
-
-3. 分析の限界
-   - 店舗横断の分析ができない
-   - 顧客購買行動の把握が困難
-   - 需要予測ができない
-
-4. データ品質の問題
-   - 店舗ごとのデータ形式が異なる
-   - マスタデータの不整合
-   - 欠損データの把握が困難
+┌─────────────────────────────────────────────────────────────────┐
+│                    MedConnect株式会社                            │
+│                  医療情報プラットフォーム                        │
+├─────────────────────────────────────────────────────────────────┤
+│  設立: 2021年    従業員: 30名    本社: 東京                      │
+│  事業: 医療機関向けオンライン診療プラットフォーム               │
+│  ユーザー: 医師5000名、患者30万人、医療機関500施設              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【プラットフォーム概要】                                        │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │                                                              ││
+│  │   ┌─────────┐    ┌─────────┐    ┌─────────┐              ││
+│  │   │  患者   │    │  医師   │    │ 管理者  │              ││
+│  │   │ アプリ  │    │ ポータル│    │ 画面    │              ││
+│  │   └────┬────┘    └────┬────┘    └────┬────┘              ││
+│  │        │              │              │                    ││
+│  │        └──────────────┼──────────────┘                    ││
+│  │                       ▼                                    ││
+│  │              ┌─────────────────┐                          ││
+│  │              │   認証基盤      │                          ││
+│  │              │  (構築が必要)   │                          ││
+│  │              └────────┬────────┘                          ││
+│  │                       │                                    ││
+│  │              ┌────────▼────────┐                          ││
+│  │              │   バックエンド   │                          ││
+│  │              │   API群         │                          ││
+│  │              └─────────────────┘                          ││
+│  │                                                              ││
+│  └────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【認証要件】                                                    │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │  ユーザー種別    │ 認証方式               │ セキュリティ  ││
+│  ├──────────────────┼────────────────────────┼───────────────┤│
+│  │  患者            │ メール/パスワード      │ MFA推奨       ││
+│  │                  │ + ソーシャルログイン   │               ││
+│  │  医師            │ メール/パスワード      │ MFA必須       ││
+│  │                  │ + 医師免許番号確認     │               ││
+│  │  管理者          │ メール/パスワード      │ MFA必須       ││
+│  │                  │ + IP制限              │ + 監査ログ    ││
+│  └────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### ビジネス目標
+### 規制要件
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| データ反映時間 | 翌日午後 | 当日午前6時 |
-| 月次決算レポート | 1週間 | 翌営業日 |
-| 分析対応時間 | 2-3日 | 1時間以内（セルフサービス） |
-| データ品質スコア | 不明 | 95%以上 |
-| 分析カバレッジ | 売上のみ | 売上・在庫・顧客・トレンド |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    医療情報セキュリティ要件                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【個人情報保護法・医療情報ガイドライン対応】                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  1. 認証強度                                                ││
+│  │     ・医療従事者は多要素認証必須                            ││
+│  │     ・パスワードポリシー: 12文字以上、複雑性要件            ││
+│  │     ・セッションタイムアウト: 30分                          ││
+│  │                                                              ││
+│  │  2. アクセス制御                                            ││
+│  │     ・役割ベースのアクセス制御（RBAC）                      ││
+│  │     ・最小権限の原則                                        ││
+│  │     ・担当患者のみアクセス可能                              ││
+│  │                                                              ││
+│  │  3. 監査証跡                                                ││
+│  │     ・全ログイン試行の記録                                  ││
+│  │     ・アクセスログの7年間保存                               ││
+│  │     ・異常アクセスの検知                                    ││
+│  │                                                              ││
+│  │  4. データ保護                                              ││
+│  │     ・通信の暗号化（TLS 1.2以上）                           ││
+│  │     ・トークンの安全な管理                                  ││
+│  │     ・個人情報の匿名化                                      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### ビジネス要件と KPI
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    プロジェクト KPI                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【セキュリティ目標】                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  指標              │ 目標        │ 基準                    ││
+│  ├────────────────────┼─────────────┼─────────────────────────┤│
+│  │  MFA有効化率       │ > 95%       │ 医療従事者は100%        ││
+│  │  不正ログイン検知  │ < 1分       │ 自動ブロック            ││
+│  │  パスワード漏洩対応│ < 15分      │ 強制リセット            ││
+│  │  監査ログ保存期間  │ 7年         │ 規制要件                ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【ユーザー体験目標】                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  指標              │ 目標        │ 現状の課題              ││
+│  ├────────────────────┼─────────────┼─────────────────────────┤│
+│  │  ログイン成功率    │ > 99%       │ -                       ││
+│  │  ログイン時間      │ < 3秒       │ -                       ││
+│  │  パスワードリセット│ セルフサービス │ 現在は手動            ││
+│  │  サポート問い合わせ│ 50%削減     │ 認証関連が多い          ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. 達成目標（ゴール）
+## 3. 学習目標
 
-### 主要な学習成果
+### 習得スキル
 
 ```
-この課題を完了すると、以下ができるようになります：
-
-1. Amazon Redshiftによるデータウェアハウス構築
-   - Redshift Serverlessの設定と運用
-   - スタースキーマのデータモデリング
-   - クエリパフォーマンス最適化
-
-2. AWS Glueによるデータパイプライン
-   - ETLジョブの設計と実装
-   - Data Catalogによるメタデータ管理
-   - 増分ロードの実装
-
-3. dbtによるデータ変換
-   - dbtプロジェクトの構築
-   - モデルの階層化（staging/intermediate/marts）
-   - テストとドキュメント生成
-
-4. 経営ダッシュボードの構築
-   - QuickSightでのBI構築
-   - KPIダッシュボードの設計
-   - セルフサービス分析の実現
+┌─────────────────────────────────────────────────────────────────┐
+│                       学習目標マップ                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【主要スキル】                                                  │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  1. Amazon Cognito基礎                                      ││
+│  │     ├── User Pool（ユーザー管理）                           ││
+│  │     ├── Identity Pool（一時認証情報）                       ││
+│  │     ├── 認証フロー（OAuth 2.0 / OIDC）                      ││
+│  │     └── トークン（ID/Access/Refresh）                       ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  2. セキュリティ設定                                        ││
+│  │     ├── パスワードポリシー                                  ││
+│  │     ├── MFA（TOTP / SMS）                                   ││
+│  │     ├── 高度なセキュリティ機能                              ││
+│  │     └── Lambda トリガー                                     ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  3. API Gateway統合                                         ││
+│  │     ├── Cognito Authorizer                                  ││
+│  │     ├── スコープベースアクセス制御                          ││
+│  │     ├── カスタム認可                                        ││
+│  │     └── APIキー管理                                         ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  4. CloudFormationによる構築                                ││
+│  │     ├── User Pool定義                                       ││
+│  │     ├── App Client設定                                      ││
+│  │     ├── API Gateway統合                                     ││
+│  │     └── Lambda トリガー設定                                 ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 合格基準
+### GCPとの対応関係
 
-| 項目 | 基準 |
-|------|------|
-| DWH構築 | Redshiftにスタースキーマでテーブルが構築されていること |
-| ETL | Glueで日次データパイプラインが動作すること |
-| dbt | dbtモデルでマートテーブルが生成されること |
-| ダッシュボード | QuickSightで経営ダッシュボードが表示されること |
-| パフォーマンス | 主要クエリが30秒以内に完了すること |
+| AWS サービス | GCP 対応サービス | 主な違い |
+|-------------|-----------------|---------|
+| Cognito User Pool | Identity Platform | ユーザー管理 |
+| Cognito Identity Pool | なし (IAM直接) | 一時認証情報 |
+| API Gateway + Cognito | API Gateway + Firebase Auth | API認可 |
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### コア技術スタック
-
-```yaml
-データウェアハウス:
-  - Amazon Redshift Serverless: サーバーレスDWH
-  - Amazon Redshift Spectrum: S3データ直接クエリ
-
-データ統合:
-  - AWS Glue: ETL、データカタログ
-  - AWS Glue DataBrew: データプロファイリング
-  - Amazon S3: データレイク
-
-データ変換:
-  - dbt (data build tool): SQL変換、テスト、ドキュメント
-  - dbt Cloud / dbt Core: 実行環境
-
-可視化:
-  - Amazon QuickSight: BIダッシュボード
-  - Amazon Athena: アドホッククエリ
-
-オーケストレーション:
-  - AWS Step Functions: ワークフロー管理
-  - Amazon EventBridge: スケジュール実行
-  - Amazon MWAA (Airflow): 複雑なワークフロー（オプション）
-
-監視:
-  - Amazon CloudWatch: メトリクス・ログ
-  - AWS Glue Data Quality: データ品質監視
 ```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| DWH | Redshift | BigQuery |
-| ETL | Glue | Dataflow / Dataproc |
-| 変換ツール | dbt (両対応) | dbt (両対応) |
-| BI | QuickSight | Looker |
-| スキーマ管理 | Glue Data Catalog | Data Catalog |
+┌─────────────────────────────────────────────────────────────────┐
+│                    使用AWSサービス一覧                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【コアサービス】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  Cognito User Pool │ ユーザー認証管理        │ ★★★★★      ││
+│  │  Cognito Identity  │ AWS認証情報発行         │ ★★★☆☆      ││
+│  │  API Gateway       │ API認可                 │ ★★★★★      ││
+│  │  Lambda            │ カスタム処理            │ ★★★★☆      ││
+│  │  CloudFormation    │ インフラ定義            │ ★★★★★      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【支援サービス】                                                │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  サービス          │ 用途                    │ 重要度      ││
+│  ├────────────────────┼─────────────────────────┼─────────────┤│
+│  │  CloudWatch Logs   │ 認証ログ                │ ★★★★☆      ││
+│  │  SNS               │ MFA SMS送信             │ ★★★☆☆      ││
+│  │  SES               │ メール送信              │ ★★★☆☆      ││
+│  │  WAF               │ API保護                 │ ★★★☆☆      ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 5. 前提条件
+## 5. 前提条件と事前準備
 
-### 技術要件
+### 必要な環境
 
 ```bash
-# 必要なCLIツール
-aws --version          # 2.x
-python --version       # 3.9+
-dbt --version          # 1.7+
-psql --version         # 14+
+# AWS CLI バージョン確認
+aws --version
+# aws-cli/2.x.x 以上
 
-# AWS設定
-aws configure
+# Node.js（Lambda関数用）
+node --version
+# v18.x 以上
+```
+
+### AWS環境の準備
+
+```bash
+# 環境変数設定
 export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+export PROJECT_NAME=medconnect
+export ENVIRONMENT=dev
 
-### 事前準備
-
-```bash
-# dbtのインストール
-pip install dbt-redshift
-
-# プロジェクト構造
-shopsmart-dwh/
-├── dbt_project/
-│   ├── dbt_project.yml
-│   ├── profiles.yml
-│   ├── models/
-│   │   ├── staging/
-│   │   ├── intermediate/
-│   │   └── marts/
-│   ├── tests/
-│   ├── macros/
-│   └── seeds/
-├── glue_jobs/
-│   ├── extract_pos_data.py
-│   └── load_to_redshift.py
-├── terraform/
-│   └── main.tf
-└── dashboards/
-    └── quicksight/
+# 作業ディレクトリ作成
+mkdir -p ~/medconnect-cognito/{cfn,lambda,scripts}
+cd ~/medconnect-cognito
 ```
 
 ---
 
-## 6. アーキテクチャ図
+## 6. アーキテクチャ設計
 
-### 全体構成
+### 認証基盤全体像
 
 ```mermaid
 architecture-beta
-    group datasources(cloud)[Data Sources]
-    group aws(cloud)[AWS Cloud]
-    group datalake(disk)[Data Lake] in aws
-    group etl(server)[ETL Layer] in aws
-    group dwh(database)[Data Warehouse] in aws
-    group bi(server)[BI Layer] in aws
+    group medconnect(cloud)[MedConnect 認証基盤]
 
-    service pos(server)[店舗POS システム] in datasources
-    service inventory_sys(server)[在庫管理 システム] in datasources
-    service customer_sys(server)[顧客管理 システム] in datasources
-    service external(server)[外部データ 天気・競合] in datasources
+    group clients(server)[Client Applications] in medconnect
+    group cognito(server)[Amazon Cognito] in medconnect
+    group api(server)[API Gateway] in medconnect
 
-    service s3_raw(disk)[S3 Data Lake Raw Zone] in datalake
-    service glue_catalog(database)[Glue Data Catalog] in etl
-    service glue_etl(server)[Glue ETL] in etl
+    service patient_app(internet)[患者App Mobile] in clients
+    service doctor_portal(internet)[医師Portal Web] in clients
+    service admin_console(internet)[管理画面 Web] in clients
 
-    service redshift(database)[Redshift Serverless] in dwh
-    service staging(database)[Schema: staging] in dwh
-    service intermediate(database)[Schema: intermediate] in dwh
-    service marts(database)[Schema: marts] in dwh
+    service userpool(server)[User Pool] in cognito
+    service users(database)[Users 患者・医師・管理者] in cognito
+    service groups(database)[Groups patients・doctors・admins] in cognito
+    service mfa(server)[MFA TOTP・SMS] in cognito
+    service app_clients(server)[App Clients] in cognito
+    service triggers(server)[Lambda Triggers PreSignUp・PostAuth] in cognito
 
-    service quicksight(server)[Amazon QuickSight] in bi
+    service authorizer(server)[Cognito Authorizer Token検証] in api
+    service endpoints(server)[API Endpoints /patients /doctors /admin] in api
 
-    pos:B --> T:s3_raw
-    inventory_sys:B --> T:s3_raw
-    customer_sys:B --> T:s3_raw
-    external:B --> T:s3_raw
-    s3_raw:R --> L:glue_etl
-    glue_etl:R --> L:glue_catalog
-    glue_catalog:B --> T:redshift
-    staging:B --> T:intermediate
-    intermediate:B --> T:marts
-    marts:B --> T:quicksight
+    patient_app:B --> T:userpool
+    doctor_portal:B --> T:userpool
+    admin_console:B --> T:userpool
+    userpool:B --> T:authorizer
+    authorizer:B --> T:endpoints
 ```
 
-**Redshift Serverless 設定:**
-- Workgroup: shopsmart-analytics
-- Namespace: shopsmart-dwh
-- Base Capacity: 32 RPU
+**User Pool 構成:**
+- Users: 患者、医師、管理者
+- Groups: patients, doctors, admins
+- MFA: TOTP, SMS
 
-**dbt Schema 構成:**
-- **staging**: stg_pos_transactions, stg_inventory, stg_customers
-- **intermediate**: int_daily_sales, int_product_performance, int_customer_segments
-- **marts**: Dimension Tables (dim_date, dim_store, dim_product, dim_customer, dim_time) + Fact Tables (fct_sales, fct_inventory, fct_customer_activity)
+**App Clients:** patient-app (Mobile), doctor-portal (Web), admin-console (Web)
 
-**QuickSight Dashboards:**
-- 売上概要 / 店舗別分析 / 商品分析 / 在庫分析 / 顧客分析 / トレンド
+**Lambda Triggers:** PreSignUp (医師免許確認), PostAuthentication (ログイン監査), CustomMessage (メールカスタマイズ)
 
-### データパイプラインフロー
+---
+
+## 8. トラブルシューティング演習
+
+### 演習8-1: MFA設定の問題
 
 ```
-1. データ抽出（毎日 AM 2:00）
-   店舗POS → S3 Raw Zone (Parquet形式)
+┌─────────────────────────────────────────────────────────────────┐
+│              トラブルシューティング演習 8-1                      │
+│                  MFA設定の問題                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【状況】                                                        │
+│  医師ユーザーがMFAを設定しようとしているが、                     │
+│  「MFA設定が利用できません」というエラーが表示される。           │
+│                                                                  │
+│  【エラーメッセージ】                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  InvalidParameterException: User pool does not have         ││
+│  │  MFA enabled                                                ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【課題】                                                        │
+│  1. MFAが有効になっていない原因を特定してください                │
+│  2. CloudFormationテンプレートを修正してください                 │
+│  3. 既存ユーザーへの影響を確認してください                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-2. Glue ETL（AM 3:00）
-   S3 Raw → クレンジング → S3 Processed
+### 演習8-2: トークンの検証エラー
 
-3. Redshift ロード（AM 4:00）
-   S3 Processed → Redshift Staging Tables
-
-4. dbt 変換（AM 5:00）
-   Staging → Intermediate → Marts
-   + テスト実行
-   + ドキュメント生成
-
-5. QuickSight 更新（AM 6:00）
-   SPICE データセットリフレッシュ
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              トラブルシューティング演習 8-2                      │
+│                トークン検証エラー                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【状況】                                                        │
+│  有効なはずのアクセストークンでAPI呼び出しをしているが、         │
+│  401 Unauthorizedエラーが返される。                              │
+│                                                                  │
+│  【エラーログ】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  API Gateway execution log:                                 ││
+│  │  Unauthorized request: JWT token expired                    ││
+│  │                                                              ││
+│  │  Token exp claim: 1704067200 (2024-01-01 00:00:00)          ││
+│  │  Current time: 1704153600 (2024-01-02 00:00:00)             ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【課題】                                                        │
+│  1. トークン期限切れの原因を確認してください                     │
+│  2. リフレッシュトークンによる更新処理を実装してください         │
+│  3. クライアント側のトークン管理を改善してください               │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 9. 設計課題
 
-### Challenge 1: Redshiftクエリが遅い
-
-```
-問題:
-店舗別売上レポートクエリが5分以上かかる。
-
-クエリ:
-SELECT s.store_name, SUM(f.net_amount)
-FROM marts.fct_sales f
-JOIN marts.dim_store s ON f.store_key = s.store_key
-WHERE f.date_key BETWEEN '2024-01-01' AND '2024-01-31'
-GROUP BY 1;
-
-EXPLAIN結果:
-- Seq Scan on fct_sales (rows=50,000,000)
-- 大量のディスクI/O
-
-調査項目:
-1. テーブル設計（DISTKEY, SORTKEY）
-2. 統計情報
-3. クエリプラン
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```sql
--- 1. テーブル設計の確認
-SELECT "table", diststyle, sortkey1
-FROM svv_table_info
-WHERE schema = 'marts';
-
--- 2. DISTKEY/SORTKEYの最適化
-ALTER TABLE marts.fct_sales
-ALTER DISTSTYLE KEY DISTKEY (store_key);
-
-ALTER TABLE marts.fct_sales
-ALTER SORTKEY (date_key, store_key);
-
--- 3. 統計情報更新
-ANALYZE marts.fct_sales;
-
--- 4. テーブル最適化（VACUUM）
-VACUUM FULL marts.fct_sales;
-
--- 5. クエリの書き換え（日付フィルタを先に）
-WITH filtered_sales AS (
-    SELECT store_key, net_amount
-    FROM marts.fct_sales
-    WHERE date_key >= '2024-01-01' AND date_key < '2024-02-01'
-)
-SELECT s.store_name, SUM(fs.net_amount)
-FROM filtered_sales fs
-JOIN marts.dim_store s ON fs.store_key = s.store_key
-GROUP BY 1;
-
--- 6. マテリアライズドビューの活用
-CREATE MATERIALIZED VIEW mv_monthly_store_sales AS
-SELECT
-    date_trunc('month', date_key) as month,
-    store_key,
-    SUM(net_amount) as total_sales
-FROM marts.fct_sales
-GROUP BY 1, 2;
-```
-</details>
-
-### Challenge 2: dbtモデルのテストが失敗する
+### 設計課題9-1: ソーシャルログイン対応
 
 ```
-問題:
-fct_salesのstore_key参照整合性テストが失敗する。
-一部のトランザクションのstore_keyがdim_storeに存在しない。
-
-エラー:
-Failure in test relationships_fct_sales_store_key__store_key__ref_dim_store_
-Got 1523 results, configured to fail if != 0
-
-調査項目:
-1. ソースデータの確認
-2. ETL処理の確認
-3. マスタデータの整合性
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```sql
--- 1. 問題のあるレコードを特定
-SELECT DISTINCT f.store_key
-FROM marts.fct_sales f
-LEFT JOIN marts.dim_store s ON f.store_key = s.store_key
-WHERE s.store_key IS NULL;
-
--- 2. ソースデータを確認
-SELECT DISTINCT store_id
-FROM staging.stg_pos_transactions
-WHERE store_id NOT IN (SELECT store_id FROM staging.stg_stores);
-
--- 3. dbtテストを条件付きに変更（schema.yml）
-- name: store_key
-  tests:
-    - relationships:
-        to: ref('dim_store')
-        field: store_key
-        config:
-          where: "store_key != 'UNKNOWN'"
-
--- 4. 不明な店舗を扱うサロゲートキー追加
--- dim_store.sql に追加
-UNION ALL
-SELECT
-    'UNKNOWN' as store_key,
-    'UNKNOWN' as store_id,
-    'Unknown Store' as store_name,
-    'Unknown' as region,
-    ...
-
--- 5. fct_sales.sql でCOALESCE
-SELECT
-    ...
-    COALESCE(t.store_id, 'UNKNOWN') as store_key,
-    ...
-```
-</details>
-
-### Challenge 3: 日次パイプラインがタイムアウト
-
-```
-問題:
-Glue ETLジョブがタイムアウトし、dbt実行まで到達しない。
-朝6時のダッシュボード更新に間に合わない。
-
-ログ:
-- Glue job duration: 4時間（タイムアウト）
-- S3へのParquet書き込みで停滞
-
-データ量:
-- 日次トランザクション: 300万件
-- ファイルサイズ: 5GB
-
-調査項目:
-1. Glueジョブの設定
-2. Spark設定
-3. パーティショニング
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```python
-# 1. Glueジョブのワーカー数を増やす
-aws glue update-job \
-    --job-name shopsmart-extract-pos \
-    --job-update '{
-        "NumberOfWorkers": 20,
-        "WorkerType": "G.2X"
-    }'
-
-# 2. Sparkパーティション最適化
-# glue_jobs/daily_pos_etl.py
-spark.conf.set("spark.sql.shuffle.partitions", "200")
-spark.conf.set("spark.default.parallelism", "200")
-
-# 3. 書き込み時のパーティション数を制御
-pos_cleaned.repartition(100).write \
-    .format("parquet") \
-    .mode("overwrite") \
-    .save(output_path)
-
-# 4. Glueブックマークで増分処理
-# すでにロード済みのデータをスキップ
-
-# 5. COPY コマンドに変更（Glue → S3 → COPY）
-# Redshiftへの直接書き込みより高速
-
-COPY staging.stg_pos_transactions
-FROM 's3://shopsmart-datalake/processed/pos/'
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftCopyRole'
-FORMAT AS PARQUET;
-
-# 6. 並列処理を分割
-# 店舗グループごとに並列実行
-```
-</details>
-
----
-
-## 9. 設計考慮ポイント
-
-### データモデリング戦略
-
-```yaml
-スタースキーマ vs スノーフレークスキーマ:
-
-スタースキーマ（本課題で採用）:
-  特徴:
-    - ファクトテーブルを中心にディメンションが直接結合
-    - JOINが少なくクエリがシンプル
-    - Redshiftに最適（カラムナーストレージ）
-  適用ケース:
-    - 定型レポート
-    - BI ダッシュボード
-    - アドホック分析
-
-スノーフレークスキーマ:
-  特徴:
-    - ディメンションが正規化
-    - ストレージ効率が良い
-    - 更新が容易
-  適用ケース:
-    - マスタデータの頻繁な更新
-    - 複雑な階層構造
-
-SCD (Slowly Changing Dimensions):
-  Type 1: 上書き更新
-  Type 2: 履歴保持（有効期間管理）
-  Type 3: 限定的な履歴（現在値 + 前回値）
-```
-
-### Redshift最適化
-
-```sql
--- テーブル設計のベストプラクティス
-
--- ファクトテーブル
-CREATE TABLE marts.fct_sales (
-    transaction_id VARCHAR(32) NOT NULL ENCODE zstd,
-    date_key DATE NOT NULL ENCODE az64,
-    store_key VARCHAR(10) NOT NULL ENCODE zstd,
-    customer_key VARCHAR(12) NOT NULL ENCODE zstd,
-    net_amount DECIMAL(12,2) NOT NULL ENCODE az64,
-    ...
-)
-DISTSTYLE KEY
-DISTKEY (store_key)  -- 頻繁にJOINするキー
-SORTKEY (date_key, store_key);  -- 範囲クエリ用
-
--- ディメンションテーブル
-CREATE TABLE marts.dim_store (
-    store_key VARCHAR(10) NOT NULL,
-    ...
-)
-DISTSTYLE ALL;  -- 小さいテーブルは全ノードに配布
-
--- エンコーディング自動選択
-ANALYZE COMPRESSION marts.fct_sales;
+┌─────────────────────────────────────────────────────────────────┐
+│                      設計課題 9-1                                │
+│                 ソーシャルログイン対応                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【課題】                                                        │
+│  患者向けアプリにGoogleとAppleでのソーシャルログインを           │
+│  追加してください。                                              │
+│                                                                  │
+│  【要件】                                                        │
+│  ・Google / Apple Sign-Inの統合                                  │
+│  ・既存メールユーザーとのアカウントリンク                        │
+│  ・ソーシャルログインユーザーの属性マッピング                    │
+│  ・MFA要件の調整（ソーシャルログインはMFA不要）                  │
+│                                                                  │
+│  【成果物】                                                      │
+│  1. Identity Provider設定                                        │
+│  2. 属性マッピング設計                                           │
+│  3. CloudFormationテンプレート                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 10. 発展課題
 
-### 上級チャレンジ1: 需要予測モデル統合
+### 発展課題10-1: リスクベース認証
 
-```python
-# Amazon SageMaker + Redshift ML
-
-# Redshiftから直接機械学習モデルを呼び出し
-CREATE MODEL demand_forecast_model
-FROM (
-    SELECT
-        store_id,
-        product_id,
-        transaction_date,
-        SUM(quantity) as daily_sales,
-        AVG(SUM(quantity)) OVER (
-            PARTITION BY store_id, product_id
-            ORDER BY transaction_date
-            ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
-        ) as rolling_avg_7d
-    FROM staging.stg_transaction_items ti
-    JOIN staging.stg_pos_transactions t ON ti.transaction_id = t.transaction_id
-    GROUP BY 1, 2, 3
-)
-TARGET daily_sales
-FUNCTION predict_demand
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftMLRole'
-SETTINGS (
-    S3_BUCKET 'shopsmart-ml-artifacts',
-    MAX_RUNTIME 3600
-);
-
--- 予測実行
-SELECT
-    store_id,
-    product_id,
-    predict_demand(rolling_avg_7d) as predicted_demand
-FROM ...;
 ```
-
-### 上級チャレンジ2: リアルタイムダッシュボード
-
-```yaml
-# Redshift Streaming Ingestion
-
--- Kinesis からのリアルタイム取り込み
-CREATE EXTERNAL SCHEMA kinesis_schema
-FROM KINESIS
-IAM_ROLE 'arn:aws:iam::xxx:role/RedshiftKinesisRole';
-
-CREATE MATERIALIZED VIEW mv_realtime_sales
-AUTO REFRESH YES AS
-SELECT
-    ApproximateArrivalTimestamp as event_time,
-    json_extract_path_text(kinesis_data, 'store_id') as store_id,
-    json_extract_path_text(kinesis_data, 'total_amount')::decimal as amount
-FROM kinesis_schema.pos_stream
-WHERE is_valid_json(kinesis_data);
-
--- 5分間隔で自動リフレッシュ
-ALTER MATERIALIZED VIEW mv_realtime_sales
-AUTO REFRESH YES
-INTERVAL 5 MINUTES;
-```
-
-### 上級チャレンジ3: データメッシュアーキテクチャ
-
-```yaml
-# ドメイン別データプロダクト
-
-Domains:
-  - Sales Domain:
-      Owner: 営業本部
-      Data Products:
-        - fct_sales (Platinum)
-        - dim_store (Gold)
-        - daily_sales_summary (Silver)
-      SLA: 99.9%
-      Freshness: 6時間以内
-
-  - Inventory Domain:
-      Owner: 物流部門
-      Data Products:
-        - fct_inventory
-        - dim_product
-        - stock_alerts
-      SLA: 99.5%
-      Freshness: 1時間以内
-
-  - Customer Domain:
-      Owner: マーケティング部
-      Data Products:
-        - dim_customer
-        - customer_segments
-        - purchase_history
-      SLA: 99.0%
-      Freshness: 24時間以内
-
-Data Contracts:
-  - Schema versioning
-  - Quality SLAs
-  - Access policies
+┌─────────────────────────────────────────────────────────────────┐
+│                      発展課題 10-1                               │
+│                 リスクベース認証                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【シナリオ】                                                    │
+│  不正アクセスを検知し、リスクレベルに応じて                      │
+│  追加認証を要求する仕組みを実装したい。                          │
+│                                                                  │
+│  【技術要件】                                                    │
+│  ・Cognitoの高度なセキュリティ機能の活用                        │
+│  ・異常なログインパターンの検出                                  │
+│  ・リスクスコアに基づくMFA要求                                  │
+│  ・ブロックリスト/許可リストの管理                              │
+│                                                                  │
+│  【成果物】                                                      │
+│  1. リスク評価ロジック設計                                       │
+│  2. Lambda トリガー実装                                          │
+│  3. 監視ダッシュボード                                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 11. コスト見積もり
+## 11. 学習のまとめ
 
-### 月額コスト概算
-
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| Redshift Serverless | 32 RPU × 200時間/月 | $960 |
-| S3 | 1TB (データレイク) | $24 |
-| Glue ETL | 100 DPU時間/月 | $44 |
-| Glue Data Catalog | 100万オブジェクト | $1 |
-| QuickSight | 5 Author + 50 Reader | $275 |
-| Step Functions | 10,000実行/月 | $3 |
-| CloudWatch | ログ・メトリクス | $20 |
-| **合計** | | **約 $1,327/月** |
-
-### コスト最適化
+### 学習チェックリスト
 
 ```
-1. Redshift Serverless の使用量最適化:
-   - 営業時間のみ高RPU
-   - 夜間・週末は最小RPU
-   - 想定削減: 30%
-
-2. クエリ最適化:
-   - マテリアライズドビュー活用
-   - 適切なDISTKEY/SORTKEY
-   - キャッシュ活用
-
-3. ストレージ最適化:
-   - S3 ライフサイクル
-   - 不要データのアーカイブ
-   - Parquet圧縮
+┌─────────────────────────────────────────────────────────────────┐
+│                     学習チェックリスト                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【Cognito基礎】                                                 │
+│  □ User Pool / Identity Pool の違いを説明できる                 │
+│  □ OAuth 2.0 / OIDC フローを理解した                            │
+│  □ ID/Access/Refresh トークンの役割を説明できる                 │
+│  □ App Clientの設定ができる                                     │
+│                                                                  │
+│  【セキュリティ】                                                │
+│  □ パスワードポリシーを適切に設定できる                         │
+│  □ MFAを設定できる                                              │
+│  □ Lambda トリガーを実装できる                                  │
+│  □ 監査ログを設定できる                                         │
+│                                                                  │
+│  【API Gateway統合】                                             │
+│  □ Cognito Authorizerを設定できる                               │
+│  □ スコープベースのアクセス制御ができる                         │
+│  □ グループベースのアクセス制御ができる                         │
+│                                                                  │
+│  【CloudFormation】                                              │
+│  □ User Poolを定義できる                                        │
+│  □ App Clientを定義できる                                       │
+│  □ Lambda トリガーを統合できる                                  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 12. 学習のポイント
+## 12. コスト見積もり
 
-### 今回学んだこと
-
-```
-1. Redshift Serverless
-   □ ワークグループとネームスペースの設定
-   □ RPUベースの課金モデル
-   □ 外部スキーマ（Spectrum）の活用
-
-2. dbt (data build tool)
-   □ staging/intermediate/martsの階層化
-   □ テストとドキュメント生成
-   □ 増分処理の実装
-
-3. データモデリング
-   □ スタースキーマの設計
-   □ ディメンションとファクトの分離
-   □ SCD（緩やかに変化するディメンション）
-
-4. データパイプライン
-   □ Glue ETLでのデータ統合
-   □ Step Functionsでのオーケストレーション
-   □ データ品質管理
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (Redshift + dbt) | GCP (BigQuery + dbt) |
-|------|---------------------|---------------------|
-| 課金モデル | RPU時間課金 | スキャン量課金 |
-| パフォーマンス | 専用リソース | 自動スケール |
-| ETL | Glue | Dataflow |
-| 運用複雑さ | 中 | 低 |
-| カスタマイズ性 | 高 | 中 |
-
-### 次のステップ
+### 想定コスト（月額）
 
 ```
-1. 発展学習:
-   - Amazon Redshift RA3 インスタンス
-   - Redshift ML での機械学習
-   - AWS Data Exchange
-
-2. 実務応用:
-   - 経営ダッシュボードの高度化
-   - 需要予測との連携
-   - リアルタイムデータ統合
-
-3. 認定資格:
-   - AWS Certified Data Analytics - Specialty
-   - dbt Certification
+┌─────────────────────────────────────────────────────────────────┐
+│                      コスト見積もり                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  【Cognito料金】                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  ・最初の50,000 MAU: 無料                                   ││
+│  │  ・50,001〜100,000 MAU: $0.0055/MAU                         ││
+│  │  ・100,001以上: $0.0046/MAU                                 ││
+│  │  ・高度なセキュリティ: $0.05/MAU                            ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  【想定コスト（MAU 35,000）】                                    │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  項目                    │ 数量            │ 月額（USD）    ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  Cognito基本料金         │ 35,000 MAU      │ $0 (無料枠内)  ││
+│  │  高度なセキュリティ      │ 35,000 MAU      │ $1,750         ││
+│  │  SMS MFA                 │ 5,000通/月      │ $40            ││
+│  │  API Gateway             │ 1M リクエスト   │ $3.50          ││
+│  │  Lambda                  │ 500K 呼び出し   │ $0.10          ││
+│  │  CloudWatch Logs         │ 10GB            │ $5.00          ││
+│  ├──────────────────────────┼─────────────────┼────────────────┤│
+│  │  小計                    │                 │ 約 $1,800      ││
+│  │                          │                 │ (約 ¥270,000)  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  ※高度なセキュリティを無効にすると大幅にコスト削減可能          │
+│  ※開発環境では $5/月 程度                                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## リソースのクリーンアップ
+
+```bash
+# CloudFormationスタック削除
+aws cloudformation delete-stack --stack-name medconnect-api-gateway-dev
+aws cloudformation delete-stack --stack-name medconnect-cognito-dev
+
+# 削除完了を待機
+aws cloudformation wait stack-delete-complete --stack-name medconnect-cognito-dev
+
+echo "Cleanup completed!"
+```
+
+---
+
+**次の課題**: [課題39: TeamHub マルチテナント認証](exercise-39.md)
+
+**前の課題**: [課題37: CreditAI MLOpsパイプライン](exercise-37.md)

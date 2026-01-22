@@ -1,4 +1,4 @@
-# 課題21: グローバルWebサービスのDDoS対策
+# 課題21: リーガルパートナーズ法律事務所の契約書レビュー支援システム構築
 
 **難易度: 🟡 中級**
 
@@ -8,601 +8,479 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | セキュリティ |
-| 処理タイプ | リアルタイム |
-| 使用IaC | CloudFormation |
-| 想定所要時間 | 4-5時間 |
+| 難易度 | 中級 |
+| カテゴリ | AI / ドキュメント処理 / リーガルテック |
+| 処理タイプ | バッチ / 非同期 |
+| 使用IaC | CDK (TypeScript) |
+| 所要時間 | 8〜10時間 |
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
-### 企業プロファイル
+### 企業プロフィール
+
+**リーガルパートナーズ法律事務所**は、企業法務を専門とする中堅法律事務所です。
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | 〇〇株式会社 |
-| **業種** | グローバルSNS |
-| **従業員数** | 200名（エンジニア60名） |
-| **月間UU** | 500万人（グローバル） |
-| **リージョン** | 日本、US、EU |
-| **可用性目標** | 99.99% |
+| 業種 | 法律事務所（企業法務特化） |
+| 設立 | 2005年 |
+| 弁護士数 | 20名（パートナー5名、アソシエイト15名） |
+| パラリーガル | 8名 |
+| 事務スタッフ | 7名 |
+| 年間売上 | 8億円 |
+| 主要クライアント | IT企業、製造業、スタートアップ |
+| 主な業務 | 契約書レビュー、M&A、知財、労務 |
 
 ### 現状の課題
 
-```
-〇〇株式会社はグローバル展開するSNSサービスを運営しています。
-サービス可用性において以下の課題を抱えています：
+契約書レビュー業務が事務所の主要な収益源ですが、増加する案件数に対応しきれず、若手弁護士の残業が常態化しています。また、レビュー品質にばらつきがあり、重要条項の見落としリスクが懸念されています。
 
-1. DDoS攻撃の増加
-   - 月に2-3回のDDoS攻撃を受けている
-   - 攻撃時にサービスが数時間停止
-   - 競合他社からの攻撃が疑われるケースも
+### 数値で示された問題
 
-2. レイテンシの問題
-   - 海外ユーザーからのレスポンスが遅い
-   - 日本リージョンへの直接アクセス
-   - CDN未導入
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 月間レビュー件数 | 200件 | 350件対応可能に |
+| 平均レビュー時間 | 3時間/件 | 1.5時間/件 |
+| アソシエイト残業 | 月60時間/人 | 月30時間/人以下 |
+| 重要条項見落とし | 年5件程度発生 | ゼロ |
+| クライアント待機時間 | 平均5営業日 | 2営業日以内 |
+| 定型契約書比率 | 65% | - |
 
-3. セキュリティ対策の不足
-   - WAFが未導入
-   - ボットアクセスの増加
-   - 不正アカウント作成の多発
+### レビュー対象の契約書内訳
 
-4. 運用負荷
-   - 攻撃時の手動対応
-   - 24/365の監視体制がない
-   - インシデント対応に時間がかかる
-```
+| 契約書タイプ | 月間件数 | 平均ページ数 | 複雑度 |
+|--------------|----------|--------------|--------|
+| 秘密保持契約（NDA） | 50件 | 5ページ | 低 |
+| 業務委託契約 | 45件 | 15ページ | 中 |
+| ソフトウェアライセンス | 35件 | 20ページ | 中〜高 |
+| 売買基本契約 | 30件 | 25ページ | 中 |
+| 共同開発契約 | 20件 | 30ページ | 高 |
+| その他（賃貸借、雇用等） | 20件 | 10ページ | 低〜中 |
 
-### ビジネス目標
+### 解決したいこと
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| 可用性 | 99.5% | 99.99% |
-| DDoS攻撃時のダウンタイム | 2-3時間 | 0分 |
-| グローバルレイテンシ（P50） | 500ms | 100ms |
-| ボットトラフィック率 | 30% | 5%以下 |
-| 攻撃検知時間 | 30分 | 即時 |
+1. 契約書の自動OCR・テキスト抽出（PDF/スキャン画像対応）
+2. 重要条項（免責、損害賠償、契約解除、秘密保持等）の自動抽出・ハイライト
+3. 自社標準ひな形との差分検出
+4. リスク条項の自動検出とリスクレベル評価
+5. レビューレポートの自動生成
+6. 過去の類似契約書・レビューコメントの検索
 
----
+### 成功指標（KPI）
 
-## 3. 達成目標（ゴール）
-
-### 主要な学習成果
-
-```
-この課題を完了すると、以下ができるようになります：
-
-1. Amazon CloudFrontによるグローバル配信
-   - エッジロケーションの活用
-   - キャッシュ戦略の設計
-   - オリジン保護
-
-2. AWS Shieldによる DDoS 保護
-   - Shield Standard の自動保護
-   - Shield Advanced の高度な保護
-   - DDoS Response Team (DRT) との連携
-
-3. AWS WAFによるアプリケーション保護
-   - ボット対策
-   - レート制限
-   - 地理的制限
-
-4. Amazon Route 53による耐障害性DNS
-   - ヘルスチェック
-   - フェイルオーバールーティング
-   - GeoDNS
-```
-
-### 合格基準
-
-| 項目 | 基準 |
-|------|------|
-| CloudFront | グローバルにコンテンツが配信されること |
-| Shield | DDoS攻撃が自動的に緩和されること |
-| WAF | 悪意のあるトラフィックがブロックされること |
-| Route53 | DNS障害時にフェイルオーバーすること |
-| 可用性 | 攻撃シミュレーション時もサービス継続すること |
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| レビュー時間短縮率 | - | 50%以上 | 3ヶ月後 |
+| 重要条項抽出精度 | - | 95%以上 | 2ヶ月後 |
+| リスク検出精度 | - | 90%以上 | 3ヶ月後 |
+| クライアント待機時間 | 5営業日 | 2営業日以内 | 3ヶ月後 |
+| 見落とし件数 | 5件/年 | 0件 | 6ヶ月後 |
 
 ---
 
-## 4. 使用するAWSサービス
+## 達成目標
 
-### コア技術スタック
+この演習で習得できるスキル：
 
-```yaml
-エッジセキュリティ:
-  - Amazon CloudFront: グローバルCDN
-  - AWS Shield Standard: 基本DDoS保護（無料）
-  - AWS Shield Advanced: 高度なDDoS保護
-  - AWS WAF: Webアプリケーション保護
+### 技術的な学習ポイント
 
-DNS:
-  - Amazon Route 53: マネージドDNS
-  - Route 53 Health Checks: ヘルスチェック
-  - Route 53 Traffic Flow: 高度なルーティング
+1. **Amazon Textractの実践活用**
+   - PDF/画像からのテキスト抽出
+   - テーブル・フォーム認識
+   - AnalyzeDocument API
 
-オリジン:
-  - Application Load Balancer: ロードバランサ
-  - Amazon S3: 静的コンテンツ
-  - AWS Global Accelerator: 固定IP・最適化ルーティング（オプション）
+2. **Amazon Comprehendの活用**
+   - エンティティ認識（日付、組織名、金額）
+   - カスタム分類（契約条項分類）
 
-監視・対応:
-  - Amazon CloudWatch: メトリクス・ダッシュボード
-  - AWS Firewall Manager: 一元管理
-  - Amazon SNS: アラート通知
-```
+3. **Amazon Bedrockによる高度な分析**
+   - 契約書解析のプロンプトエンジニアリング
+   - リスク評価ロジック
+   - レビューレポート生成
+
+4. **AWS CDK（TypeScript）によるインフラ構築**
+   - スタック設計と分割
+   - L2 Constructの活用
+   - 環境変数管理
+
+5. **Step Functionsによるワークフロー管理**
+   - 複数処理の連携
+   - エラーハンドリング
+   - 並列処理
+
+### 実務で活かせる知識
+
+- ドキュメント処理パイプラインの設計
+- 法務業務におけるAI活用パターン
+- CDKによるモダンなIaC実践
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| CDN | CloudFront | Cloud CDN |
-| DDoS保護 | Shield | Cloud Armor |
-| WAF | AWS WAF | Cloud Armor WAF |
-| DNS | Route 53 | Cloud DNS |
-| Anycast | Global Accelerator | Cloud Load Balancing |
+| OCR/ドキュメント処理 | Amazon Textract | Document AI |
+| NLP | Amazon Comprehend | Natural Language API |
+| 生成AI | Bedrock (Claude 3) | Vertex AI (Gemini) |
+| ワークフロー | Step Functions | Cloud Workflows |
+| IaC | CDK | Deployment Manager / Terraform |
 
 ---
 
-## 5. 前提条件
+## 使用するAWSサービス
 
-### 技術要件
+### メインサービス
 
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
+| サービス | 役割 | 選定理由 |
+|----------|------|----------|
+| Amazon Textract | PDF/画像からテキスト抽出 | 高精度OCR、テーブル認識対応 |
+| Amazon Comprehend | エンティティ認識、分類 | 日本語対応、カスタム分類可能 |
+| Amazon Bedrock | 契約書分析、リスク評価、レポート生成 | Claude 3の高度な推論能力 |
+| AWS Step Functions | ワークフローオーケストレーション | 複数処理の連携、可視化 |
+| Amazon S3 | 契約書ファイル保存 | 大容量、バージョニング |
+| Amazon DynamoDB | メタデータ・分析結果保存 | 柔軟なスキーマ、高速 |
+| Amazon OpenSearch Service | 過去契約書・コメント検索 | 全文検索、日本語対応 |
 
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+### 補助サービス
 
-### 事前準備
-
-```bash
-# ドメイン設定
-# socialconnect.example.com を Route 53 で管理済み
-
-# 既存リソース
-# - ALB (オリジン)
-# - S3バケット (静的コンテンツ)
-# - ACM証明書 (us-east-1)
-```
+| サービス | 役割 |
+|----------|------|
+| AWS Lambda | 各処理ステップの実行 |
+| Amazon SQS | 非同期処理キュー |
+| Amazon SNS | 処理完了・レビュー依頼通知 |
+| Amazon CloudWatch | 監視・ログ・アラート |
+| AWS Secrets Manager | API キー管理 |
 
 ---
 
-## 6. トラブルシューティングチャレンジ
+## 前提条件
 
-### Challenge 1: CloudFrontキャッシュがヒットしない
+### 必要な事前知識
 
-```
-問題:
-キャッシュヒット率が10%以下で、ほとんどのリクエストがオリジンに到達している。
+- AWSの基本サービス（S3, Lambda, DynamoDB）
+- TypeScript基礎（型定義、async/await）
+- Node.js環境でのnpm/yarn操作
+- Step Functionsの基本概念
+- 契約書の基本構造（条項、別紙等）
 
-メトリクス:
-- CacheHitRate: 8%
-- OriginRequests: 90%
+### 準備するもの
 
-調査項目:
-1. キャッシュポリシー設定
-2. Varyヘッダー
-3. クエリストリング
-```
+1. **AWSアカウント**
+   - Bedrockのモデルアクセス有効化（Claude 3 Sonnet）
+   - 適切なIAM権限（AdministratorAccess推奨、学習時）
 
-<details>
-<summary>解決のヒント</summary>
+2. **開発環境**
+   - Node.js 18.x以上
+   - AWS CDK CLI v2（`npm install -g aws-cdk`）
+   - AWS CLI v2（設定済み）
+   - TypeScript（`npm install -g typescript`）
+   - VS Code + AWS Toolkit拡張
 
-```bash
-# 1. キャッシュポリシー確認
-aws cloudfront get-cache-policy --id POLICY_ID
+3. **テストデータ**
+   - サンプル契約書PDF（3-5件）
+   - 自社標準ひな形（テスト用に作成）
 
-# 2. オリジンのレスポンスヘッダー確認
-curl -I https://example.com/api/posts | grep -i cache
-
-# Cache-Control: no-store が原因の可能性
-
-# 3. クエリストリングの影響確認
-# ?timestamp=xxx のような動的パラメータがキャッシュを無効化
-
-# 解決策:
-# a) Cache-Control ヘッダーの適切な設定
-# オリジンで: Cache-Control: public, max-age=300
-
-# b) クエリストリングのホワイトリスト設定
-# 必要なクエリパラメータのみをキャッシュキーに含める
-
-# c) キャッシュポリシーの最適化
-aws cloudfront create-cache-policy --cache-policy-config '{
-    "Name": "OptimizedCachePolicy",
-    "MinTTL": 1,
-    "MaxTTL": 86400,
-    "DefaultTTL": 300,
-    "ParametersInCacheKeyAndForwardedToOrigin": {
-        "EnableAcceptEncodingGzip": true,
-        "EnableAcceptEncodingBrotli": true,
-        "HeadersConfig": {
-            "HeaderBehavior": "none"
-        },
-        "CookiesConfig": {
-            "CookieBehavior": "none"
-        },
-        "QueryStringsConfig": {
-            "QueryStringBehavior": "whitelist",
-            "QueryStrings": {
-                "Items": ["page", "limit"]
-            }
-        }
-    }
-}'
-```
-</details>
-
-### Challenge 2: WAFがレジティメートなボットをブロック
-
-```
-問題:
-Google botやBing botがWAFにブロックされ、
-SEOに悪影響が出ている。
-
-WAFログ:
-terminatingRuleId: AWSManagedRulesBotControlRuleSet
-action: BLOCK
-labels: ["awswaf:managed:aws:bot-control:bot:verified"]
-
-調査項目:
-1. ボット制御ルールの設定
-2. ラベルマッチング
-3. 例外設定
-```
-
-<details>
-<summary>解決のヒント</summary>
+### CDK初期設定
 
 ```bash
-# 1. 検証済みボットを許可する例外ルールを追加
+# CDK CLIインストール
+npm install -g aws-cdk
 
-# WAF Web ACLに新しいルールを追加（優先度を上げる）
-{
-    "Name": "AllowVerifiedBots",
-    "Priority": 0,
-    "Action": {"Allow": {}},
-    "Statement": {
-        "LabelMatchStatement": {
-            "Scope": "LABEL",
-            "Key": "awswaf:managed:aws:bot-control:bot:verified"
-        }
-    },
-    "VisibilityConfig": {
-        "SampledRequestsEnabled": true,
-        "CloudWatchMetricsEnabled": true,
-        "MetricName": "AllowVerifiedBotsMetric"
-    }
-}
+# バージョン確認
+cdk --version
 
-# 2. 特定のUser-Agentを許可
-{
-    "Name": "AllowGoogleBot",
-    "Priority": 1,
-    "Action": {"Allow": {}},
-    "Statement": {
-        "ByteMatchStatement": {
-            "SearchString": "Googlebot",
-            "FieldToMatch": {
-                "SingleHeader": {"Name": "user-agent"}
-            },
-            "TextTransformations": [
-                {"Priority": 0, "Type": "LOWERCASE"}
-            ],
-            "PositionalConstraint": "CONTAINS"
-        }
-    },
-    "VisibilityConfig": {...}
-}
+# プロジェクト作成
+mkdir legal-contract-review && cd legal-contract-review
+cdk init app --language typescript
 
-# 3. ボット制御ルールのモード変更
-# COMMON → TARGETED に変更して、悪意のあるボットのみブロック
-```
-</details>
-
-### Challenge 3: Shield Advanced でコスト保護が機能しない
-
-```
-問題:
-大規模DDoS攻撃を受け、CloudFrontとALBのデータ転送料金が
-大幅に増加したが、Shield Advancedのコスト保護が適用されない。
-
-請求:
-- CloudFront データ転送: $50,000
-- ALB データ転送: $10,000
-- Shield Advanced: $3,000
-
-調査項目:
-1. コスト保護の条件
-2. 保護対象リソースの設定
-3. DRT への連絡
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```bash
-# Shield Advancedのコスト保護を受けるための条件:
-
-# 1. リソースが保護対象として登録されていること
-aws shield list-protections
-
-# 2. 攻撃がShieldによって検知されていること
-aws shield list-attacks --start-time "2024-01-01T00:00:00Z" --end-time "2024-01-31T23:59:59Z"
-
-# 3. WAFがAssociateされていること（L7攻撃の場合）
-aws wafv2 get-web-acl-for-resource \
-    --resource-arn arn:aws:cloudfront::xxx:distribution/yyy
-
-# コスト保護申請手順:
-# a) AWS サポートケースを開く
-# b) 以下の情報を提供:
-#    - Shield 攻撃ID
-#    - 影響を受けたリソースのARN
-#    - 異常なコストが発生した期間
-#    - コスト増加の証拠（請求書）
-
-# c) DRTに連絡（プロアクティブエンゲージメント有効時）
-aws shield describe-subscription
-# ProactiveEngagementStatus: ENABLED であることを確認
-
-# 注意: コスト保護は攻撃が正当にDDoS攻撃として認定された場合のみ適用
-# スケーリングによる正常なトラフィック増加は対象外
-```
-</details>
-
----
-
-## 7. 設計考慮ポイント
-
-### Shield Standard vs Advanced
-
-```yaml
-Shield Standard (無料):
-  保護対象:
-    - CloudFront
-    - Route 53
-    - Global Accelerator
-  保護内容:
-    - Layer 3/4 DDoS攻撃の自動緩和
-    - SYN floods, UDP floods, Reflection attacks
-  制限:
-    - 可視性なし
-    - コスト保護なし
-    - DRTサポートなし
-
-Shield Advanced ($3,000/月 + WAF費用):
-  追加保護:
-    - ALB, NLB, EIP, EC2
-  追加機能:
-    - リアルタイム攻撃可視性
-    - DDoS Response Team (24/7)
-    - コスト保護
-    - WAF無料（Shield関連）
-    - Health-based detection
-  適用ケース:
-    - ミッションクリティカル
-    - 高頻度の攻撃
-    - SLA要件あり
-
-選択基準:
-  月間UU > 100万 または
-  ダウンタイムコスト > $10,000/時間
-  → Shield Advanced を推奨
-```
-
-### グローバル配信戦略
-
-```
-エッジロケーション最適化:
-
-┌─────────────────────────────────────────────────────────────┐
-│                    Price Class 選択                         │
-├─────────────────────────────────────────────────────────────┤
-│ PriceClass_All        : 全リージョン (最高パフォーマンス)    │
-│ PriceClass_200        : 北米、欧州、アジア、中東、アフリカ   │
-│ PriceClass_100        : 北米、欧州のみ (最低コスト)          │
-└─────────────────────────────────────────────────────────────┘
-
-推奨:
-- グローバルサービス → PriceClass_All
-- 日本中心 + 一部海外 → PriceClass_200
-- 開発環境 → PriceClass_100
+# 必要な依存関係追加
+npm install @aws-cdk/aws-lambda-python-alpha
 ```
 
 ---
 
-## 8. 発展課題（オプション）
+## アーキテクチャ概要
 
-### 上級チャレンジ1: Global Acceleratorによる最適化
+### システム全体構成
 
-```bash
-# AWS Global Accelerator設定
-# 固定IPアドレスとAnycastルーティング
-
-aws globalaccelerator create-accelerator \
-    --name example-accelerator \
-    --ip-address-type IPV4 \
-    --enabled
-
-# リスナー作成
-aws globalaccelerator create-listener \
-    --accelerator-arn arn:aws:globalaccelerator::xxx:accelerator/yyy \
-    --port-ranges '[{"FromPort":443,"ToPort":443}]' \
-    --protocol TCP
-
-# エンドポイントグループ作成（複数リージョン）
-aws globalaccelerator create-endpoint-group \
-    --listener-arn arn:aws:globalaccelerator::xxx:accelerator/yyy/listener/zzz \
-    --endpoint-group-region ap-northeast-1 \
-    --endpoint-configurations '[{"EndpointId":"arn:aws:elasticloadbalancing:...","Weight":100}]' \
-    --traffic-dial-percentage 100 \
-    --health-check-path "/health" \
-    --health-check-interval-seconds 10
+```
+[弁護士/パラリーガル]
+        ↓ アップロード
+[S3: 入力バケット]
+        ↓ S3イベント
+[Step Functions: ContractReviewWorkflow]
+        │
+        ├─[1] Lambda: ExtractText
+        │     └── Textract: PDF→テキスト変換
+        │
+        ├─[2] Lambda: AnalyzeEntities
+        │     └── Comprehend: エンティティ抽出
+        │
+        ├─[3] Lambda: ClassifyClauses
+        │     └── Bedrock: 条項分類・リスク評価
+        │
+        ├─[4] Lambda: CompareTemplate
+        │     └── Bedrock: ひな形との差分検出
+        │
+        └─[5] Lambda: GenerateReport
+              └── Bedrock: レビューレポート生成
+        │
+        ↓
+[DynamoDB: 分析結果保存]
+[S3: レポート出力]
+[OpenSearch: 検索インデックス]
+        ↓
+[SNS: 完了通知]
+        ↓
+[弁護士にメール通知]
 ```
 
-### 上級チャレンジ2: 多層キャッシング戦略
+### 処理フロー詳細
 
-```yaml
-# CloudFront + Origin Shield + ALB + ElastiCache
+1. **ドキュメントアップロード**: 弁護士がS3に契約書PDFをアップロード
+2. **テキスト抽出**: TextractでOCR処理、テーブル・フォーム認識
+3. **エンティティ認識**: Comprehendで日付、金額、組織名を抽出
+4. **条項分類**: Bedrockで各条項を分類（免責、損害賠償、解除等）
+5. **リスク評価**: Bedrockでリスク条項を検出・評価
+6. **差分検出**: 標準ひな形との違いを特定
+7. **レポート生成**: 分析結果をレビューレポートとして出力
+8. **通知**: 担当弁護士にメール通知
 
-Layer 1: CloudFront Edge
-  - 静的コンテンツ: 24時間キャッシュ
-  - 動的コンテンツ: 5分キャッシュ
-  - キャッシュヒット率目標: 80%
+---
 
-Layer 2: Origin Shield
-  - リージョナルエッジキャッシュの一元化
-  - オリジンへのリクエスト削減: 50%
+## トラブルシューティング課題
 
-Layer 3: Application Cache (ElastiCache)
-  - API レスポンスキャッシュ
-  - セッションストア
-  - TTL: 1-5分
+### 問題1: Textractのジョブが失敗
 
-結果:
-  - オリジンへの到達率: 10%以下
-  - レイテンシ改善: 80%
+**症状:**
+```
+Textract job failed: Unable to process the document
+Step Functions実行がExtractTextステップで失敗
 ```
 
-### 上級チャレンジ3: カオスエンジニアリング
+**ヒント:**
+1. PDFファイルが破損していないか確認
+2. PDFのページ数制限（3000ページ）を超えていないか
+3. PDFのファイルサイズ制限（500MB）を超えていないか
+4. S3へのアクセス権限があるか
 
+**解決方法:**
 ```python
-# DDoS攻撃シミュレーション（AWS FISを使用）
-# 注意: 本番環境では事前にAWSサポートに連絡が必要
+# Lambdaにバリデーション追加
+def validate_document(bucket, key):
+    response = s3.head_object(Bucket=bucket, Key=key)
+    size_mb = response['ContentLength'] / (1024 * 1024)
 
-# FIS実験テンプレート
-{
-    "description": "Simulate high traffic load",
-    "targets": {
-        "alb": {
-            "resourceType": "aws:elasticloadbalancing:loadbalancer",
-            "resourceArns": ["arn:aws:elasticloadbalancing:..."],
-            "selectionMode": "ALL"
-        }
-    },
-    "actions": {
-        "inject-fault": {
-            "actionId": "aws:fis:inject-api-throttle-error",
-            "parameters": {
-                "duration": "PT5M",
-                "percentage": "50"
-            },
-            "targets": {
-                "LoadBalancers": "alb"
-            }
-        }
-    },
-    "stopConditions": [
-        {
-            "source": "aws:cloudwatch:alarm",
-            "value": "arn:aws:cloudwatch:...:alarm:emergency-stop"
-        }
-    ],
-    "roleArn": "arn:aws:iam::xxx:role/FISRole"
-}
+    if size_mb > 500:
+        raise ValueError(f"File too large: {size_mb}MB (max 500MB)")
+
+    if not key.lower().endswith('.pdf'):
+        raise ValueError(f"Unsupported file type: {key}")
+```
+
+### 問題2: Bedrockのレスポンスが不完全
+
+**症状:**
+```
+JSONパースエラーが発生
+レスポンスが途中で切れている
+```
+
+**ヒント:**
+1. max_tokensの設定を確認
+2. 入力テキストが長すぎないか
+3. プロンプトが明確か
+
+**解決方法:**
+```python
+# max_tokens増加
+body = json.dumps({
+    "anthropic_version": "bedrock-2023-05-31",
+    "max_tokens": 8192,  # 4096から増加
+    "messages": [...]
+})
+
+# 入力テキストの切り詰め
+full_text = full_text[:25000]  # Claude 3の入力制限に合わせる
+```
+
+### 問題3: Step Functions実行タイムアウト
+
+**症状:**
+```
+States.Timeout エラー
+特定のステップで30分以上かかる
+```
+
+**ヒント:**
+1. 各Lambdaのタイムアウト設定を確認
+2. Textractの処理時間が長いPDFかどうか
+3. Step Functionsのタイムアウト設定
+
+**解決方法:**
+```typescript
+// CDKでタイムアウト延長
+const stateMachine = new sfn.StateMachine(this, 'ContractReviewWorkflow', {
+  timeout: cdk.Duration.hours(1),  // 30分から1時間に延長
+  // ...
+});
+
+// Lambda個別のタイムアウトも延長
+const extractTextFn = new lambda.Function(this, 'ExtractTextFunction', {
+  timeout: cdk.Duration.minutes(10),  // 5分から10分に
+  // ...
+});
 ```
 
 ---
 
-## 9. コスト見積もり
+## 設計の考察ポイント
 
-### 月額コスト概算
+### 1. なぜStep Functionsで処理を分割したのか？
 
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| CloudFront | 10TB転送 + 1億リクエスト | $1,200 |
-| Shield Advanced | 基本料金 | $3,000 |
-| WAF | Web ACL + ルール + ボット制御 | $50 |
-| Route 53 | ホステッドゾーン + クエリ | $10 |
-| ヘルスチェック | 3つ | $2 |
-| CloudWatch | ログ・メトリクス | $30 |
-| **合計** | | **約 $4,292/月** |
+**考察ポイント:**
+- 単一Lambdaで全処理を行う場合の問題（タイムアウト、デバッグ困難）
+- 処理の可視化とモニタリング
+- 部分的な再実行の容易さ
+- 各ステップの独立したスケーリング
 
-### Shield Advancedなしの場合
+### 2. CDKを選択した理由は？
 
-```
-Shield Standard (無料) の場合:
-- CloudFront: $1,200
-- WAF: $50
-- Route 53: $12
-- CloudWatch: $30
-合計: 約 $1,292/月
+**考察ポイント:**
+- TypeScriptによる型安全性
+- プログラマブルなインフラ定義
+- CloudFormationとの比較
+- Terraformとの比較（チームのスキルセット）
 
-差額: $3,000/月
+### 3. 契約書の機密性にどう対応するか？
 
-判断基準:
-- DDoS攻撃によるダウンタイムコスト
-- ブランド毀損のリスク
-- SLA要件
+**考察ポイント:**
+- S3の暗号化（SSE-S3 vs SSE-KMS）
+- VPCエンドポイントの利用
+- アクセスログの監査
+- データ保持期間とライフサイクル
 
-500万UU × 広告収入 $0.01/UU = $50,000/月
-1時間ダウンタイム = $2,000+ の損失
-→ Shield Advanced の投資対効果は高い
+### 4. AIの判断をどこまで信頼するか？
+
+**考察ポイント:**
+- AIはあくまで支援ツール
+- 最終判断は弁護士が行う設計
+- 信頼度スコアの活用
+- フォールバック（人間へのエスカレーション）
+
+### 5. 本番環境でのスケーラビリティは？
+
+**考察ポイント:**
+- Lambda同時実行制限
+- Textractのスロットリング
+- Bedrockのレート制限
+- SQSによるバッファリングの必要性
+
+---
+
+## 発展課題（オプション）
+
+### 1. OpenSearchによる類似契約検索
+- 過去の契約書をベクトル化して保存
+- 類似契約書の検索機能
+- 過去のレビューコメント参照
+
+### 2. カスタムComprehend分類器
+- 契約条項に特化した分類モデル
+- 自社の過去データで学習
+- 精度の継続的改善
+
+### 3. Webフロントエンド構築
+- React + Amplifyでのダッシュボード
+- 分析結果の可視化
+- 承認ワークフローの実装
+
+### 4. 多言語対応
+- 英文契約書の処理
+- Amazon Translateとの連携
+- 言語自動検出
+
+### 5. バージョン管理と差分追跡
+- 契約書改訂版の差分表示
+- 変更履歴の追跡
+- 承認ワークフローとの連携
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（月間200件処理想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| Amazon Textract | 200件 × 20ページ = 4,000ページ | $6 |
+| Amazon Comprehend | 200件 × 50KBテキスト = 10MB | $2 |
+| Amazon Bedrock | 200件 × 4回呼び出し × 約5000トークン | $40 |
+| AWS Lambda | 200件 × 5関数 × 平均60秒 | $5 |
+| AWS Step Functions | 200件 × 7ステート遷移 | $0.04 |
+| Amazon S3 | 50GB保存 + リクエスト | $2 |
+| Amazon DynamoDB | オンデマンド | $2 |
+| Amazon SNS | 200件通知 | $0.01 |
+| CloudWatch | ログ・メトリクス | $5 |
+| **合計** | | **約$62（約9,300円）** |
+
+### コスト削減のポイント
+
+1. **Bedrockモデルの最適化**
+   - 簡単な分類はClaude 3 Haikuで
+   - 複雑な分析のみSonnet使用
+   - → 最大40%削減
+
+2. **Textractの使い分け**
+   - テキストPDFはDetectDocumentText（安価）
+   - スキャンPDFのみAnalyzeDocument
+   - → 最大50%削減
+
+3. **キャッシング**
+   - 同じテンプレートとの比較結果をキャッシュ
+   - 類似契約のパターンマッチング
+
+4. **バッチ処理**
+   - 夜間バッチで処理
+   - Spot Instanceの活用（ECS移行時）
+
+### リソース削除手順
+
+```bash
+# CDKで全削除
+cdk destroy -c environment=dev
+
+# S3バケットが残る場合
+INPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`InputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
+OUTPUT_BUCKET=$(aws cloudformation describe-stacks --stack-name LegalContractReviewStack-dev --query 'Stacks[0].Outputs[?OutputKey==`OutputBucketName`].OutputValue' --output text 2>/dev/null || echo "")
+
+if [ -n "$INPUT_BUCKET" ]; then
+  aws s3 rm s3://${INPUT_BUCKET} --recursive
+fi
+if [ -n "$OUTPUT_BUCKET" ]; then
+  aws s3 rm s3://${OUTPUT_BUCKET} --recursive
+fi
+
+# 再度destroy
+cdk destroy -c environment=dev --force
 ```
 
 ---
 
-## 10. 学習のポイント
+## 学習のポイント
 
-### 今回学んだこと
+### 1. ドキュメント処理パイプラインの設計
+Textract（OCR）→ Comprehend（NLP）→ Bedrock（生成AI）の組み合わせは、ドキュメント処理の典型的なパターン。各サービスの得意分野を理解して使い分ける。
 
-```
-1. CloudFrontによるグローバル配信
-   - エッジロケーションの活用
-   - キャッシュ戦略
-   - オリジン保護
+### 2. AWS CDKの実践
+TypeScriptでインフラを定義することで、型チェック、コード補完、ユニットテストが可能になる。CloudFormationの直接記述と比べて生産性が大幅に向上する。
 
-2. AWS ShieldによるDDoS保護
-   - Standard vs Advanced
-   - 自動緩和
-   - DRTサポート
+### 3. Step Functionsによるワークフロー管理
+複数のLambdaを連携させる場合、Step Functionsを使うことで処理の可視化、エラーハンドリング、再実行が容易になる。
 
-3. AWS WAFによるL7保護
-   - マネージドルール
-   - ボット制御
-   - レート制限
+### 4. 法務AIの設計原則
+AIは「支援ツール」として位置づけ、最終判断は専門家（弁護士）が行う設計にする。これは法務に限らず、専門性が求められる領域でのAI活用の基本原則。
 
-4. Route 53による高可用性DNS
-   - ヘルスチェック
-   - フェイルオーバー
-   - GeoDNS
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS | GCP |
-|------|-----|-----|
-| CDN | CloudFront (450+ PoPs) | Cloud CDN |
-| DDoS | Shield (Standard無料) | Cloud Armor |
-| 専門サポート | DRT (Shield Advanced) | なし（標準サポート内） |
-| 価格モデル | 月額固定 + 従量 | 従量課金のみ |
-
-### 次のステップ
-
-```
-1. 発展学習:
-   - AWS Global Accelerator
-   - CloudFront Functions/Lambda@Edge
-   - Origin Shield
-
-2. 実務応用:
-   - 攻撃シミュレーション訓練
-   - インシデントレスポンス計画
-   - SLA設計
-
-3. 認定資格:
-   - AWS Certified Security - Specialty
-   - AWS Certified Advanced Networking - Specialty
-```
-
----
-
+### 5. セキュリティと機密性への配慮
+契約書は機密情報を含むため、暗号化、アクセス制御、監査ログを最初から設計に組み込む。特に法律事務所では守秘義務が重要。

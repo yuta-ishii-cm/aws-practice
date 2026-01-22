@@ -1,6 +1,6 @@
-# 課題33: StreamNow株式会社の動画エンコーディングパイプライン構築
+# 課題33: TeamHub - マルチテナントSaaS認証基盤
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,453 +8,706 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
-| カテゴリ | バッチ処理 / メディア / コンテンツ配信 |
-| 処理タイプ | バッチ / イベント駆動 |
-| 使用IaC | CloudFormation |
-| 所要時間 | 5〜6時間 |
+| 難易度 | 中級 |
+| カテゴリ | 認証・認可 / セキュリティ |
+| 処理タイプ | リアルタイム |
+| 使用IaC | CDK |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
-## シナリオ
+## 2. シナリオ
 
-### 企業プロフィール
+BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可システムを AWS CDK で構築します。テナント分離、ロールベースアクセス制御（RBAC）、テナント管理機能を実装し、セキュアなマルチテナントSaaSアーキテクチャを学びます。
 
-**StreamNow株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
+### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | 動画配信（OTT） |
-| 設立 | 2019年 |
-| 従業員数 | 80名 |
-| 月間アクティブユーザー | 50万人 |
-| 有料会員数 | 30万人 |
-| 月商 | 3億円 |
-| コンテンツ数 | 2,000本 |
-| 月間新規コンテンツ | 500本 |
-| 対応デバイス | Web、iOS、Android、Smart TV、Fire TV |
+| 企業名 | 〇〇株式会社 |
+| 業種 | BtoB SaaS（プロジェクト管理ツール） |
+| テナント数 | 100社 |
+| 総ユーザー数 | 5,000名 |
+| テナント規模 | 小規模（10名以下）〜大規模（500名） |
+| 課題 | テナント間のデータ分離とセキュリティ確保 |
 
-### 現状の課題
+### 達成目標（white hat KPI）
 
-コンテンツ制作会社から納品されるマスター動画（4K ProRes形式）を、各デバイス向けに手動でエンコードしています。エンコード作業がボトルネックとなり、コンテンツの配信開始が遅延しています。
-
-### 数値で示された問題
-
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 月間エンコード動画数 | 500本 | 変わらず |
-| 1本あたりエンコード時間 | 4時間 | 30分以内 |
-| エンコード担当者 | 2名専任 | 0名（自動化） |
-| 配信開始リードタイム | 48時間 | 4時間以内 |
-| エンコードエラー率 | 5% | 1%以下 |
-| 出力フォーマット数 | 8種類 | 12種類以上 |
-
-### 現状のエンコードワークフロー
-
-```
-1. 制作会社からマスター動画をHDD/クラウドで受領
-2. 担当者がローカルPCにダウンロード（30分〜1時間）
-3. Adobe Media Encoderで各フォーマットにエンコード（2〜3時間）
-4. 目視で品質チェック（30分）
-5. CDNにアップロード（30分）
-6. メタデータ登録
-→ 合計: 4〜5時間/本
-```
-
-### 必要な出力フォーマット
-
-| プロファイル | 解像度 | ビットレート | 対象デバイス |
-|--------------|--------|--------------|--------------|
-| 4K UHD | 3840×2160 | 15Mbps | 4K TV |
-| 1080p High | 1920×1080 | 8Mbps | Smart TV, PC |
-| 1080p | 1920×1080 | 5Mbps | PC, Tablet |
-| 720p | 1280×720 | 3Mbps | Mobile WiFi |
-| 480p | 854×480 | 1.5Mbps | Mobile 4G |
-| 360p | 640×360 | 0.8Mbps | Mobile 3G |
-| Audio Only | - | 128kbps | バックグラウンド再生 |
-
-+ HLS/DASH 両対応
-
-### 解決したいこと
-
-1. マスター動画アップロード後の自動エンコード
-2. 複数フォーマットへの並列エンコード
-3. 配信開始リードタイムの大幅短縮
-4. エンコード品質の一貫性確保
-5. 自動品質チェック・エラー通知
-
-### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| エンコード時間/本 | 4時間 | 30分以内 | 1ヶ月後 |
-| 配信リードタイム | 48時間 | 4時間以内 | 1ヶ月後 |
-| 自動化率 | 0% | 95%以上 | 2ヶ月後 |
-| エンコードエラー率 | 5% | 1%以下 | 1ヶ月後 |
-| 人的工数 | 160時間/月 | 10時間/月 | 2ヶ月後 |
+| KPI | 目標値 | 測定方法 |
+|-----|--------|----------|
+| テナント分離 | 100% | クロステナントアクセス試行のブロック率 |
+| 認証成功率 | 99.9% | 正当なリクエストの認証成功率 |
+| 認可レイテンシ | < 50ms | カスタム認可処理の平均応答時間 |
+| テナントオンボーディング | < 5分 | 新規テナント作成の所要時間 |
 
 ---
 
-## 達成目標
+## 2. アーキテクチャ図
 
-この演習で習得できるスキル：
+```mermaid
+architecture-beta
+    group teamhub(cloud)[TeamHub マルチテナント認証アーキテクチャ]
 
-### 技術的な学習ポイント
+    group tenants(cloud)[Tenants] in teamhub
+    group cognito(server)[Amazon Cognito] in teamhub
+    group triggers(server)[Lambda Triggers] in teamhub
+    group api(server)[API Layer] in teamhub
+    group backend(server)[Backend Services] in teamhub
+    group data(database)[Data Layer] in teamhub
+    group portal(server)[Management Portal] in teamhub
 
-1. **AWS Elemental MediaConvertの実践活用**
-   - ジョブテンプレートの設計
-   - 出力グループ（HLS, DASH）の設定
-   - カスタムプリセット作成
+    service tenant_a(internet)[Tenant A Users] in tenants
+    service tenant_b(internet)[Tenant B Users] in tenants
+    service tenant_c(internet)[Tenant C Users] in tenants
 
-2. **AWS Batchによる大規模バッチ処理**
-   - コンピューティング環境の設計
-   - ジョブ定義とジョブキュー
-   - スポットインスタンス活用
+    service userpool(server)[Cognito User Pool] in cognito
 
-3. **S3イベント駆動アーキテクチャ**
-   - S3 → Lambda → MediaConvert
-   - Step Functionsによるワークフロー
+    service pre_signup(server)[Pre-SignUp Trigger] in triggers
+    service post_auth(server)[Post-Auth Trigger] in triggers
+    service pre_token(server)[Pre-Token Generation] in triggers
 
-4. **CloudFrontによるコンテンツ配信**
-   - HLS/DASH配信設定
-   - キャッシュ戦略
+    service apigw(server)[API Gateway] in api
+    service authorizer(server)[Lambda Authorizer JWT RBAC] in api
 
-### 実務で活かせる知識
+    service project_svc(server)[Project Service Lambda] in backend
+    service task_svc(server)[Task Service Lambda] in backend
+    service team_svc(server)[Team Service Lambda] in backend
 
-- 動画配信プラットフォームの構築
-- メディア処理パイプラインの設計
-- コスト最適化（スポットインスタンス）
+    service dynamodb(database)[DynamoDB Single Table] in data
+    service tenant_meta(database)[Tenant Metadata Table] in data
 
-### GCPとの比較
+    service admin_ui(server)[Tenant Admin UI] in portal
+    service user_mgmt(server)[User Management] in portal
+    service usage_dash(server)[Usage Dashboard] in portal
 
-| 機能 | AWS | GCP |
+    tenant_a:B --> T:userpool
+    tenant_b:B --> T:userpool
+    tenant_c:B --> T:userpool
+    userpool:B --> T:pre_signup
+    userpool:B --> T:post_auth
+    userpool:B --> T:pre_token
+    pre_token:B --> T:authorizer
+    authorizer:B --> T:project_svc
+    authorizer:B --> T:task_svc
+    authorizer:B --> T:team_svc
+    project_svc:B --> T:dynamodb
+    task_svc:B --> T:dynamodb
+    team_svc:B --> T:dynamodb
+```
+
+**Custom Attributes:** tenant_id (必須), tenant_role (admin/manager/member), tenant_tier (free/standard/enterprise)
+
+**Lambda Authorizer:** JWT検証、テナントコンテキスト抽出、RBAC権限チェック、リソースレベル認可
+
+**DynamoDB Single Table Design:** PK: TENANT#X, SK: PROJECT#/TASK# (Tenant Partition)
+
+### RBACモデル
+
+```mermaid
+flowchart TB
+    subgraph platform[Platform Level - Super Admin]
+        admin[platform:admin<br/>テナント作成/削除<br/>システム設定管理<br/>全テナントのモニタリング]
+    end
+
+    subgraph tenant[Tenant Level]
+        tadmin[tenant:admin<br/>テナント設定管理<br/>ユーザー招待/削除<br/>ロール割り当て<br/>全リソースへのフルアクセス]
+        manager[tenant:manager<br/>プロジェクト作成/編集<br/>タスク管理<br/>チームメンバー管理<br/>レポート閲覧]
+        member[tenant:member<br/>割り当てタスクの閲覧/更新<br/>コメント投稿<br/>自分のプロファイル管理]
+        guest[tenant:guest read-only<br/>プロジェクト閲覧のみ<br/>コメント閲覧のみ]
+    end
+
+    admin --> tadmin
+    tadmin --> manager
+    manager --> member
+    member --> guest
+```
+
+---
+
+## 3. 前提知識
+
+### 3.1 マルチテナントアーキテクチャ
+
+GCPでのマルチテナント経験がある方向けの比較：
+
+| 観点 | GCP | AWS |
 |------|-----|-----|
-| 動画変換 | MediaConvert | Transcoder API |
-| バッチ処理 | AWS Batch | Cloud Run Jobs / Batch |
-| CDN | CloudFront | Cloud CDN |
-| ストレージ | S3 | Cloud Storage |
+| 認証基盤 | Firebase Authentication | Cognito User Pool |
+| カスタムクレーム | Custom Claims | Custom Attributes + Pre Token Generation |
+| テナント分離 | Identity Platform Multi-tenancy | Cognito + Custom Lambda |
+| RBAC | Custom Claims based | Groups + Custom Attributes |
+
+### 3.2 テナント分離パターン
+
+```mermaid
+flowchart TB
+    subgraph silo[1. Silo Model 完全分離]
+        direction TB
+        subgraph siloA[Tenant A]
+            poolA[User Pool A] --> dbA[Database A]
+        end
+        subgraph siloB[Tenant B]
+            poolB[User Pool B] --> dbB[Database B]
+        end
+        subgraph siloC[Tenant C]
+            poolC[User Pool C] --> dbC[Database C]
+        end
+    end
+    siloNote[✓ 完全分離  ✗ コスト高  ✗ 管理複雑]
+
+    subgraph pool[2. Pool Model 共有+論理分離 - 本課題で採用]
+        direction TB
+        sharedPool[Shared Cognito User Pool<br/>User tenant_id=A / B / C]
+        sharedPool --> authorizer[Lambda Authorizer<br/>tenant context]
+        sharedPool --> dynamodb[DynamoDB<br/>partition by tenant_id]
+    end
+    poolNote[✓ コスト効率  ✓ 管理容易  △ 分離はアプリケーション責務]
+
+    subgraph bridge[3. Bridge Model ハイブリッド]
+        direction LR
+        subgraph enterprise[Enterprise Tenants - Silo]
+            dedA[Dedicated Tenant A]
+            dedB[Dedicated Tenant B]
+        end
+        subgraph standard[Standard Tenants - Pool]
+            shared[Shared Infrastructure<br/>Tenants C, D, E...]
+        end
+    end
+    bridgeNote[✓ 柔軟性  ✓ エンタープライズ対応  △ 複雑性増加]
+```
 
 ---
 
-## 使用するAWSサービス
+## 6. 課題
 
-### メインサービス
+### 6.1 ハンズオン課題
 
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| AWS Elemental MediaConvert | 動画エンコード | 高品質、多フォーマット対応 |
-| AWS Batch | 大規模並列処理（前処理用） | スポット対応、コスト効率 |
-| Amazon S3 | 入力/出力ストレージ | 大容量、イベント通知 |
-| AWS Lambda | オーケストレーション | イベント駆動 |
-| AWS Step Functions | ワークフロー管理 | 可視化、エラー処理 |
-| Amazon CloudFront | コンテンツ配信 | グローバル配信 |
+#### 課題1: テナントティア別の機能制限（難易度：初級）
 
-### 補助サービス
+**目標**: テナントの契約プランに応じて利用可能な機能を制限する
 
-| サービス | 役割 |
-|----------|------|
-| Amazon DynamoDB | ジョブ状態管理 |
-| Amazon SNS | 完了/エラー通知 |
-| Amazon CloudWatch | 監視・ログ |
-| AWS Secrets Manager | APIキー管理 |
+**要件**:
+- Freeプラン: 基本機能のみ
+- Standardプラン: レポート機能追加
+- Enterpriseプラン: 監査ログ、SSO対応
+
+**実装ポイント**:
+```typescript
+// テナントティアによる機能フラグの例
+const TIER_FEATURES: Record<string, string[]> = {
+  free: ['projects', 'tasks', 'basic-reports'],
+  standard: ['projects', 'tasks', 'advanced-reports', 'integrations'],
+  enterprise: ['projects', 'tasks', 'advanced-reports', 'integrations', 'audit-logs', 'sso', 'custom-branding'],
+};
+```
+
+**確認方法**:
+- Freeプランのテナントが高度なレポート機能にアクセスしようとすると403エラーが返ること
+- Enterpriseプランのテナントは全機能にアクセスできること
 
 ---
 
-## 前提条件
+#### 課題2: ユーザー招待フロー（難易度：中級）
 
-### 必要な事前知識
+**目標**: テナント管理者が新規ユーザーを招待するフローを実装する
 
-- AWSの基本操作（S3, Lambda）
-- 動画フォーマットの基本（コーデック、コンテナ）
-- HLS/DASHの基本概念
+**要件**:
+- 招待メールの送信
+- 招待リンクの有効期限管理（48時間）
+- 招待の承認/拒否
+- 招待状況のトラッキング
 
-### 準備するもの
-
-1. **AWSアカウント**
-   - MediaConvertへのアクセス権限
-   - 適切なIAM権限
-
-2. **開発環境**
-   - AWS CLI v2
-   - Python 3.9以上
-
-3. **テストデータ**
-   - サンプル動画ファイル（MP4, 1分程度）
+**実装の流れ**:
+1. 招待レコードをDynamoDBに作成
+2. 招待コード付きのリンクを含むメールを送信
+3. ユーザーがリンクをクリックしてパスワード設定
+4. Cognito Pre-SignUpトリガーで招待コードを検証
 
 ---
 
-## アーキテクチャ概要
+#### 課題3: リソースレベル認可（難易度：中級〜上級）
 
-### システム全体構成
+**目標**: プロジェクト単位でのアクセス制御を実装する
 
+**要件**:
+- プロジェクトごとにアクセス可能なユーザーを設定
+- プロジェクトオーナー、メンバー、閲覧者の権限レベル
+- チーム単位でのアクセス権付与
+
+**データモデル**:
 ```
-[制作会社]
-    ↓ マスター動画アップロード
-[S3: 入力バケット]
-    ↓ S3イベント
-[Lambda: トリガー]
-    ↓
-[Step Functions: エンコードワークフロー]
-    ├── [MediaConvert: 動画エンコード]
-    │     ├── HLS出力（7プロファイル）
-    │     └── DASH出力（7プロファイル）
-    │
-    ├── [Lambda: サムネイル生成]
-    │
-    └── [Lambda: メタデータ更新]
-            ↓
-[S3: 出力バケット]
-    ↓
-[CloudFront: CDN配信]
-    ↓
-[視聴者]
+PK: TENANT#A#PROJECT#001
+SK: ACCESS#USER#alice
+Data: { role: "owner", grantedAt: "...", grantedBy: "..." }
 
-[DynamoDB: ジョブ状態管理]
-[SNS: 完了/エラー通知]
+PK: TENANT#A#PROJECT#001
+SK: ACCESS#TEAM#engineering
+Data: { role: "member", grantedAt: "...", grantedBy: "..." }
 ```
-
-### エンコードフロー
-
-1. **アップロード**: 制作会社がS3にマスター動画をアップロード
-2. **トリガー**: S3イベントでLambdaが起動
-3. **ワークフロー**: Step Functionsで処理開始
-4. **エンコード**: MediaConvertで複数フォーマットに変換
-5. **後処理**: サムネイル生成、メタデータ登録
-6. **通知**: 完了通知を送信
-7. **配信**: CloudFront経由で配信開始
 
 ---
 
-## トラブルシューティング課題
+### 6.2 トラブルシューティング課題
 
-### 問題1: MediaConvertジョブがエラー終了
+#### 問題1: クロステナントアクセス
 
-**症状:**
+**症状**: テナントAのユーザーがテナントBのデータを取得できてしまう
+
+**調査のヒント**:
+1. Lambda Authorizerのログを確認
+2. トークンに含まれるtenant_idクレームを確認
+3. APIバックエンドのテナントIDフィルタリングを確認
+
+<details>
+<summary>原因と解決策</summary>
+
+**原因**: バックエンドのLambda関数でテナントIDのフィルタリングが漏れていた
+
+```typescript
+// 問題のあるコード
+const result = await dynamodb.send(new QueryCommand({
+  TableName: TABLE_NAME,
+  KeyConditionExpression: 'PK = :pk',
+  ExpressionAttributeValues: {
+    ':pk': { S: `PROJECT#${projectId}` }, // テナントIDがない
+  },
+}));
+
+// 修正後
+const tenantId = event.requestContext.authorizer?.tenantId;
+const result = await dynamodb.send(new QueryCommand({
+  TableName: TABLE_NAME,
+  KeyConditionExpression: 'PK = :pk',
+  ExpressionAttributeValues: {
+    ':pk': { S: `TENANT#${tenantId}#PROJECT#${projectId}` },
+  },
+}));
 ```
-MediaConvert job status: ERROR
-"Unable to open input file"
-```
+</details>
 
-**ヒント:**
-1. 入力ファイルのS3パスが正しいか確認
-2. MediaConvertロールのS3権限を確認
-3. 入力ファイルが破損していないか確認
+---
 
-**解決方法:**
+#### 問題2: トークン内のカスタムクレームが欠落
+
+**症状**: ログイン後のトークンにtenant_idやpermissionsが含まれていない
+
+**調査のヒント**:
+1. Pre-Token Generationトリガーのログを確認
+2. トリガーがUser Poolに正しく設定されているか確認
+3. トリガー関数の実行ロールを確認
+
+<details>
+<summary>原因と解決策</summary>
+
+**原因1**: Pre-Token Generationトリガーの設定ミス
 ```bash
-# IAMロールのポリシー確認
-aws iam list-attached-role-policies --role-name StreamNowMediaConvertRole
-
-# S3アクセステスト
-aws s3 ls s3://streamnow-master-${ACCOUNT_ID}/uploads/
-
-# MediaConvert用の追加ポリシー
-aws iam attach-role-policy \
-  --role-name StreamNowMediaConvertRole \
-  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+# トリガーの設定確認
+aws cognito-idp describe-user-pool \
+  --user-pool-id $USER_POOL_ID \
+  --query 'UserPool.LambdaConfig'
 ```
 
-### 問題2: HLSマニフェストが正しく生成されない
+**原因2**: Lambda関数の戻り値形式が不正
+```typescript
+// 不正な形式
+event.response.claimsOverrideDetails = {
+  claimsToAddOrOverride: {
+    tenant_id: tenantId, // IDトークンには追加されるがアクセストークンには追加されない
+  }
+};
 
-**症状:**
+// 正しい形式（アクセストークンにも追加）
+event.response.claimsOverrideDetails = {
+  claimsToAddOrOverride: {
+    tenant_id: tenantId,
+  },
+  // V2トリガーを使用している場合
+  accessTokenGeneration: {
+    claimsToAddOrOverride: {
+      tenant_id: tenantId,
+    },
+  },
+};
 ```
-index.m3u8が存在しない
-プレイヤーで再生できない
+</details>
+
+---
+
+#### 問題3: 認可エラーでAPIが403を返す
+
+**症状**: 正しい権限を持つユーザーでも403エラーが返される
+
+**調査のヒント**:
+1. Authorizerのキャッシュを確認
+2. 権限マッピングの定義を確認
+3. パスパラメータの正規化ロジックを確認
+
+<details>
+<summary>原因と解決策</summary>
+
+**原因**: Authorizerのキャッシュが古いポリシーを返している
+
+```bash
+# キャッシュの無効化（API Gateway設定変更）
+aws apigateway update-authorizer \
+  --rest-api-id <api-id> \
+  --authorizer-id <authorizer-id> \
+  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=0
+
+# 本番では適切なTTLを設定
+aws apigateway update-authorizer \
+  --rest-api-id <api-id> \
+  --authorizer-id <authorizer-id> \
+  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=300
+```
+</details>
+
+---
+
+### 6.3 設計課題
+
+#### 課題: エンタープライズテナント向けSAML SSO統合
+
+**シナリオ**: 大企業テナントから「自社のIdP（Okta/Azure AD）でSSOしたい」という要望がありました。
+
+**検討事項**:
+1. Cognito User Pool + SAML Identity Providerの構成
+2. テナントごとに異なるIdPを設定する方法
+3. Just-In-Timeプロビジョニングの実装
+4. 属性マッピング（tenant_id、roleの引き継ぎ）
+
+**設計案を作成してください**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     SSO Integration Design                       │
+│                                                                 │
+│  [ここに設計図を作成]                                            │
+│                                                                 │
+│  考慮点：                                                        │
+│  - テナントドメインとIdPのマッピング                              │
+│  - JIT プロビジョニング時の初期ロール設定                         │
+│  - 既存ユーザーとのリンク                                        │
+│  - セッション管理（SLO対応）                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**ヒント:**
-1. OutputGroupSettingsのDestinationを確認
-2. HlsGroupSettingsの設定を確認
-3. 出力ファイル一覧を確認
+---
 
-**解決方法:**
-```python
-# 正しいHLS設定
-"HlsGroupSettings": {
-    "SegmentLength": 6,
-    "MinSegmentLength": 0,
-    "Destination": f"s3://{OUTPUT_BUCKET}/hls/{content_id}/",
-    "ManifestCompression": "NONE",
-    "DirectoryStructure": "SINGLE_DIRECTORY",
-    "OutputSelection": "MANIFESTS_AND_SEGMENTS"  # これを追加
+## 7. 学習リソース
+
+### 公式ドキュメント
+- [Amazon Cognito User Pools](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html)
+- [Cognito Lambda Triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html)
+- [API Gateway Lambda Authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-use-lambda-authorizer.html)
+- [Multi-tenant SaaS Best Practices](https://docs.aws.amazon.com/wellarchitected/latest/saas-lens/saas-lens.html)
+
+### 参考記事
+- [Building Multi-Tenant Solutions on AWS](https://aws.amazon.com/blogs/apn/building-a-multi-tenant-saas-solution-using-amazon-cognito-and-aws-identity-and-access-management/)
+- [SaaS Identity and Isolation with Amazon Cognito](https://aws.amazon.com/blogs/apn/saas-identity-and-isolation-with-amazon-cognito-on-the-aws-cloud/)
+
+---
+
+## 8. 解答例
+
+### 課題1: テナントティア別の機能制限
+
+```typescript
+// lib/lambda/middleware/feature-gate.ts
+interface FeatureGateResult {
+  allowed: boolean;
+  reason?: string;
 }
+
+const TIER_FEATURES: Record<string, Set<string>> = {
+  free: new Set(['projects', 'tasks', 'basic-reports']),
+  standard: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access']),
+  enterprise: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access', 'audit-logs', 'sso', 'custom-branding', 'data-export']),
+};
+
+export function checkFeatureAccess(tenantTier: string, feature: string): FeatureGateResult {
+  const allowedFeatures = TIER_FEATURES[tenantTier] || TIER_FEATURES['free'];
+
+  if (allowedFeatures.has(feature)) {
+    return { allowed: true };
+  }
+
+  // どのティアで利用可能かを提案
+  const availableIn = Object.entries(TIER_FEATURES)
+    .filter(([_, features]) => features.has(feature))
+    .map(([tier]) => tier);
+
+  return {
+    allowed: false,
+    reason: `Feature '${feature}' is not available in '${tenantTier}' plan. Available in: ${availableIn.join(', ')}`,
+  };
+}
+
+// Lambda関数での使用例
+export const handler = async (event: APIGatewayProxyEvent) => {
+  const tenantTier = event.requestContext.authorizer?.tenant_tier || 'free';
+
+  // 高度なレポート機能へのアクセスチェック
+  const featureCheck = checkFeatureAccess(tenantTier, 'advanced-reports');
+
+  if (!featureCheck.allowed) {
+    return {
+      statusCode: 403,
+      body: JSON.stringify({
+        error: 'Feature not available',
+        message: featureCheck.reason,
+        upgradeUrl: 'https://teamhub.example.com/pricing',
+      }),
+    };
+  }
+
+  // 機能の処理を続行
+  // ...
+};
 ```
 
-### 問題3: CloudFrontでCORSエラー
+### 課題2: ユーザー招待フロー
 
-**症状:**
-```
-Access-Control-Allow-Origin エラー
-動画プレイヤーで再生できない
-```
+```typescript
+// lib/lambda/api/invite-user.ts
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { DynamoDBClient, PutItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { randomBytes } from 'crypto';
 
-**ヒント:**
-1. S3のCORS設定を確認
-2. CloudFrontのResponse Headers Policyを確認
-3. ブラウザのキャッシュをクリア
+const dynamodb = new DynamoDBClient({});
+const ses = new SESClient({});
+const TABLE_NAME = process.env.TENANT_TABLE_NAME!;
+const INVITATION_TTL_HOURS = 48;
 
-**解決方法:**
-```bash
-# CloudFront Response Headers Policy設定
-# コンソールから:
-# 1. CloudFront → ディストリビューション → Behaviors
-# 2. Response headers policy: SimpleCORS または カスタムポリシー
-# 3. Access-Control-Allow-Origin: *
-# 4. Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+interface InviteUserRequest {
+  email: string;
+  name: string;
+  role: 'admin' | 'manager' | 'member' | 'guest';
+}
+
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const tenantId = event.pathParameters?.tenantId;
+  const authContext = event.requestContext.authorizer;
+  const inviterId = authContext?.principalId;
+  const inviterName = authContext?.name || 'Team Administrator';
+
+  const body: InviteUserRequest = JSON.parse(event.body || '{}');
+
+  // 招待コードの生成
+  const inviteCode = randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + INVITATION_TTL_HOURS * 60 * 60 * 1000);
+  const now = new Date().toISOString();
+
+  // テナント情報の取得
+  const tenantResult = await dynamodb.send(new GetItemCommand({
+    TableName: TABLE_NAME,
+    Key: {
+      PK: { S: `TENANT#${tenantId}` },
+      SK: { S: 'METADATA' },
+    },
+  }));
+
+  const tenantName = tenantResult.Item?.name?.S || 'TeamHub';
+
+  // 招待レコードの作成
+  await dynamodb.send(new PutItemCommand({
+    TableName: TABLE_NAME,
+    Item: {
+      PK: { S: `TENANT#${tenantId}#INVITATION#${inviteCode}` },
+      SK: { S: 'METADATA' },
+      tenantId: { S: tenantId! },
+      inviteCode: { S: inviteCode },
+      email: { S: body.email },
+      name: { S: body.name },
+      role: { S: body.role },
+      status: { S: 'pending' },
+      invitedBy: { S: inviterId },
+      createdAt: { S: now },
+      expiresAt: { S: expiresAt.toISOString() },
+      ttl: { N: String(Math.floor(expiresAt.getTime() / 1000)) },
+      // メールでの検索用
+      GSI1PK: { S: `INVITATION#EMAIL#${body.email}` },
+      GSI1SK: { S: now },
+    },
+  }));
+
+  // 招待メールの送信
+  const inviteUrl = `https://app.teamhub.example.com/accept-invite?code=${inviteCode}`;
+
+  await ses.send(new SendEmailCommand({
+    Source: 'noreply@teamhub.example.com',
+    Destination: {
+      ToAddresses: [body.email],
+    },
+    Message: {
+      Subject: {
+        Data: `You've been invited to join ${tenantName} on TeamHub`,
+      },
+      Body: {
+        Html: {
+          Data: `
+            <h2>You're invited!</h2>
+            <p>${inviterName} has invited you to join <strong>${tenantName}</strong> on TeamHub.</p>
+            <p>Your role will be: <strong>${body.role}</strong></p>
+            <p>Click the button below to accept the invitation:</p>
+            <p>
+              <a href="${inviteUrl}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; border-radius: 4px;">
+                Accept Invitation
+              </a>
+            </p>
+            <p><small>This invitation expires in ${INVITATION_TTL_HOURS} hours.</small></p>
+          `,
+        },
+      },
+    },
+  }));
+
+  return {
+    statusCode: 201,
+    body: JSON.stringify({
+      message: 'Invitation sent successfully',
+      email: body.email,
+      expiresAt: expiresAt.toISOString(),
+    }),
+  };
+};
+
+// lib/lambda/api/accept-invite.ts
+export const acceptInviteHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const { code, password } = JSON.parse(event.body || '{}');
+
+  // 招待コードの検証
+  const inviteResult = await dynamodb.send(new GetItemCommand({
+    TableName: TABLE_NAME,
+    Key: {
+      PK: { S: `INVITATION#${code}` },
+      SK: { S: 'METADATA' },
+    },
+  }));
+
+  if (!inviteResult.Item) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Invalid or expired invitation' }),
+    };
+  }
+
+  const invitation = inviteResult.Item;
+  const expiresAt = new Date(invitation.expiresAt.S!);
+
+  if (new Date() > expiresAt) {
+    return {
+      statusCode: 410,
+      body: JSON.stringify({ error: 'This invitation has expired' }),
+    };
+  }
+
+  if (invitation.status.S !== 'pending') {
+    return {
+      statusCode: 409,
+      body: JSON.stringify({ error: 'This invitation has already been used' }),
+    };
+  }
+
+  // Cognitoユーザーの作成と招待ステータスの更新は
+  // 前述のcreate-user.tsと同様の処理を実行
+  // ...
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: 'Invitation accepted. Welcome to TeamHub!' }),
+  };
+};
 ```
 
 ---
 
-## 設計の考察ポイント
+## 9. 追加学習
 
-### 1. MediaConvert vs 自前エンコード（FFmpeg）
+### マルチテナントパターンの深掘り
 
-**考察ポイント:**
-- MediaConvert: マネージド、スケーラブル、品質保証
-- FFmpeg on EC2/ECS: 柔軟性、カスタマイズ性
-- コスト比較（長時間動画の場合）
+1. **テナント分離レベルの選択**
+   - Silo: 完全分離（高コスト、高セキュリティ）
+   - Pool: 共有インフラ（低コスト、アプリケーション責務）
+   - Bridge: ハイブリッド（柔軟性重視）
 
-### 2. 出力フォーマットの選定
+2. **ノイジーネイバー問題への対処**
+   - テナント単位のレート制限
+   - リソースクォータの設定
+   - 優先度に基づくリソース配分
 
-**考察ポイント:**
-- HLS vs DASH（デバイスカバレッジ）
-- ビットレートラダーの設計
-- ABR（Adaptive Bitrate）の最適化
+3. **コンプライアンス対応**
+   - データレジデンシー要件
+   - 監査ログの保持
+   - GDPR/個人情報保護法対応
 
-### 3. 並列処理のアプローチ
-
-**考察ポイント:**
-- MediaConvert単独 vs AWS Batch併用
-- チャンク分割エンコード
-- コスト効率とスループットのバランス
-
-### 4. CDN配信の最適化
-
-**考察ポイント:**
-- CloudFrontのキャッシュ戦略
-- セグメントサイズと初回再生時間
-- リージョン配置（エッジロケーション）
-
-### 5. DRMとセキュリティ
-
-**考察ポイント:**
-- 有料コンテンツの保護
-- Widevine / FairPlay対応
-- 署名付きURL / Cookie
+### 次のステップ
+- 課題40でIAM Identity Center（AWS SSO）を使った従業員認証を学習
+- より高度なIdP統合パターンの実装
+- ゼロトラストアーキテクチャへの拡張
 
 ---
 
-## 発展課題（オプション）
+## 10. 参考情報
 
-### 1. DRM対応（SPEKE）
-- AWS Elemental MediaPackage連携
-- Widevine / FairPlay / PlayReady
-- ライセンスサーバー統合
+### GCPとの比較まとめ
 
-### 2. ライブ配信対応
-- MediaLive + MediaPackage
-- ライブ to VODワークフロー
-- 低遅延配信（LL-HLS）
+| 機能 | GCP | AWS |
+|------|-----|-----|
+| ユーザー認証 | Firebase Auth / Identity Platform | Cognito User Pool |
+| マルチテナント | Identity Platform Multi-tenancy | Cognito + Custom Implementation |
+| カスタムクレーム | Firebase Admin SDK | Pre-Token Generation Trigger |
+| SAML/OIDC | Identity Platform | Cognito Identity Provider |
+| 認可 | Cloud IAM + Custom | Lambda Authorizer + Custom |
+| SSO | Cloud Identity | IAM Identity Center |
 
-### 3. コンテンツモデレーション
-- Rekognition Video連携
-- 不適切コンテンツの自動検出
-- 年齢制限の自動判定
+### セキュリティチェックリスト
 
-### 4. 字幕・多言語対応
-- Transcribe連携（自動字幕）
-- Translate連携（翻訳）
-- WebVTT埋め込み
-
-### 5. 視聴分析
-- CloudFrontログ分析
-- Athena + QuickSight
-- コンテンツ人気度ダッシュボード
+- [ ] テナントIDは変更不可（immutable）として設定
+- [ ] 全てのAPIエンドポイントでテナントコンテキストを検証
+- [ ] データベースクエリでテナントIDフィルタリングを必須化
+- [ ] トークンの有効期限を適切に設定（アクセストークン: 1時間以内）
+- [ ] 監査ログで全ての認証・認可イベントを記録
+- [ ] 定期的なセキュリティレビューの実施
 
 ---
 
-## 想定コストと削減方法
+## 11. FAQ
 
-### 月額概算コスト（月間500本 × 平均30分処理想定）
+**Q: なぜCognitoのマルチテナント機能ではなくカスタム実装を選択したのですか？**
 
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| MediaConvert | 500本 × 30分 × 5出力 = 1,250時間 | $625 |
-| Amazon S3 | 入力500GB + 出力2TB | $55 |
-| AWS Lambda | 処理関数実行 | $5 |
-| Step Functions | 500ワークフロー | $0.15 |
-| CloudFront | 5TB転送 | $425 |
-| DynamoDB | オンデマンド | $2 |
-| SNS | 通知 | $0.50 |
-| CloudWatch | ログ | $10 |
-| **合計** | | **約$1,123（約168,000円）** |
+A: Cognitoには直接的なマルチテナント機能がないため、カスタム属性とLambdaトリガーを組み合わせた実装が必要です。この方法により、以下の柔軟性が得られます：
+- テナント固有のビジネスロジックの実装
+- 細かい権限制御（RBAC）
+- テナントメタデータの管理
 
-### コスト削減のポイント
+**Q: テナント数が1000を超えた場合のスケーラビリティは？**
 
-1. **MediaConvertの最適化**
-   - On-Demand vs Reserved Capacity
-   - 品質レベルの調整（SINGLE_PASS vs MULTI_PASS）
-   - → 最大30%削減
+A: Pool モデルでは以下の対策を検討してください：
+- DynamoDBのパーティション設計の最適化
+- Lambda Authorizerのキャッシュ戦略
+- 大規模テナント向けのSilo移行オプション
 
-2. **S3ストレージクラス**
-   - 入力: Standard（一時）→ 処理後削除
-   - 出力: Intelligent-Tiering
-   - → ストレージコスト40%削減
+**Q: Cognito User Poolの制限に達した場合はどうすれば？**
 
-3. **CloudFront Reserved Capacity**
-   - 年間契約で割引
-   - → 配信コスト最大30%削減
+A: Cognito User Poolには以下のデフォルト制限があります：
+- 1ユーザープールあたりの最大ユーザー数: 無制限（ただしAPIレート制限あり）
+- 1ユーザープールあたりのグループ数: 10,000
 
-4. **不要解像度の削除**
-   - 4K対応が不要なら4K出力を削除
-   - → MediaConvertコスト削減
-
-### リソース削除手順
-
-```bash
-# CloudFront（コンソールから無効化→削除）
-
-# S3
-aws s3 rm s3://streamnow-master-${ACCOUNT_ID} --recursive
-aws s3 rm s3://streamnow-output-${ACCOUNT_ID} --recursive
-aws s3 rb s3://streamnow-master-${ACCOUNT_ID}
-aws s3 rb s3://streamnow-output-${ACCOUNT_ID}
-
-# DynamoDB
-aws dynamodb delete-table --table-name streamnow-encoding-jobs
-
-# Step Functions
-aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
-
-# Lambda
-aws lambda delete-function --function-name streamnow-trigger
-aws lambda delete-function --function-name streamnow-start-encoding
-aws lambda delete-function --function-name streamnow-check-encoding
-aws lambda delete-function --function-name streamnow-finalize
-
-# SNS
-aws sns delete-topic --topic-arn arn:aws:sns:...
-
-# IAM
-aws iam detach-role-policy --role-name StreamNowMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-aws iam delete-role --role-name StreamNowMediaConvertRole
-```
+制限に近づいた場合は、リージョン分散または複数User Poolの管理を検討してください。
 
 ---
 
-## 学習のポイント
+## 12. 振り返りチェックリスト
 
-### 1. MediaConvertの基本
-AWS の動画変換サービスとして、入力 → 出力グループ → 出力の構造を理解する。HLS/DASH などのストリーミングフォーマットの基本も押さえる。
+以下の項目を確認して、学習内容の定着度を確認してください：
 
-### 2. イベント駆動アーキテクチャ
-S3イベント → Lambda → Step Functions の流れは、バッチ処理の典型パターン。非同期処理の状態管理方法を学ぶ。
-
-### 3. ABR（Adaptive Bitrate）の概念
-ネットワーク状況に応じて品質を切り替えるストリーミング技術。ビットレートラダーの設計がユーザー体験に直結する。
-
-### 4. CDN配信の基礎
-CloudFront によるグローバル配信、キャッシュ戦略、CORSの設定など、コンテンツ配信の基本を習得する。
-
-### 5. ワークフローの可視化
-Step Functions でエンコード処理を可視化することで、進捗確認やエラー対応が容易になる。長時間バッチ処理では特に重要。
+- [ ] Cognito User Poolのカスタム属性を設定できる
+- [ ] Lambda Triggersを使ってトークンにカスタムクレームを追加できる
+- [ ] Lambda Authorizerでテナントコンテキストを抽出・検証できる
+- [ ] RBACの権限モデルを設計できる
+- [ ] DynamoDBでテナント分離を実現するキー設計ができる
+- [ ] テナントのオンボーディングフローを実装できる
+- [ ] クロステナントアクセスを防ぐセキュリティ対策を説明できる

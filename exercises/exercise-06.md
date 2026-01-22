@@ -1,6 +1,6 @@
-# 課題6: EC企業のデータレイク構築
+# 課題6: LearnHub株式会社の動画教材自動字幕生成システム構築
 
-**難易度: 🟡 初級〜中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -9,665 +9,469 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | データ基盤 |
-| 処理タイプ | バッチ |
+| カテゴリ | AI / メディア処理 / EdTech |
+| 処理タイプ | バッチ / 非同期 |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 5-6時間 |
+| 所要時間 | 5〜6時間 |
 
 ---
 
-## 2. 学習するAWSサービス
+## シナリオ
 
-この演習では以下のAWSサービスを実践的に学習します。
+### 企業プロフィール
 
-### コア技術スタック
-
-| サービス | 役割 | 学習ポイント |
-|----------|------|-------------|
-| **Amazon S3** | データレイクストレージ | 3層アーキテクチャ、ライフサイクル管理 |
-| **AWS Glue** | ETL、データカタログ | クローラー、ETLジョブ、スキーマ管理 |
-| **Amazon Athena** | サーバーレスSQL | パーティションプルーニング、コスト最適化 |
-| **Amazon QuickSight** | BIダッシュボード | SPICE、可視化 |
-
----
-
-## 3. 最終構成図
-
-```mermaid
-flowchart TB
-    subgraph DataSources["Data Sources"]
-        RDS[("RDS MySQL<br/>(購買データ)")]
-        DynamoDB[("DynamoDB<br/>(商品マスタ)")]
-        CloudWatchLogs["CloudWatch Logs"]
-        ExternalAPI["外部API<br/>(広告データ)"]
-    end
-
-    subgraph S3DataLake["Amazon S3 Data Lake"]
-        Raw["Raw Zone<br/>(CSV/JSON)"]
-        Processed["Processed Zone<br/>(Parquet)"]
-        Curated["Curated Zone<br/>(ビジネス指標)"]
-        Raw --> Processed --> Curated
-    end
-
-    subgraph Analytics["分析レイヤー"]
-        GlueCatalog["Glue Data Catalog"]
-        Athena["Amazon Athena<br/>(SQL Queries)"]
-        QuickSight["QuickSight<br/>(Dashboard)"]
-    end
-
-    RDS --> Raw
-    DynamoDB --> Raw
-    CloudWatchLogs --> Raw
-    ExternalAPI --> Raw
-
-    S3DataLake --> GlueCatalog
-    GlueCatalog <--> Athena
-    Athena <--> QuickSight
-```
-
----
-
-## 4. シナリオ
-
-### 企業プロファイル
+**LearnHub株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | 〇〇株式会社 |
-| **業種** | 総合EC（家電・日用品・ファッション） |
-| **従業員数** | 500名（データチーム10名） |
-| **月間購買件数** | 100万件 |
-| **SKU数** | 10万点 |
-| **月間PV** | 5000万PV |
+| 業種 | EdTech（オンライン教育） |
+| 設立 | 2020年 |
+| 従業員数 | 25名 |
+| 月間アクティブ視聴者 | 3万人 |
+| 登録ユーザー | 10万人 |
+| 動画コンテンツ数 | 500本（総時間300時間） |
+| 平均動画長 | 36分 |
+| 月商 | 2,500万円 |
+| 講師数 | 30名（外部委託含む） |
 
 ### 現状の課題
 
+海外展開を進めるため、既存の日本語動画コンテンツに多言語字幕を追加したいが、外注費用と時間がかかりすぎています。また、聴覚障害者向けのアクセシビリティ対応も求められています。
+
+### 数値で示された問題
+
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 字幕付き動画比率 | 20%（日本語のみ） | 100%（日英中） |
+| 字幕作成コスト | 15,000円/時間 | 3,000円/時間以下 |
+| 字幕作成リードタイム | 2週間 | 24時間以内 |
+| 多言語対応言語数 | 日本語のみ | 日本語・英語・中国語 |
+| 月間新規動画 | 20本 | - |
+| 字幕外注費 | 月90万円 | 月20万円以下 |
+
+### 現状の字幕作成フロー
+
 ```
-〇〇株式会社は急成長する総合ECサイトを運営しています。
-データ活用において以下の課題を抱えています：
-
-1. データサイロ化
-   - 購買データはRDS (MySQL)
-   - アクセスログはElasticsearch
-   - 商品データはDynamoDB
-   - それぞれ別々に分析、統合できない
-
-2. 分析の遅延
-   - 月次レポート作成に3日かかる
-   - アドホック分析の依頼対応に1週間
-   - リアルタイムな意思決定ができない
-
-3. コスト非効率
-   - 分析用に本番DBのレプリカを使用
-   - 高額なBIツールのライセンス費用
-   - データエンジニアの工数が分析に消費
-
-4. スケーラビリティの限界
-   - データ量増加でクエリが遅くなっている
-   - 過去データの保持コストが増大
-   - 新しい分析要件への対応が困難
+1. 動画を外部字幕制作会社に送付
+2. 制作会社が文字起こし（3-5日）
+3. 内容確認・修正依頼（2-3日）
+4. 翻訳発注（3-5日）
+5. 翻訳確認・修正（2-3日）
+6. VTT/SRTファイル納品
+7. 動画プレイヤーへ統合
+→ 合計: 2-3週間
 ```
 
-### ビジネス目標
+### 解決したいこと
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| 月次レポート作成時間 | 3日 | 自動化（0日） |
-| アドホック分析対応 | 1週間 | 1時間以内（セルフサービス） |
-| データ統合率 | 0%（サイロ化） | 100% |
-| 過去データ保持期間 | 1年 | 5年以上 |
-| 分析コスト | 月100万円 | 月30万円 |
+1. 動画の音声からの自動文字起こし（日本語）
+2. 日本語字幕の自動生成（タイムスタンプ付き）
+3. 英語・中国語への自動翻訳
+4. 字幕ファイル（VTT形式）の自動生成
+5. 生成された字幕の品質向上（AI校正）
+
+### 成功指標（KPI）
+
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| 字幕カバー率 | 20% | 100% | 3ヶ月後 |
+| 文字起こし精度 | - | 95%以上 | 1ヶ月後 |
+| 字幕作成時間 | 2週間 | 24時間以内 | 1ヶ月後 |
+| コスト削減率 | - | 70%以上 | 3ヶ月後 |
+| 海外ユーザー増加 | - | +30% | 6ヶ月後 |
 
 ---
 
-## 5. 達成目標
+## 達成目標
 
-### 主要な学習成果
+この演習で習得できるスキル：
 
-```
-この課題を完了すると、以下ができるようになります：
+### 技術的な学習ポイント
 
-1. S3ベースのデータレイク構築
-   - Raw/Processed/Curatedの3層アーキテクチャ
-   - パーティショニングによる効率化
-   - ライフサイクル管理でコスト最適化
+1. **Amazon Transcribeの実践活用**
+   - 音声からの自動文字起こし
+   - 日本語モデルの活用
+   - カスタムボキャブラリー設定
 
-2. AWS Glueによるデータ統合
-   - クローラーによるスキーマ自動検出
-   - ETLジョブでのデータ変換
-   - Data Catalogによるメタデータ管理
+2. **Amazon Translateの実践活用**
+   - 多言語翻訳
+   - 用語集（Terminology）の活用
+   - バッチ翻訳処理
 
-3. Amazon Athenaによるクエリ分析
-   - サーバーレスでのSQLクエリ
-   - パーティションプルーニング
-   - クエリ結果のキャッシング
+3. **Amazon Bedrockによる品質向上**
+   - 字幕の校正・修正
+   - 文脈を考慮した翻訳改善
 
-4. Amazon QuickSightによるBI
-   - ダッシュボード作成
-   - SPICE によるパフォーマンス最適化
-   - セルフサービス分析の実現
-```
+4. **メディアパイプラインの構築**
+   - S3イベント駆動
+   - Lambda + SQSによる非同期処理
+   - VTT/SRT形式の生成
 
-### 合格基準
+### 実務で活かせる知識
 
-| 項目 | 基準 |
-|------|------|
-| データレイク | S3に3層構造でデータが格納されていること |
-| ETL | Glueジョブで日次データ処理が自動化されていること |
-| クエリ | Athenaで主要な分析クエリが実行できること |
-| ダッシュボード | QuickSightで売上ダッシュボードが作成されていること |
-| コスト | スキャン量の最適化が実装されていること |
-
----
-
-## 6. 使用するAWSサービス
-
-### コア技術スタック
-
-```yaml
-ストレージ:
-  - Amazon S3: データレイクストレージ
-  - S3 Glacier: 長期アーカイブ
-
-データ処理:
-  - AWS Glue: ETL、データカタログ
-  - AWS Glue DataBrew: データ準備（ノーコード）
-  - Amazon EMR: 大規模データ処理（オプション）
-
-クエリエンジン:
-  - Amazon Athena: サーバーレスSQL
-  - Amazon Redshift Spectrum: DWH連携（オプション）
-
-可視化:
-  - Amazon QuickSight: BIダッシュボード
-
-オーケストレーション:
-  - AWS Step Functions: ワークフロー管理
-  - Amazon EventBridge: スケジュール実行
-
-セキュリティ:
-  - AWS Lake Formation: データレイクガバナンス
-  - AWS IAM: アクセス制御
-  - AWS KMS: 暗号化
-```
+- 音声処理パイプラインの設計
+- 多言語対応システムの構築
+- メディアファイル処理の自動化
 
 ### GCPとの比較
 
 | 機能 | AWS | GCP |
 |------|-----|-----|
-| オブジェクトストレージ | S3 | Cloud Storage |
-| データカタログ | Glue Data Catalog | Data Catalog |
-| ETL | Glue | Dataflow / Dataproc |
-| サーバーレスクエリ | Athena | BigQuery |
-| BI | QuickSight | Looker |
+| 音声認識 | Amazon Transcribe | Speech-to-Text |
+| 翻訳 | Amazon Translate | Cloud Translation |
+| 生成AI | Bedrock | Vertex AI |
+| メディア処理 | MediaConvert | Transcoder API |
 
 ---
 
-## 7. 前提条件
+## 使用するAWSサービス
 
-### 技術要件
+### メインサービス
 
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
-python --version       # 3.9+
+| サービス | 役割 | 選定理由 |
+|----------|------|----------|
+| Amazon Transcribe | 音声→テキスト変換 | 日本語対応、字幕形式出力 |
+| Amazon Translate | 多言語翻訳 | リアルタイム翻訳、用語集対応 |
+| Amazon Bedrock | 字幕校正・品質向上 | 文脈理解、自然な表現 |
+| AWS Lambda | 各処理の実行 | サーバーレス |
+| Amazon S3 | 動画・字幕ファイル保存 | 大容量対応 |
+| Amazon SQS | 非同期処理キュー | 順序制御、リトライ |
 
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export DATALAKE_BUCKET=company-datalake-${AWS_ACCOUNT_ID}
-```
+### 補助サービス
 
-### 事前準備
-
-```bash
-# サンプルデータの概要
-# 以下のデータソースを想定:
-
-1. 購買データ (orders.csv)
-   - order_id, customer_id, order_date, total_amount, status
-
-2. 注文明細 (order_items.csv)
-   - order_item_id, order_id, product_id, quantity, unit_price
-
-3. 商品マスタ (products.csv)
-   - product_id, product_name, category, subcategory, brand, price
-
-4. 顧客データ (customers.csv)
-   - customer_id, name, email, prefecture, city, registration_date
-
-5. アクセスログ (access_logs.json)
-   - timestamp, user_id, page_url, action, device, session_id
-```
+| サービス | 役割 |
+|----------|------|
+| Amazon DynamoDB | 処理ステータス管理 |
+| Amazon SNS | 処理完了通知 |
+| Amazon CloudWatch | 監視・ログ |
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 前提条件
 
-### Challenge 1: Athenaクエリが遅い
+### 必要な事前知識
 
-```
-問題:
-カテゴリ別売上クエリの実行に5分以上かかる。
-データスキャン量も10GB以上になっている。
+- AWSの基本操作（S3, Lambda）
+- Python基礎
+- 字幕フォーマット（VTT/SRT）の基本理解
 
-クエリ:
-SELECT category, SUM(total_amount)
-FROM company_processed.orders o
-JOIN company_processed.order_items oi ON o.order_id = oi.order_id
-JOIN company_processed.products p ON oi.product_id = p.product_id
-WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'
-GROUP BY category
+### 準備するもの
 
-調査項目:
-1. パーティションの活用状況
-2. ファイルフォーマットとサイズ
-3. JOIN最適化
-```
+1. **AWSアカウント**
+   - Bedrock有効化（Claude 3 Haiku推奨）
+   - Transcribe/Translate アクセス権限
 
-<details>
-<summary>解決のヒント</summary>
+2. **開発環境**
+   - AWS CLI v2
+   - Python 3.9以上
 
-```sql
--- 1. パーティションフィルタを使用
-SELECT category, SUM(total_amount)
-FROM company_processed.orders o
-JOIN company_processed.order_items oi ON o.order_id = oi.order_id
-JOIN company_processed.products p ON oi.product_id = p.product_id
-WHERE o.year = 2024 AND o.month = 1  -- パーティションキーを使用
-GROUP BY category;
+3. **テストデータ**
+   - サンプル動画ファイル（MP4, 5-10分）
+   - または音声ファイル（MP3/WAV）
 
--- 2. EXPLAIN で実行計画確認
-EXPLAIN
-SELECT category, SUM(total_amount)
-FROM company_processed.orders ...;
+---
 
--- 3. パーティション状態確認
-SHOW PARTITIONS company_processed.orders;
+## アーキテクチャ概要
 
--- 4. テーブル統計情報更新
-ANALYZE TABLE company_processed.orders COMPUTE STATISTICS;
-
--- 5. Curatedゾーンの事前集計テーブルを使用
--- 日次バッチで集計済みデータを参照
-SELECT category, SUM(total_sales)
-FROM company_curated.daily_sales
-WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'
-GROUP BY category;
-
--- パフォーマンス比較:
--- Before: スキャン10GB、5分
--- After: スキャン100MB、5秒
-```
-</details>
-
-### Challenge 2: Glue ETLジョブがOOM（メモリ不足）で失敗
+### システム全体構成
 
 ```
-問題:
-日次ETLジョブが大量データ処理時にメモリ不足で失敗する。
-
-エラーログ:
-Container killed by YARN for exceeding memory limits.
-10.0 GB of 10 GB physical memory used.
-
-データ量:
-- 入力: 500万レコード
-- 処理後: 1億レコード（JOIN後）
-
-調査項目:
-1. Spark設定
-2. データ処理パターン
-3. ワーカー設定
+[講師が動画アップロード]
+        ↓
+[S3: 動画入力バケット]
+        ↓ S3イベント
+[SQS: 処理キュー]
+        ↓
+[Lambda: transcribe-starter]
+        ↓
+[Amazon Transcribe]（非同期ジョブ）
+        ↓ 完了イベント
+[Lambda: transcribe-callback]
+        ↓
+[S3: 日本語字幕JSON保存]
+        ↓
+[Lambda: translator]
+        ├── Amazon Translate（英語）
+        └── Amazon Translate（中国語）
+        ↓
+[Lambda: vtt-generator]
+        ├── Bedrock（字幕校正）
+        └── VTT/SRTファイル生成
+        ↓
+[S3: 字幕出力バケット]
+        ↓
+[SNS: 完了通知]
 ```
 
-<details>
-<summary>解決のヒント</summary>
+### 字幕生成フロー
 
+1. **動画アップロード**: S3にMP4をアップロード
+2. **音声抽出**: Transcribeが自動で音声を認識
+3. **文字起こし**: 日本語テキスト+タイムスタンプ生成
+4. **翻訳**: Translateで英語・中国語に翻訳
+5. **校正**: Bedrockで字幕の品質向上
+6. **出力**: VTT形式で3言語分の字幕ファイル生成
+7. **通知**: 処理完了をメール通知
+
+---
+
+## トラブルシューティング課題
+
+### 問題1: Transcribeジョブが失敗
+
+**症状:**
+```
+TranscriptionJobStatus: FAILED
+FailureReason: "The media format provided does not match the detected media format."
+```
+
+**ヒント:**
+1. ファイル拡張子と実際のフォーマットが一致しているか確認
+2. サポートされているフォーマットか確認（MP3, MP4, WAV, FLAC等）
+3. ファイルが破損していないか確認
+
+**解決方法:**
 ```python
-# 1. ブロードキャスト結合の活用（小さいテーブル）
-from pyspark.sql.functions import broadcast
+# Lambda内でファイル形式を自動検出
+import mimetypes
 
-# 商品マスタは小さいのでブロードキャスト
-orders_with_products = orders_df.join(
-    broadcast(products_df),  # 小さいテーブルをブロードキャスト
-    'product_id'
-)
-
-# 2. データのパーティショニング
-orders_df = orders_df.repartition(100, 'order_date')
-
-# 3. キャッシュの適切な使用
-products_df.cache()  # 複数回使うテーブルのみキャッシュ
-
-# 4. 不要なカラムを早期に除外
-orders_df = orders_df.select('order_id', 'customer_id', 'order_date', 'total_amount')
-
-# 5. Glueジョブ設定の調整
-# --conf spark.sql.shuffle.partitions=200
-# --conf spark.sql.autoBroadcastJoinThreshold=52428800
-
-# 6. ワーカー数とタイプの変更
-aws glue update-job \
-    --job-name company-orders-etl \
-    --job-update '{
-        "NumberOfWorkers": 10,
-        "WorkerType": "G.2X"
-    }'
-```
-</details>
-
-### Challenge 3: QuickSight SPICEデータセットの更新エラー
-
-```
-問題:
-SPICEへのデータインポートが失敗する。
-QuickSightダッシュボードが古いデータのまま。
-
-エラー:
-SPICE ingestion failed: Source data exceeds SPICE limits
-
-状況:
-- データセットサイズ: 50GB
-- SPICE容量: 10GB
-- 更新頻度: 日次
-
-調査項目:
-1. SPICEの制限
-2. データ量の最適化
-3. 代替アプローチ
-```
-
-<details>
-<summary>解決のヒント</summary>
-
-```sql
--- 1. データ量を削減（直近データのみ）
--- データセットのクエリを修正
-SELECT ...
-FROM company_curated.daily_sales
-WHERE order_date >= date_add('day', -90, current_date)  -- 直近90日のみ
-
--- 2. 集計レベルを上げる
--- 詳細データではなく日次/週次集計を使用
-SELECT
-    date_trunc('week', order_date) as week,
-    category,
-    SUM(total_sales) as weekly_sales
-FROM company_curated.daily_sales
-GROUP BY date_trunc('week', order_date), category
-
--- 3. Direct Queryモードに切り替え（SPICEを使わない）
-aws quicksight update-data-set \
-    --aws-account-id ${AWS_ACCOUNT_ID} \
-    --data-set-id company-daily-sales \
-    --import-mode DIRECT_QUERY
-
--- 4. SPICE容量の追加購入
--- QuickSightコンソールから追加購入（$0.25/GB/月）
-
--- 5. データセットの分割
--- カテゴリ別に複数のデータセットを作成
--- ダッシュボードでパラメータによる切り替え
-```
-</details>
-
----
-
-## 9. 設計の考察ポイント
-
-### データレイクアーキテクチャ
-
-```yaml
-3層アーキテクチャの設計原則:
-
-Raw Zone:
-  目的: ソースデータの忠実な保存
-  形式: CSV, JSON, Avro（ソース形式そのまま）
-  保持期間: 長期（Glacierへアーカイブ）
-  アクセス: ETLジョブのみ
-  注意点:
-    - スキーマ変更に対応できるよう柔軟に
-    - データリネージのためにメタデータ保持
-
-Processed Zone:
-  目的: 分析用に最適化されたデータ
-  形式: Parquet（カラムナー形式）
-  保持期間: 中期（1-2年）
-  アクセス: データエンジニア、アナリスト
-  最適化:
-    - パーティショニング（日付、カテゴリ等）
-    - 適切なファイルサイズ（128MB-1GB）
-    - Snappy圧縮
-
-Curated Zone:
-  目的: ビジネス指標、集計データ
-  形式: Parquet
-  保持期間: 長期
-  アクセス: 全ユーザー（セルフサービス）
-  特徴:
-    - ビジネス用語でのカラム名
-    - 事前計算されたKPI
-    - ドキュメント化されたスキーマ
-```
-
-### コスト最適化戦略
-
-```
-1. ストレージ階層化:
-   - 頻繁アクセス: S3 Standard
-   - 低頻度アクセス: S3 Standard-IA
-   - アーカイブ: S3 Glacier
-
-2. Athenaクエリ最適化:
-   - パーティショニング: 最大90%のコスト削減
-   - Parquet形式: 最大80%のコスト削減
-   - 結果キャッシュ: 同一クエリの再実行を防止
-
-3. Glueジョブ最適化:
-   - Spot Instances: 最大70%のコスト削減
-   - 適切なワーカー数: 過剰プロビジョニング防止
-   - ジョブブックマーク: 増分処理
-
-4. QuickSight最適化:
-   - SPICEの適切なサイジング
-   - ユーザーライセンスの管理
-   - セッション容量の活用
-```
-
----
-
-## 10. 発展課題
-
-### 上級チャレンジ1: リアルタイムデータ取り込み
-
-```yaml
-# Kinesis Firehoseでリアルタイムログ取り込み
-
-KinesisFirehose:
-  DeliveryStreamName: company-access-logs
-  S3DestinationConfiguration:
-    BucketARN: arn:aws:s3:::company-datalake-xxx
-    Prefix: raw/access_logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/
-    ErrorOutputPrefix: errors/
-    BufferingHints:
-      SizeInMBs: 128
-      IntervalInSeconds: 300
-    CompressionFormat: GZIP
-    DataFormatConversionConfiguration:
-      Enabled: true
-      InputFormatConfiguration:
-        Deserializer:
-          JsonSerDe: {}
-      OutputFormatConfiguration:
-        Serializer:
-          ParquetSerDe:
-            Compression: SNAPPY
-      SchemaConfiguration:
-        DatabaseName: company_raw
-        TableName: access_logs
-        RoleARN: arn:aws:iam::xxx:role/FirehoseRole
-```
-
-### 上級チャレンジ2: Lake Formation によるガバナンス
-
-```bash
-# Lake Formationでデータアクセス制御
-
-# データレイク管理者の設定
-aws lakeformation put-data-lake-settings \
-    --data-lake-settings '{
-        "DataLakeAdmins": [
-            {"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:user/datalake-admin"}
-        ]
-    }'
-
-# テーブルレベルの権限付与
-aws lakeformation grant-permissions \
-    --principal '{"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:role/AnalystRole"}' \
-    --resource '{
-        "Table": {
-            "DatabaseName": "company_curated",
-            "Name": "daily_sales"
-        }
-    }' \
-    --permissions SELECT
-
-# カラムレベルの権限付与（PII保護）
-aws lakeformation grant-permissions \
-    --principal '{"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:role/MarketingRole"}' \
-    --resource '{
-        "TableWithColumns": {
-            "DatabaseName": "company_processed",
-            "Name": "customers",
-            "ColumnNames": ["customer_id", "segment", "prefecture"]
-        }
-    }' \
-    --permissions SELECT
-# email, name などのPIIカラムは除外
-```
-
-### 上級チャレンジ3: データ品質チェックの自動化
-
-```python
-# Glue Data Quality ルール定義
-
-from awsgluedq.transforms import EvaluateDataQuality
-
-# 品質ルールセット
-rules = """
-Rules = [
-    ColumnValues "order_id" Uniqueness > 0.99,
-    ColumnValues "customer_id" IsComplete,
-    ColumnValues "total_amount" > 0,
-    ColumnValues "order_date" matches "\\d{4}-\\d{2}-\\d{2}",
-    RowCount > 1000,
-    ColumnValues "status" in ["completed", "shipped", "pending", "cancelled"]
-]
-"""
-
-# 品質チェック実行
-quality_result = EvaluateDataQuality.apply(
-    frame=orders_dyf,
-    ruleset=rules,
-    publishing_options={
-        "dataQualityEvaluationContext": "orders_quality_check",
-        "enableDataQualityCloudWatchMetrics": True,
-        "enableDataQualityResultsPublishing": True
+def get_media_format(key):
+    extension = key.split('.')[-1].lower()
+    format_map = {
+        'mp4': 'mp4',
+        'mp3': 'mp3',
+        'wav': 'wav',
+        'm4a': 'mp4',
+        'flac': 'flac'
     }
-)
+    return format_map.get(extension, 'mp4')
+```
 
-# 結果に基づいてアクション
-if quality_result['Outcome'] == 'Failed':
-    # アラート送信、処理停止など
-    raise Exception(f"Data quality check failed: {quality_result['FailedRules']}")
+### 問題2: 翻訳結果が不自然
+
+**症状:**
+```
+技術用語が一般的な意味で翻訳される
+プログラミング用語が変な日本語になる
+```
+
+**ヒント:**
+1. Amazon Translateの用語集（Terminology）を活用
+2. Bedrockの校正プロンプトを調整
+3. カスタムボキャブラリーを設定
+
+**解決方法:**
+```python
+# 用語集の使用
+def translate_with_terminology(text, source_lang, target_lang, terminology_names):
+    response = translate.translate_text(
+        Text=text,
+        SourceLanguageCode=source_lang,
+        TargetLanguageCode=target_lang,
+        TerminologyNames=terminology_names
+    )
+    return response['TranslatedText']
+
+# 用語集の例（事前にCSVでアップロード）
+# en,ja
+# Lambda,Lambda
+# API Gateway,API Gateway
+# serverless,サーバーレス
+```
+
+### 問題3: 字幕のタイミングがずれる
+
+**症状:**
+```
+音声と字幕が同期していない
+特に翻訳後の字幕で顕著
+```
+
+**ヒント:**
+1. VTTパース時にタイムスタンプが正しく保持されているか
+2. 翻訳で文が長くなりすぎていないか
+3. セグメント分割が適切か
+
+**解決方法:**
+```python
+# 長すぎる字幕を分割
+MAX_CHARS_PER_LINE = 40
+
+def split_long_subtitle(text, max_chars=MAX_CHARS_PER_LINE):
+    if len(text) <= max_chars:
+        return text
+
+    # 適切な位置で改行
+    words = text.split()
+    lines = []
+    current_line = []
+
+    for word in words:
+        if len(' '.join(current_line + [word])) <= max_chars:
+            current_line.append(word)
+        else:
+            lines.append(' '.join(current_line))
+            current_line = [word]
+
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    return '\n'.join(lines)
 ```
 
 ---
 
-## 11. コスト見積もり
+## 設計の考察ポイント
 
-### 月額コスト概算
+### 1. なぜTranscribeの標準字幕出力を使わないのか？
 
-| サービス | 使用量 | 月額コスト |
-|----------|--------|------------|
-| S3 Standard | 500GB | $12 |
-| S3 Standard-IA | 1TB | $12 |
-| S3 Glacier | 2TB | $8 |
-| Glue Crawler | 10時間/月 | $4 |
-| Glue ETL | 100 DPU時間/月 | $44 |
-| Athena | 1TB スキャン/月 | $5 |
-| QuickSight | 5 Author + 20 Reader | $165 |
-| Data Transfer | 100GB | $9 |
-| **合計** | | **約 $259/月** |
+**考察ポイント:**
+- Transcribeの標準VTT出力 vs カスタム処理
+- 翻訳を挟む必要性
+- 品質向上のためのカスタマイズ余地
 
-### 従来構成との比較
+### 2. Bedrockによる校正は必要か？
 
-```
-従来構成（RDSレプリカ + 商用BI）:
-- RDS レプリカ: $200/月
-- BIツールライセンス: $500/月
-- データエンジニア工数: $800/月相当
-- 合計: 約 $1,500/月
+**考察ポイント:**
+- Amazon Translateの品質
+- 追加コストと品質向上のトレードオフ
+- 処理時間への影響
 
-データレイク構成:
-- 合計: 約 $259/月
+### 3. 同期処理 vs 非同期処理の選択
 
-コスト削減: 83% (月額 $1,241 削減)
+**考察ポイント:**
+- Transcribeは非同期のみ
+- 翻訳は同期/非同期どちらも可能
+- ユーザー体験とシステム設計のバランス
+
+### 4. カスタムボキャブラリーの運用
+
+**考察ポイント:**
+- 技術用語の一貫性
+- 更新頻度と管理方法
+- 講師ごとの専門用語対応
+
+### 5. 字幕品質のモニタリング
+
+**考察ポイント:**
+- 自動評価の方法
+- 人間によるサンプリング確認
+- フィードバックループの設計
+
+---
+
+## 発展課題（オプション）
+
+### 1. リアルタイム字幕（ライブ配信対応）
+- Amazon Transcribe Streamingの活用
+- WebSocketによるリアルタイム配信
+- 遅延最小化の工夫
+
+### 2. 話者分離（Speaker Diarization）
+- 複数講師の動画対応
+- 話者ラベルの自動付与
+- 対話形式コンテンツへの対応
+
+### 3. 字幕エディターUIの構築
+- Webベースの字幕編集ツール
+- タイムライン表示
+- 修正→再生成のワークフロー
+
+### 4. 品質スコアリング
+- 文字起こし精度の自動評価
+- WER（Word Error Rate）計測
+- 低品質字幕の自動フラグ
+
+### 5. 対応言語の拡大
+- 韓国語、スペイン語等の追加
+- 言語自動検出
+- 多言語プレイリスト対応
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（月20本×平均36分処理想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| Amazon Transcribe | 20本 × 36分 = 720分 | $17 |
+| Amazon Translate | 720分 × 2言語 × 約2000文字 | $30 |
+| Amazon Bedrock (Haiku) | 720分 × 2言語 × 50セグメント | $5 |
+| AWS Lambda | 処理時間合計 | $2 |
+| Amazon S3 | 動画+字幕保存 | $5 |
+| Amazon DynamoDB | オンデマンド | $1 |
+| Amazon SQS | メッセージ | $0.01 |
+| Amazon SNS | 通知 | $0.01 |
+| CloudWatch | ログ | $3 |
+| **合計** | | **約$63（約9,500円）** |
+
+### コスト削減のポイント
+
+1. **Transcribeの効率化**
+   - 同じ動画の再処理を避ける（キャッシング）
+   - 短い動画は結合して処理
+
+2. **翻訳の最適化**
+   - 繰り返しフレーズのキャッシュ
+   - バッチ翻訳API（大量処理時）
+
+3. **Bedrock校正の選択的適用**
+   - 全セグメントではなく長いセグメントのみ
+   - Claude 3 Haikuの使用（Sonnetより安価）
+
+4. **S3ライフサイクル**
+   - 古い中間ファイルの自動削除
+   - Intelligent-Tieringの活用
+
+### リソース削除手順
+
+```bash
+# S3バケット内容削除
+aws s3 rm s3://learnhub-videos-input-${ACCOUNT_ID} --recursive
+aws s3 rm s3://learnhub-subtitles-output-${ACCOUNT_ID} --recursive
+
+# S3バケット削除
+aws s3 rb s3://learnhub-videos-input-${ACCOUNT_ID}
+aws s3 rb s3://learnhub-subtitles-output-${ACCOUNT_ID}
+
+# DynamoDBテーブル削除
+aws dynamodb delete-table --table-name learnhub-subtitle-jobs
+
+# SQSキュー削除
+aws sqs delete-queue --queue-url https://sqs.${AWS_REGION}.amazonaws.com/${ACCOUNT_ID}/learnhub-subtitle-queue
+
+# SNSトピック削除
+aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:learnhub-subtitle-notifications
+
+# EventBridgeルール削除
+aws events remove-targets --rule learnhub-transcribe-complete --ids 1
+aws events delete-rule --name learnhub-transcribe-complete
+
+# Lambda関数削除
+aws lambda delete-function --function-name learnhub-transcribe-starter
+aws lambda delete-function --function-name learnhub-transcribe-callback
+aws lambda delete-function --function-name learnhub-translator-vtt-generator
+
+# CloudFormation スタック削除
+aws cloudformation delete-stack --stack-name learnhub-subtitle-iam
 ```
 
 ---
 
-## 12. 学習のポイント
+## 学習のポイント
 
-### 今回学んだこと
+### 1. メディア処理パイプラインの設計
+Transcribe（音声認識）→ Translate（翻訳）→ カスタム処理の流れは、メディア処理の典型パターン。各サービスの特性（同期/非同期、制限）を理解して設計する。
 
-```
-1. S3データレイク設計
-   □ 3層アーキテクチャ（Raw/Processed/Curated）
-   □ パーティショニング戦略
-   □ ライフサイクル管理
+### 2. 非同期処理の設計
+Transcribeのような長時間ジョブは必然的に非同期になる。EventBridgeでジョブ完了イベントをキャッチし、後続処理につなげるパターンを習得する。
 
-2. AWS Glue活用
-   □ クローラーによるスキーマ検出
-   □ ETLジョブでのデータ変換
-   □ Data Catalogによるメタデータ管理
+### 3. 多言語対応の考慮点
+翻訳品質は用語集（Terminology）やカスタムボキャブラリーで大きく向上する。技術コンテンツでは特に重要。
 
-3. Amazon Athena
-   □ サーバーレスSQLクエリ
-   □ パーティションプルーニング
-   □ コスト最適化（スキャン量削減）
+### 4. 字幕フォーマットの理解
+VTT/SRT形式の構造を理解し、パース・生成ができるようになる。タイムスタンプの精度が視聴体験に直結する。
 
-4. Amazon QuickSight
-   □ SPICE によるパフォーマンス向上
-   □ ダッシュボード作成
-   □ セルフサービスBI
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS | GCP |
-|------|-----|-----|
-| サーバーレスクエリ | Athena（S3直接） | BigQuery（ストレージ統合） |
-| ETL | Glue（Spark） | Dataflow（Apache Beam） |
-| 価格モデル | スキャン量課金 | スキャン量 or 定額 |
-| 使いやすさ | 複数サービス組合せ | BigQuery一体型 |
-
-### 次のステップ
-
-```
-1. 発展学習:
-   - Amazon Redshift でのDWH構築
-   - Amazon EMR での大規模処理
-   - AWS Lake Formation でのガバナンス
-
-2. 実務応用:
-   - リアルタイムダッシュボード構築
-   - 機械学習パイプライン連携
-   - データメッシュアーキテクチャ
-
-3. 認定資格:
-   - AWS Certified Data Analytics - Specialty
-   - AWS Certified Solutions Architect - Professional
-```
+### 5. AI校正による品質向上
+機械翻訳の結果をLLMで校正する「翻訳後編集（Post-editing）」パターン。コストと品質のバランスを取りながら、実用的な品質を実現する。

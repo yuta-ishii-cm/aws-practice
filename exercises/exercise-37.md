@@ -1,4 +1,4 @@
-# 課題37: CreditAI MLOpsパイプライン - モデル開発から本番運用までの自動化
+# 課題37: 物流企業のイベント駆動配送管理
 
 **難易度: 🟡 中級**
 
@@ -9,557 +9,295 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | MLOps / 機械学習パイプライン |
-| 処理タイプ | バッチ |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-8時間 |
+| カテゴリ | マイクロサービス・API |
+| 処理タイプ | 非同期 |
+| 使用IaC | CDK |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## 2. シナリオ
 
-### 企業プロファイル: CreditAI株式会社
+### 企業プロフィール
+**QuickDeliver株式会社**は、EC事業者向けの配送代行サービスを提供する物流企業です。日次配送件数は1万件を超え、荷主、倉庫、配送ドライバー、エンドユーザーなど多くのステークホルダーと連携しています。
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     CreditAI株式会社                             │
-│                    与信審査AIプラットフォーム                    │
-├─────────────────────────────────────────────────────────────────┤
-│  設立: 2020年    従業員: 50名    本社: 東京                      │
-│  事業: 金融機関向け与信審査AI SaaS                              │
-│  顧客: 銀行・クレジットカード会社30社                           │
-│  年間審査件数: 500万件    API呼び出し: 1日20万件                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【現在のML開発プロセス】                                        │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                                                              ││
-│  │   Data Scientist                 ML Engineer                ││
-│  │   ┌─────────────┐               ┌─────────────┐            ││
-│  │   │ Jupyter     │   手動で      │ 本番環境    │            ││
-│  │   │ Notebook    │───引き渡し───►│ デプロイ    │            ││
-│  │   │ でモデル開発│               │             │            ││
-│  │   └─────────────┘               └─────────────┘            ││
-│  │                                                              ││
-│  │   【問題点】                                                 ││
-│  │   ・開発から本番デプロイまで2週間                           ││
-│  │   ・手動作業によるミス発生                                  ││
-│  │   ・モデルのバージョン管理が不十分                          ││
-│  │   ・再現性の欠如（どの学習データで訓練したか不明）          ││
-│  │   ・モデル監視が手動                                        ││
-│  │   ・規制対応（説明可能性）の工数大                          ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【目指す姿】                                                    │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                    MLOps パイプライン                        ││
-│  │                                                              ││
-│  │  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐    ││
-│  │  │Data │─►│Train│─►│Eval │─►│Reg  │─►│Deploy│─►│Monit│    ││
-│  │  │Prep │  │     │  │     │  │ister│  │     │  │or   │    ││
-│  │  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘    ││
-│  │     │         │         │         │         │       │      ││
-│  │     └─────────┴─────────┴─────────┴─────────┴───────┘      ││
-│  │                         自動化                               ││
-│  │                                                              ││
-│  │  ・コードプッシュから本番デプロイまで4時間                  ││
-│  │  ・完全自動化されたパイプライン                             ││
-│  │  ・全モデルのバージョン管理と追跡                           ││
-│  │  ・自動モデル監視とドリフト検出                             ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 現状の課題
+配送状況の通知システムが各所に分散し、リアルタイム性と一貫性に問題があります：
 
-### 規制要件
+1. **通知の遅延**：配送状況の更新がバッチ処理のため、30分〜1時間遅れる
+2. **通知漏れ**：システム間連携の不整合で、通知が届かないケースが発生
+3. **拡張性の低さ**：新しい通知チャネル（LINE、アプリプッシュ）の追加が困難
+4. **トレーサビリティ不足**：配送の状態遷移履歴が追跡しにくい
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    金融規制対応要件                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【モデルガバナンス要件】                                        │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. モデルの追跡可能性（Traceability）                       ││
-│  │     ・どのデータで学習したか                                ││
-│  │     ・どのハイパーパラメータを使用したか                    ││
-│  │     ・いつ、誰が承認したか                                  ││
-│  │                                                              ││
-│  │  2. 説明可能性（Explainability）                            ││
-│  │     ・審査結果の理由を説明できること                        ││
-│  │     ・SHAP値やFeature Importanceの記録                      ││
-│  │                                                              ││
-│  │  3. 公平性（Fairness）                                      ││
-│  │     ・差別的バイアスがないことの検証                        ││
-│  │     ・定期的な公平性監査                                    ││
-│  │                                                              ││
-│  │  4. 監査証跡（Audit Trail）                                 ││
-│  │     ・全ての判断の記録                                      ││
-│  │     ・7年間の保存義務                                       ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 数値で見る問題
+- 通知遅延：平均 **45分**
+- 通知漏れ率：**2%**（月200件）
+- 顧客問い合わせ：月 **500件**（「荷物はどこ？」）
+- 新チャネル追加：**3ヶ月**かかる
 
-### ビジネス要件と KPI
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    プロジェクト KPI                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【開発効率目標】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  指標              │ 現状        │ 目標        │ 改善      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  デプロイリード    │ 2週間       │ 4時間       │ 98%↓     ││
-│  │  タイム            │             │             │           ││
-│  │  デプロイ頻度      │ 月1回       │ 週2回       │ 8倍↑     ││
-│  │  手動作業時間      │ 40時間/回   │ 2時間/回    │ 95%↓     ││
-│  │  ロールバック時間  │ 4時間       │ 15分        │ 94%↓     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【品質目標】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  指標              │ 現状        │ 目標        │ 基準      ││
-│  ├────────────────────┼─────────────┼─────────────┼───────────┤│
-│  │  モデル精度(AUC)   │ 0.82        │ > 0.85      │ 本番必須  ││
-│  │  推論レイテンシ    │ 500ms       │ < 200ms     │ P99       ││
-│  │  エンドポイント    │ 99.5%       │ 99.95%      │ SLO       ││
-│  │  可用性            │             │             │           ││
-│  │  ドリフト検出時間  │ 7日         │ < 1日       │ 自動      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 成功指標（KPI）
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 通知遅延 | 45分 | 1分以内 |
+| 通知漏れ率 | 2% | 0.1%以下 |
+| 顧客問い合わせ | 500件/月 | 100件/月 |
+| 新チャネル追加 | 3ヶ月 | 1週間 |
 
 ---
 
 ## 3. 学習目標
 
-### 習得スキル
+### 主要な学習成果
+1. EventBridgeを使ったイベント駆動アーキテクチャの構築
+2. Fan-outパターンによる複数通知チャネルへの配信
+3. DynamoDB Streamsによるイベント発行
+4. デッドレターキューによるエラーハンドリング
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       学習目標マップ                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【主要スキル】                                                  │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. SageMaker Pipelines                                     ││
-│  │     ├── パイプライン定義（Python SDK）                      ││
-│  │     ├── ステップの種類と使い分け                            ││
-│  │     ├── 条件分岐とパラメータ化                              ││
-│  │     └── パイプラインの実行と監視                            ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  2. モデルレジストリとバージョン管理                        ││
-│  │     ├── Model Package Group                                 ││
-│  │     ├── モデルの承認ワークフロー                            ││
-│  │     ├── メタデータ管理                                      ││
-│  │     └── リネージュ追跡                                      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  3. モデル監視                                              ││
-│  │     ├── SageMaker Model Monitor                             ││
-│  │     ├── データ品質監視                                      ││
-│  │     ├── モデル品質監視                                      ││
-│  │     └── バイアスドリフト検出                                ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  4. CI/CD for ML                                            ││
-│  │     ├── CodePipeline / CodeBuild                            ││
-│  │     ├── GitOps ワークフロー                                 ││
-│  │     ├── 自動テスト戦略                                      ││
-│  │     └── ブルー/グリーンデプロイ                             ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【副次スキル】                                                  │
-│  ・Terraform によるMLOps基盤構築                                 │
-│  ・EventBridge によるイベント駆動                               │
-│  ・説明可能AI（SageMaker Clarify）                              │
-│  ・コスト最適化                                                  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### GCPとの対応関係
-
-| AWS サービス | GCP 対応サービス | 主な違い |
-|-------------|-----------------|---------|
-| SageMaker Pipelines | Vertex AI Pipelines | Kubeflow ベース |
-| Model Registry | Vertex AI Model Registry | モデル管理 |
-| Model Monitor | Vertex AI Model Monitoring | ドリフト検出 |
-| SageMaker Clarify | Vertex Explainable AI | 説明可能性 |
+### 習得するスキル
+- EventBridge Rules / Event Bus の設計
+- Lambda と SQS / SNS の連携
+- イベントスキーマの設計
+- 冪等性の実装
 
 ---
 
 ## 4. 使用するAWSサービス
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    使用AWSサービス一覧                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【MLOpsコア】                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス              │ 用途                  │ 重要度    ││
-│  ├────────────────────────┼───────────────────────┼───────────┤│
-│  │  SageMaker Pipelines   │ MLパイプライン        │ ★★★★★    ││
-│  │  SageMaker Model Reg.  │ モデル管理            │ ★★★★★    ││
-│  │  SageMaker Model Mon.  │ モデル監視            │ ★★★★☆    ││
-│  │  SageMaker Clarify     │ 説明可能性・公平性    │ ★★★★☆    ││
-│  │  SageMaker Experiments │ 実験管理              │ ★★★☆☆    ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【CI/CD】                                                       │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス              │ 用途                  │ 重要度    ││
-│  ├────────────────────────┼───────────────────────┼───────────┤│
-│  │  CodeCommit / GitHub   │ ソースコード管理      │ ★★★★☆    ││
-│  │  CodePipeline          │ CI/CDオーケストレーション│ ★★★★★ ││
-│  │  CodeBuild             │ ビルド・テスト        │ ★★★★☆    ││
-│  │  EventBridge           │ イベント駆動          │ ★★★☆☆    ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【インフラ】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  Terraform             │ IaC                   │ ★★★★★    ││
-│  │  S3                    │ データ・アーティファクト│ ★★★★★   ││
-│  │  IAM                   │ アクセス制御          │ ★★★★☆    ││
-│  │  CloudWatch            │ ログ・監視            │ ★★★★☆    ││
-│  │  SNS                   │ 通知                  │ ★★★☆☆    ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### コアサービス
+| サービス | 用途 | 重要度 |
+|----------|------|--------|
+| EventBridge | イベントバス・ルーティング | 高 |
+| Lambda | イベント処理 | 高 |
+| SQS | メッセージキューイング | 高 |
+| SNS | Fan-out配信 | 高 |
+| DynamoDB | 配送データ・イベント履歴 | 高 |
+
+### 補助サービス
+| サービス | 用途 |
+|----------|------|
+| API Gateway | 外部システム連携API |
+| SES | メール通知 |
+| CloudWatch | ログ・メトリクス・アラーム |
+| X-Ray | 分散トレーシング |
+| Step Functions | 複雑なワークフロー |
 
 ---
 
-## 5. 前提条件と事前準備
+## 5. 前提条件
 
-### 必要な環境
+### 必要な知識
+- イベント駆動アーキテクチャの基本概念
+- AWS Lambda の基本操作
+- TypeScript の基礎
 
-```bash
-# Terraform バージョン確認
-terraform --version
-# Terraform v1.5.0 以上
-
-# AWS CLI バージョン確認
-aws --version
-# aws-cli/2.x.x 以上
-
-# Python環境
-python3 --version
-# Python 3.9以上
-
-# 必要なPythonパッケージ
-pip install sagemaker boto3 pandas scikit-learn
-```
-
-### AWS環境の準備
-
-```bash
-# 環境変数設定
-export AWS_REGION=ap-northeast-1
-export PROJECT_NAME=creditai
-export ENVIRONMENT=dev
-
-# 作業ディレクトリ作成
-mkdir -p ~/creditai-mlops/{terraform,pipelines,scripts,tests}
-cd ~/creditai-mlops
-```
+### 事前準備
+1. AWSアカウント
+2. AWS CLI v2
+3. Node.js 18.x
+4. AWS CDK CLI
 
 ---
 
-## 6. アーキテクチャ設計
+## 6. アーキテクチャ概要
 
-### MLOpsパイプライン全体像
+### システム構成図
 
 ```mermaid
 architecture-beta
+    group sources(cloud)[Event Sources]
     group aws(cloud)[AWS Cloud]
+    group ingestion(server)[Ingestion Layer] in aws
+    group eventbus(server)[EventBridge] in aws
+    group targets(server)[Event Targets] in aws
+    group notifications(server)[Notification Handlers] in aws
 
-    group source_build(server)[Source and Build] in aws
-    service github(internet)[GitHub Code] in source_build
-    service codebuild(server)[CodeBuild Lint/Test] in source_build
-    service s3artifact(disk)[S3 Artifact Package] in source_build
+    service wms(server)[WMS Warehouse] in sources
+    service tms(server)[TMS Transport] in sources
+    service driver_app(internet)[Driver App] in sources
+    service external_api(server)[External API] in sources
 
-    group sagemaker_pipelines(server)[SageMaker Pipelines] in aws
-    service dataprep(server)[Data Prep] in sagemaker_pipelines
-    service train(server)[Train] in sagemaker_pipelines
-    service eval(server)[Eval] in sagemaker_pipelines
-    service clarify(server)[Clarify Bias] in sagemaker_pipelines
-    service condition(server)[Condition AUC and Bias Check] in sagemaker_pipelines
-    service register(database)[Register Model] in sagemaker_pipelines
+    service apigw(server)[API Gateway POST /events] in ingestion
+    service lambda_ingest(server)[Lambda EventIngestion] in ingestion
 
-    group deployment(server)[Deployment] in aws
-    service registry(database)[Model Registry Pending Approval] in deployment
-    service approval(server)[Manual/Auto Approval] in deployment
-    service staging(server)[Deploy to Staging] in deployment
-    service integration_test(server)[Integration Test] in deployment
-    service production(server)[Deploy to Production Blue/Green] in deployment
+    service eventbridge(server)[EventBridge Custom Event Bus] in eventbus
 
-    group monitoring(server)[Monitoring] in aws
-    service data_quality(server)[Data Quality] in monitoring
-    service model_quality(server)[Model Quality] in monitoring
-    service bias_drift(server)[Bias Drift] in monitoring
-    service cloudwatch(server)[CloudWatch Alarm] in monitoring
-    service sns(internet)[SNS/PagerDuty] in monitoring
+    service sns_customer(server)[SNS Customer] in targets
+    service sqs_shipper(server)[SQS Shipper] in targets
+    service lambda_dashboard(server)[Lambda Dashboard] in targets
+    service s3_archive(disk)[S3 Archive] in targets
 
-    github:R --> L:codebuild
-    codebuild:R --> L:s3artifact
-    s3artifact:B --> T:dataprep
-    dataprep:R --> L:train
-    train:R --> L:eval
-    eval:R --> L:clarify
-    clarify:B --> T:condition
-    condition:B --> T:register
-    register:B --> T:registry
-    registry:B --> T:approval
-    approval:R --> L:staging
-    staging:B --> T:integration_test
-    integration_test:B --> T:production
-    production:B --> T:data_quality
-    data_quality:R --> L:model_quality
-    model_quality:R --> L:bias_drift
-    bias_drift:B --> T:cloudwatch
-    cloudwatch:R --> L:sns
+    service lambda_email(server)[Lambda EmailNotify] in notifications
+    service lambda_sms(server)[Lambda SMSNotify] in notifications
+    service lambda_push(server)[Lambda PushNotify] in notifications
+    service lambda_webhook(server)[Lambda WebhookCall] in notifications
+
+    service ses(server)[SES Email] in notifications
+    service sns_sms(server)[SNS SMS] in notifications
+    service pinpoint(server)[Pinpoint Push] in notifications
+
+    wms:B --> T:apigw
+    tms:B --> T:apigw
+    driver_app:B --> T:apigw
+    external_api:B --> T:apigw
+    apigw:B --> T:lambda_ingest
+    lambda_ingest:B --> T:eventbridge
+    eventbridge:B --> T:sns_customer
+    eventbridge:B --> T:sqs_shipper
+    eventbridge:B --> T:lambda_dashboard
+    eventbridge:B --> T:s3_archive
+    sns_customer:B --> T:lambda_email
+    sns_customer:B --> T:lambda_sms
+    sns_customer:B --> T:lambda_push
+    sqs_shipper:B --> T:lambda_webhook
+```
+
+**EventBridge Rules:**
+- NotifyCustomer: status = OUT_FOR_DELIVERY, DELIVERED
+- NotifyShipper: status = *
+- UpdateDashboard: status = *
+- Archive: status = *
+
+### イベントフロー
+
+```mermaid
+stateDiagram-v2
+    [*] --> ORDER_RECEIVED
+    ORDER_RECEIVED --> PROCESSING
+    PROCESSING --> PICKED_UP
+    PROCESSING --> CANCELLED
+    PICKED_UP --> IN_TRANSIT
+    PICKED_UP --> RETURNED_TO_SENDER
+    IN_TRANSIT --> OUT_FOR_DELIVERY
+    OUT_FOR_DELIVERY --> DELIVERED
+    OUT_FOR_DELIVERY --> DELIVERY_FAILED
+    DELIVERY_FAILED --> RESCHEDULED
+    RESCHEDULED --> OUT_FOR_DELIVERY
+    DELIVERED --> [*]
+    CANCELLED --> [*]
+    RETURNED_TO_SENDER --> [*]
 ```
 
 ---
 
-## 8. トラブルシューティング演習
+## 8. トラブルシューティング課題
 
-### 演習8-1: パイプライン失敗
+### Challenge 1: イベントの重複処理
+**状況**: 同じ配送ステータス更新が複数回処理されている
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 8-1                      │
-│                  パイプライン失敗                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  SageMaker Pipelineの実行が「TrainModel」ステップで              │
-│  失敗している。                                                  │
-│                                                                  │
-│  【エラーログ】                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ClientError: Data download failed for channel 'train'.     ││
-│  │  Please ensure that the role has s3:GetObject permission    ││
-│  │  for the following resources:                               ││
-│  │  s3://creditai-ml-artifacts-dev-xxx/processing/train/       ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. エラーの原因を特定してください                               │
-│  2. IAMポリシーを修正してください                                │
-│  3. パイプラインを再実行して成功を確認してください               │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+**調査ポイント**:
+1. Lambda の冪等性実装を確認
+2. SQS のVisibility Timeoutを確認
+3. DynamoDB の条件付き書き込みを確認
 
-### 演習8-2: モデルドリフト検出
+### Challenge 2: 通知の順序保証
+**状況**: OUT_FOR_DELIVERY より先に DELIVERED の通知が届く
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 8-2                      │
-│                  モデルドリフト検出                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  Model Monitorからデータドリフトアラートが発生した。             │
-│  推論精度の低下が懸念される。                                    │
-│                                                                  │
-│  【モニタリングレポート】                                        │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  Feature: annual_income                                     ││
-│  │  Baseline mean: 450,000                                     ││
-│  │  Current mean: 520,000                                      ││
-│  │  Drift score: 0.35 (threshold: 0.2)                         ││
-│  │                                                              ││
-│  │  Feature: employment_years                                  ││
-│  │  Baseline distribution: Normal                              ││
-│  │  Current distribution: Bimodal                              ││
-│  │  Drift score: 0.42 (threshold: 0.2)                         ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. ドリフトの原因を分析してください                             │
-│  2. 対応方針（再学習 or モデル調整）を決定してください           │
-│  3. 自動再学習トリガーの設計を検討してください                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+**調査ポイント**:
+1. SQS FIFO キューの利用を検討
+2. イベントにシーケンス番号を付与
+3. 消費側での順序制御
+
+### Challenge 3: 外部Webhookのタイムアウト
+**状況**: 荷主のWebhookが応答しない場合にLambdaがタイムアウト
+
+**調査ポイント**:
+1. Webhook呼び出しのタイムアウト設定
+2. 非同期呼び出しへの変更
+3. Circuit Breakerパターンの導入
 
 ---
 
-## 9. 設計課題
+## 9. 設計考慮ポイント
 
-### 設計課題9-1: Feature Store統合
+### ディスカッション1: イベントスキーマの設計
+**テーマ**: スキーマバージョニングと互換性
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      設計課題 9-1                                │
-│                 Feature Store統合                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【課題】                                                        │
-│  SageMaker Feature Storeを導入し、特徴量の                       │
-│  管理と再利用を効率化してください。                              │
-│                                                                  │
-│  【要件】                                                        │
-│  ・オンラインストア（推論時のリアルタイム取得）                  │
-│  ・オフラインストア（学習時のバッチ取得）                        │
-│  ・特徴量のバージョン管理とリネージュ                            │
-│  ・複数モデル間での特徴量共有                                    │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. Feature Group設計                                            │
-│  2. 特徴量取り込みパイプライン                                   │
-│  3. Terraformテンプレート                                        │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 戦略 | メリット | デメリット |
+|------|----------|------------|
+| バージョン埋め込み | 明示的 | スキーマ増加 |
+| 後方互換性維持 | シンプル | 制約が多い |
+| イベントストア | 完全な履歴 | 複雑性増加 |
+
+### ディスカッション2: At-least-once vs Exactly-once
+**テーマ**: メッセージ配信保証
+
+**考慮点**:
+- SQS標準キューは At-least-once
+- 冪等性の実装が必須
+- FIFO キューでの重複排除
+
+### ディスカッション3: Fan-outパターン
+**テーマ**: SNS vs EventBridge
+
+| 観点 | SNS | EventBridge |
+|------|-----|-------------|
+| フィルタリング | シンプル | 高度 |
+| ターゲット数 | 多い | 5ルール/バス |
+| スキーマレジストリ | なし | あり |
 
 ---
 
 ## 10. 発展課題
 
-### 発展課題10-1: マルチモデルA/Bテスト
+### Advanced 1: Event Replay 機能
+**課題**: EventBridge Archive を使って、特定期間のイベントを再処理
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      発展課題 10-1                               │
-│               マルチモデルA/Bテスト                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【シナリオ】                                                    │
-│  新しいアルゴリズム（LightGBM）のモデルを                        │
-│  本番環境で段階的に検証したい。                                  │
-│                                                                  │
-│  【技術要件】                                                    │
-│  ・トラフィックの10%を新モデルに振り分け                        │
-│  ・リアルタイムの精度比較                                        │
-│  ・統計的有意性の自動判定                                        │
-│  ・勝者モデルへの自動切り替え                                    │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. A/Bテストアーキテクチャ                                      │
-│  2. Production Variantの設定                                     │
-│  3. 自動判定Lambdaの実装                                         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### Advanced 2: CQRS + Event Sourcing
+**課題**: イベントストアを構築し、配送状態を完全に再構築可能に
+
+### Advanced 3: Step Functions Saga
+**課題**: 複雑な配送ワークフロー（ピックアップ→配送→返品）をStep Functionsで実装
 
 ---
 
-## 11. 学習のまとめ
+## 11. コスト見積もり
 
-### 学習チェックリスト
+### 月額コスト概算
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     学習チェックリスト                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【SageMaker Pipelines】                                         │
-│  □ パイプラインをPython SDKで定義できる                         │
-│  □ 各種ステップ（Processing, Training等）を使い分けられる       │
-│  □ 条件分岐とパラメータ化ができる                               │
-│  □ パイプラインのデバッグができる                               │
-│                                                                  │
-│  【Model Registry】                                              │
-│  □ Model Package Groupを作成できる                              │
-│  □ モデルのバージョン管理ができる                               │
-│  □ 承認ワークフローを設定できる                                 │
-│  □ モデルメタデータを管理できる                                 │
-│                                                                  │
-│  【Model Monitor】                                               │
-│  □ Data Quality監視を設定できる                                 │
-│  □ Model Quality監視を設定できる                                │
-│  □ ベースラインを作成できる                                     │
-│  □ アラートを設定できる                                         │
-│                                                                  │
-│  【CI/CD】                                                       │
-│  □ CodePipelineでMLパイプラインを統合できる                     │
-│  □ 自動テスト戦略を設計できる                                   │
-│  □ Blue/Greenデプロイを実装できる                               │
-│  □ ロールバック戦略を設計できる                                 │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+| サービス | 使用量 | 月額コスト |
+|----------|--------|------------|
+| EventBridge | 100万イベント | $1 |
+| Lambda | 100万回 × 1秒 × 256MB | $2 |
+| SQS | 100万メッセージ | $0.40 |
+| SNS | 100万通知 | $0.50 |
+| DynamoDB | 10GB + 100万WCU/RCU | $30 |
+| SES | 10万通 | $1 |
+| CloudWatch | ログ10GB | $5 |
+
+**合計**: 約 **$40/月**（約6,000円）
 
 ---
 
-## 12. コスト見積もり
+## 12. 学習のポイント
 
-### 想定コスト（月額）
+### 重要な概念の整理
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      コスト見積もり                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【開発環境】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  SageMaker Pipelines     │ 10実行/月       │ $5             ││
-│  │  Training Jobs           │ 20時間/月       │ $5             ││
-│  │  Processing Jobs         │ 10時間/月       │ $2             ││
-│  │  CodePipeline            │ 1パイプライン   │ $1             ││
-│  │  CodeBuild               │ 100分/月        │ $0.50          ││
-│  │  S3 Storage              │ 50GB            │ $1.15          ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $15         ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【本番環境想定】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Endpoint (ml.m5.large)  │ 2台 × 24h       │ $210           ││
-│  │  Model Monitor           │ 720時間         │ $72            ││
-│  │  SageMaker Pipelines     │ 8実行/月        │ $40            ││
-│  │  Training Jobs (週次)    │ 16時間/月       │ $4             ││
-│  │  CodePipeline            │ 1パイプライン   │ $1             ││
-│  │  S3 Storage              │ 500GB           │ $11.50         ││
-│  │  CloudWatch              │ ログ・メトリクス│ $20            ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $359        ││
-│  │                          │                 │ (約 ¥54,000)   ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. **イベント駆動アーキテクチャ**
+   - 疎結合で拡張性が高い
+   - 新しい消費者を簡単に追加
+   - 障害の分離
 
----
+2. **冪等性**
+   - 同じイベントを複数回処理しても結果が同じ
+   - DynamoDBの条件付き書き込み活用
+   - イベントIDでの重複チェック
 
-## リソースのクリーンアップ
+3. **Fan-outパターン**
+   - 1つのイベントを複数の消費者に配信
+   - SNS + SQSの組み合わせ
+   - フィルタリングによる効率化
 
-```bash
-# Terraformリソース削除
-cd ~/creditai-mlops/terraform
-terraform destroy -auto-approve
+### GCPとの比較
 
-# SageMakerリソースの手動削除（エンドポイント等）
-aws sagemaker delete-endpoint --endpoint-name creditai-production-endpoint
-aws sagemaker delete-endpoint-config --endpoint-config-name creditai-endpoint-config-dev
+| 概念 | AWS | GCP |
+|------|-----|-----|
+| イベントバス | EventBridge | Eventarc |
+| メッセージング | SNS/SQS | Pub/Sub |
+| サーバーレス関数 | Lambda | Cloud Functions |
+| NoSQL DB | DynamoDB | Firestore |
+| メール送信 | SES | SendGrid等 |
 
-# S3バケット削除
-aws s3 rb s3://creditai-ml-data-dev-${ACCOUNT_ID} --force
-aws s3 rb s3://creditai-ml-artifacts-dev-${ACCOUNT_ID} --force
-
-echo "Cleanup completed!"
-```
-
----
-
-**次の課題**: [課題38: MedConnect Cognito認証基盤](exercise-38.md)
-
-**前の課題**: [課題36: SmartRetail SageMakerモデル基盤](exercise-36.md)
+### 次のステップ
+1. リアルタイムダッシュボードの構築
+2. 機械学習による配送時間予測
+3. 異常検知アラートの実装

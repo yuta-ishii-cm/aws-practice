@@ -1,6 +1,6 @@
-# 課題19: ヘルスケア企業のセキュリティ監視基盤構築
+# 課題19: StreamNow株式会社の動画エンコーディングパイプライン構築
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級〜中級**
 
 ---
 
@@ -8,915 +8,453 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | セキュリティ・コンプライアンス |
-| 処理タイプ | リアルタイム |
+| 難易度 | 初級〜中級 |
+| カテゴリ | バッチ処理 / メディア / コンテンツ配信 |
+| 処理タイプ | バッチ / イベント駆動 |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 5-6時間 |
+| 所要時間 | 5〜6時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## シナリオ
 
-### 企業プロファイル
-- **企業名**: MedSecure株式会社
-- **業種**: 医療データ管理・分析プラットフォーム
-- **規模**: 従業員150名、エンジニア25名
-- **データ規模**: 患者データ100万件、月間API呼び出し5000万回
-- **現状インフラ**: AWS上でマルチアカウント環境を運用
+### 企業プロフィール
+
+**StreamNow株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
+
+| 項目 | 内容 |
+|------|------|
+| 業種 | 動画配信（OTT） |
+| 設立 | 2019年 |
+| 従業員数 | 80名 |
+| 月間アクティブユーザー | 50万人 |
+| 有料会員数 | 30万人 |
+| 月商 | 3億円 |
+| コンテンツ数 | 2,000本 |
+| 月間新規コンテンツ | 500本 |
+| 対応デバイス | Web、iOS、Android、Smart TV、Fire TV |
 
 ### 現状の課題
-MedSecure株式会社は、複数の医療機関から患者データを預かり、AIによる診断支援サービスを提供しています。しかし、以下の問題を抱えています：
 
-1. **セキュリティ可視性の欠如**
-   - 複数AWSアカウントのセキュリティ状態が一元管理されていない
-   - 脅威検知が手動で、発見が遅れがち
-   - セキュリティイベントの対応が属人化
+コンテンツ制作会社から納品されるマスター動画（4K ProRes形式）を、各デバイス向けに手動でエンコードしています。エンコード作業がボトルネックとなり、コンテンツの配信開始が遅延しています。
 
-2. **コンプライアンス対応の負荷**
-   - HIPAA準拠の証跡管理が煩雑
-   - 監査対応に毎回1ヶ月以上かかる
-   - セキュリティベースラインの維持が困難
+### 数値で示された問題
 
-3. **インシデント対応の遅延**
-   - 異常検知から対応まで平均4時間
-   - 夜間・休日の対応体制が不十分
-   - 対応手順が標準化されていない
-
-### ビジネス要件
-```
-機能要件:
-- マルチアカウントのセキュリティ統合監視
-- 脅威の自動検知と重要度分類
-- セキュリティイベントの自動対応
-- コンプライアンスダッシュボードの構築
-
-非機能要件:
-- 脅威検知から通知まで5分以内
-- 重大インシデントの自動隔離（15分以内）
-- 99.9%の監視システム稼働率
-- 監査証跡の13ヶ月保持
-```
-
-### 成功指標（KPI）
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| 平均検知時間（MTTD） | 4時間 | 5分 |
-| 平均対応時間（MTTR） | 8時間 | 30分 |
-| セキュリティ検出カバー率 | 40% | 95% |
-| コンプライアンススコア | 65% | 95% |
-| 自動対応率 | 0% | 80% |
+| 月間エンコード動画数 | 500本 | 変わらず |
+| 1本あたりエンコード時間 | 4時間 | 30分以内 |
+| エンコード担当者 | 2名専任 | 0名（自動化） |
+| 配信開始リードタイム | 48時間 | 4時間以内 |
+| エンコードエラー率 | 5% | 1%以下 |
+| 出力フォーマット数 | 8種類 | 12種類以上 |
+
+### 現状のエンコードワークフロー
+
+```
+1. 制作会社からマスター動画をHDD/クラウドで受領
+2. 担当者がローカルPCにダウンロード（30分〜1時間）
+3. Adobe Media Encoderで各フォーマットにエンコード（2〜3時間）
+4. 目視で品質チェック（30分）
+5. CDNにアップロード（30分）
+6. メタデータ登録
+→ 合計: 4〜5時間/本
+```
+
+### 必要な出力フォーマット
+
+| プロファイル | 解像度 | ビットレート | 対象デバイス |
+|--------------|--------|--------------|--------------|
+| 4K UHD | 3840×2160 | 15Mbps | 4K TV |
+| 1080p High | 1920×1080 | 8Mbps | Smart TV, PC |
+| 1080p | 1920×1080 | 5Mbps | PC, Tablet |
+| 720p | 1280×720 | 3Mbps | Mobile WiFi |
+| 480p | 854×480 | 1.5Mbps | Mobile 4G |
+| 360p | 640×360 | 0.8Mbps | Mobile 3G |
+| Audio Only | - | 128kbps | バックグラウンド再生 |
+
++ HLS/DASH 両対応
+
+### 解決したいこと
+
+1. マスター動画アップロード後の自動エンコード
+2. 複数フォーマットへの並列エンコード
+3. 配信開始リードタイムの大幅短縮
+4. エンコード品質の一貫性確保
+5. 自動品質チェック・エラー通知
+
+### 成功指標（KPI）
+
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| エンコード時間/本 | 4時間 | 30分以内 | 1ヶ月後 |
+| 配信リードタイム | 48時間 | 4時間以内 | 1ヶ月後 |
+| 自動化率 | 0% | 95%以上 | 2ヶ月後 |
+| エンコードエラー率 | 5% | 1%以下 | 1ヶ月後 |
+| 人的工数 | 160時間/月 | 10時間/月 | 2ヶ月後 |
 
 ---
 
-## 3. 学習目標
+## 達成目標
 
-### 本課題で習得するスキル
+この演習で習得できるスキル：
 
-```
-1. セキュリティ監視（理解度：詳細）
-   - GuardDutyによる脅威検知の設定
-   - Security Hubによるセキュリティ統合管理
-   - マルチアカウントセキュリティ集約
+### 技術的な学習ポイント
 
-2. 自動対応システム（理解度：実装）
-   - EventBridgeによるイベントルーティング
-   - Lambdaによる自動修復アクション
-   - Step Functionsによるワークフロー自動化
+1. **AWS Elemental MediaConvertの実践活用**
+   - ジョブテンプレートの設計
+   - 出力グループ（HLS, DASH）の設定
+   - カスタムプリセット作成
 
-3. コンプライアンス管理（理解度：基礎）
-   - AWS Configによる構成評価
-   - カスタムセキュリティ基準の実装
-   - 監査レポートの自動生成
-```
+2. **AWS Batchによる大規模バッチ処理**
+   - コンピューティング環境の設計
+   - ジョブ定義とジョブキュー
+   - スポットインスタンス活用
 
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Security Command Center → Security Hub
-- Event Threat Detection → GuardDuty
-- Cloud Functions → Lambda
-- Eventarc → EventBridge
-- Organization Policy → AWS Config Rules
+3. **S3イベント駆動アーキテクチャ**
+   - S3 → Lambda → MediaConvert
+   - Step Functionsによるワークフロー
 
-主な違い:
-1. Security Hub: 複数のセキュリティサービスを統合し、
-   統一されたセキュリティビューを提供（SCCに近いが、
-   より多くのサードパーティ統合が可能）
+4. **CloudFrontによるコンテンツ配信**
+   - HLS/DASH配信設定
+   - キャッシュ戦略
 
-2. GuardDuty: ML ベースの脅威検知に特化
-   （GCPのEvent Threat Detectionより広範な検知パターン）
+### 実務で活かせる知識
 
-3. EventBridge: イベント駆動アーキテクチャの中核
-   （Eventarcより柔軟なルーティングとフィルタリング）
-```
+- 動画配信プラットフォームの構築
+- メディア処理パイプラインの設計
+- コスト最適化（スポットインスタンス）
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| 動画変換 | MediaConvert | Transcoder API |
+| バッチ処理 | AWS Batch | Cloud Run Jobs / Batch |
+| CDN | CloudFront | Cloud CDN |
+| ストレージ | S3 | Cloud Storage |
 
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### メインサービス
-| サービス | 役割 | 使用機能 |
+
+| サービス | 役割 | 選定理由 |
 |----------|------|----------|
-| **Amazon GuardDuty** | 脅威検知 | ML検知、マルウェア保護、Kubernetes監査 |
-| **AWS Security Hub** | 統合管理 | セキュリティ基準、検出結果集約 |
-| **Amazon EventBridge** | イベント処理 | ルール、パターンマッチング |
-| **AWS Lambda** | 自動対応 | 修復アクション、通知 |
+| AWS Elemental MediaConvert | 動画エンコード | 高品質、多フォーマット対応 |
+| AWS Batch | 大規模並列処理（前処理用） | スポット対応、コスト効率 |
+| Amazon S3 | 入力/出力ストレージ | 大容量、イベント通知 |
+| AWS Lambda | オーケストレーション | イベント駆動 |
+| AWS Step Functions | ワークフロー管理 | 可視化、エラー処理 |
+| Amazon CloudFront | コンテンツ配信 | グローバル配信 |
 
-### サポートサービス
-| サービス | 用途 |
+### 補助サービス
+
+| サービス | 役割 |
 |----------|------|
-| **AWS Config** | 構成評価、コンプライアンスチェック |
-| **AWS Organizations** | マルチアカウント管理 |
-| **Amazon SNS** | 通知配信 |
-| **AWS Step Functions** | ワークフロー自動化 |
-| **Amazon S3** | 証跡・レポート保存 |
-| **AWS CloudTrail** | API監査ログ |
-| **Amazon CloudWatch** | メトリクス・ログ監視 |
-
-### アーキテクチャ図
-
-```mermaid
-architecture-beta
-    group org(cloud)[AWS Organizations]
-
-    group security_acct(server)[Security Account 集約] in org
-    group prod_acct(server)[Production Account] in org
-    group dev_acct(server)[Development Account] in org
-    group stg_acct(server)[Staging Account] in org
-
-    service sechub(server)[Security Hub Admin] in security_acct
-    service guardduty_admin(server)[GuardDuty Delegated Admin] in security_acct
-    service config_agg(server)[AWS Config Aggregator] in security_acct
-    service eventbridge(server)[EventBridge Central] in security_acct
-    service lambda_remediate(server)[Lambda Remediate] in security_acct
-    service stepfunctions(server)[Step Functions] in security_acct
-    service sns(server)[SNS Notify] in security_acct
-    service s3_trail(disk)[S3 証跡保存] in security_acct
-    service slack(internet)[Slack PagerDuty] in security_acct
-
-    service prod_guardduty(server)[GuardDuty Member] in prod_acct
-    service prod_config(server)[Config Member] in prod_acct
-
-    service dev_guardduty(server)[GuardDuty Member] in dev_acct
-    service dev_config(server)[Config Member] in dev_acct
-
-    service stg_guardduty(server)[GuardDuty Member] in stg_acct
-    service stg_config(server)[Config Member] in stg_acct
-
-    guardduty_admin:L --> R:sechub
-    config_agg:L --> R:sechub
-    sechub:B --> T:eventbridge
-    eventbridge:B --> T:lambda_remediate
-    eventbridge:B --> T:stepfunctions
-    eventbridge:B --> T:sns
-    stepfunctions:B --> T:s3_trail
-    sns:B --> T:slack
-
-    prod_guardduty:T --> B:guardduty_admin
-    prod_config:T --> B:config_agg
-    dev_guardduty:T --> B:guardduty_admin
-    dev_config:T --> B:config_agg
-    stg_guardduty:T --> B:guardduty_admin
-    stg_config:T --> B:config_agg
-```
+| Amazon DynamoDB | ジョブ状態管理 |
+| Amazon SNS | 完了/エラー通知 |
+| Amazon CloudWatch | 監視・ログ |
+| AWS Secrets Manager | APIキー管理 |
 
 ---
 
-## 5. 前提条件と事前準備
+## 前提条件
 
-### 必要な環境
-```bash
-# AWS CLI v2
-aws --version  # 2.x以上
+### 必要な事前知識
 
-# Python 3.9以上
-python3 --version
+- AWSの基本操作（S3, Lambda）
+- 動画フォーマットの基本（コーデック、コンテナ）
+- HLS/DASHの基本概念
 
-# Terraform（オプション）
-terraform --version  # 1.5以上
+### 準備するもの
 
-# jq（JSON処理）
-jq --version
-```
+1. **AWSアカウント**
+   - MediaConvertへのアクセス権限
+   - 適切なIAM権限
 
-### AWSアカウント要件
-```
-- AWS Organizations が有効化されていること
-- Security Account（セキュリティ集約用）が作成済み
-- 複数のメンバーアカウント（本演習では最低2つ）
-- IAM権限：OrganizationsFullAccess, SecurityHubFullAccess,
-  GuardDutyFullAccess, ConfigFullAccess, Lambda管理者
-```
+2. **開発環境**
+   - AWS CLI v2
+   - Python 3.9以上
 
-### 事前準備スクリプト
-```bash
-#!/bin/bash
-# setup-security-baseline.sh
-
-# 変数設定
-SECURITY_ACCOUNT_ID="111111111111"  # セキュリティアカウントID
-PRODUCTION_ACCOUNT_ID="222222222222"  # 本番アカウントID
-REGION="ap-northeast-1"
-
-# ディレクトリ構造の作成
-mkdir -p medsecure-security/{terraform,lambda,config-rules,dashboards}
-cd medsecure-security
-
-# 必要なIAMロールの確認
-echo "Checking IAM permissions..."
-aws sts get-caller-identity
-
-# Organizations の確認
-echo "Checking Organizations..."
-aws organizations describe-organization
-
-# 既存のSecurity Hub状態確認
-echo "Checking Security Hub status..."
-aws securityhub describe-hub --region $REGION 2>/dev/null || echo "Security Hub not enabled"
-
-# 既存のGuardDuty状態確認
-echo "Checking GuardDuty status..."
-aws guardduty list-detectors --region $REGION
-```
+3. **テストデータ**
+   - サンプル動画ファイル（MP4, 1分程度）
 
 ---
 
-## 6. アーキテクチャ設計
+## アーキテクチャ概要
 
-### セキュリティ検知フロー設計
-```yaml
-# security-detection-flow.yaml
-detection_sources:
-  guardduty:
-    enabled_features:
-      - EC2_MALWARE_PROTECTION
-      - S3_DATA_EVENTS
-      - EKS_AUDIT_LOGS
-      - RDS_LOGIN_EVENTS
-      - LAMBDA_NETWORK_LOGS
-    finding_types:
-      critical:
-        - "Trojan:*"
-        - "CryptoCurrency:*"
-        - "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration*"
-      high:
-        - "Recon:*"
-        - "Persistence:*"
-        - "PrivilegeEscalation:*"
-      medium:
-        - "Policy:*"
-        - "Stealth:*"
+### システム全体構成
 
-  security_hub:
-    standards:
-      - AWS-Foundational-Security-Best-Practices
-      - CIS-AWS-Foundations-Benchmark
-      - HIPAA  # カスタム基準
-    aggregation:
-      - CRITICAL findings → Immediate response
-      - HIGH findings → 1-hour response
-      - MEDIUM findings → 24-hour review
+```
+[制作会社]
+    ↓ マスター動画アップロード
+[S3: 入力バケット]
+    ↓ S3イベント
+[Lambda: トリガー]
+    ↓
+[Step Functions: エンコードワークフロー]
+    ├── [MediaConvert: 動画エンコード]
+    │     ├── HLS出力（7プロファイル）
+    │     └── DASH出力（7プロファイル）
+    │
+    ├── [Lambda: サムネイル生成]
+    │
+    └── [Lambda: メタデータ更新]
+            ↓
+[S3: 出力バケット]
+    ↓
+[CloudFront: CDN配信]
+    ↓
+[視聴者]
 
-  config:
-    managed_rules:
-      - s3-bucket-public-read-prohibited
-      - ec2-instance-no-public-ip
-      - encrypted-volumes
-      - rds-storage-encrypted
-    custom_rules:
-      - hipaa-phi-encryption-check
-      - patient-data-access-logging
+[DynamoDB: ジョブ状態管理]
+[SNS: 完了/エラー通知]
 ```
 
-### 自動対応マトリックス
-```yaml
-# auto-remediation-matrix.yaml
-remediation_actions:
-  # GuardDuty findings
-  "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration":
-    severity: CRITICAL
-    auto_response: true
-    actions:
-      - isolate_instance
-      - revoke_credentials
-      - create_forensic_snapshot
-      - notify_security_team
-    escalation: immediate
+### エンコードフロー
 
-  "Policy:S3/BucketPublicAccessGranted":
-    severity: HIGH
-    auto_response: true
-    actions:
-      - block_public_access
-      - notify_data_owner
-    escalation: 1_hour
-
-  "Recon:EC2/PortProbeUnprotectedPort":
-    severity: MEDIUM
-    auto_response: false
-    actions:
-      - log_event
-      - notify_security_team
-    escalation: 24_hours
-
-  # Config compliance
-  "s3-bucket-server-side-encryption-enabled":
-    auto_response: true
-    actions:
-      - enable_default_encryption
-      - notify_bucket_owner
-
-  "ec2-instance-no-public-ip":
-    auto_response: false  # 要確認
-    actions:
-      - create_ticket
-      - notify_account_owner
-```
+1. **アップロード**: 制作会社がS3にマスター動画をアップロード
+2. **トリガー**: S3イベントでLambdaが起動
+3. **ワークフロー**: Step Functionsで処理開始
+4. **エンコード**: MediaConvertで複数フォーマットに変換
+5. **後処理**: サムネイル生成、メタデータ登録
+6. **通知**: 完了通知を送信
+7. **配信**: CloudFront経由で配信開始
 
 ---
 
-## 8. トラブルシューティング課題
+## トラブルシューティング課題
 
-### 課題1: GuardDuty の検出結果が Security Hub に表示されない
+### 問題1: MediaConvertジョブがエラー終了
 
-**症状**:
+**症状:**
 ```
-GuardDuty で脅威が検出されているが、Security Hub のダッシュボードに
-表示されない。EventBridge ルールもトリガーされていない。
+MediaConvert job status: ERROR
+"Unable to open input file"
 ```
 
-**調査コマンド**:
+**ヒント:**
+1. 入力ファイルのS3パスが正しいか確認
+2. MediaConvertロールのS3権限を確認
+3. 入力ファイルが破損していないか確認
+
+**解決方法:**
 ```bash
-# GuardDuty の検出結果確認
-aws guardduty list-findings --detector-id YOUR_DETECTOR_ID
+# IAMロールのポリシー確認
+aws iam list-attached-role-policies --role-name StreamNowMediaConvertRole
 
-# Security Hub の製品統合状態確認
-aws securityhub list-enabled-products-for-import
+# S3アクセステスト
+aws s3 ls s3://streamnow-master-${ACCOUNT_ID}/uploads/
 
-# EventBridge ルールの状態確認
-aws events describe-rule --name guardduty-findings-production
+# MediaConvert用の追加ポリシー
+aws iam attach-role-policy \
+  --role-name StreamNowMediaConvertRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 ```
 
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
+### 問題2: HLSマニフェストが正しく生成されない
 
-**原因**: Security Hub と GuardDuty の製品統合が有効化されていない
-
-**解決手順**:
-```bash
-# 1. Security Hub で GuardDuty 統合を有効化
-aws securityhub enable-import-findings-for-product \
-    --product-arn "arn:aws:securityhub:ap-northeast-1::product/aws/guardduty"
-
-# 2. 統合が有効になったことを確認
-aws securityhub list-enabled-products-for-import
-
-# 3. GuardDuty の Finding を手動で Security Hub にプッシュ（テスト）
-aws securityhub batch-import-findings --findings '[{
-    "SchemaVersion": "2018-10-08",
-    "Id": "test-finding-001",
-    "ProductArn": "arn:aws:securityhub:ap-northeast-1::product/aws/guardduty",
-    "GeneratorId": "test-generator",
-    "AwsAccountId": "123456789012",
-    "Types": ["Software and Configuration Checks/Vulnerabilities"],
-    "CreatedAt": "2024-01-15T00:00:00.000Z",
-    "UpdatedAt": "2024-01-15T00:00:00.000Z",
-    "Severity": {"Label": "HIGH"},
-    "Title": "Test Finding",
-    "Description": "Test finding for integration verification",
-    "Resources": [{"Type": "AwsAccount", "Id": "AWS::::Account:123456789012"}]
-}]'
+**症状:**
+```
+index.m3u8が存在しない
+プレイヤーで再生できない
 ```
 
-**追加確認事項**:
-- 両サービスが同じリージョンで有効化されているか
-- IAM 権限が適切に設定されているか
-- Organizations を使用している場合、Delegated Admin が正しく設定されているか
-</details>
+**ヒント:**
+1. OutputGroupSettingsのDestinationを確認
+2. HlsGroupSettingsの設定を確認
+3. 出力ファイル一覧を確認
 
-### 課題2: Lambda 自動修復が実行されない
-
-**症状**:
-```
-CRITICAL な GuardDuty finding が検出されたが、
-Step Functions ワークフローが開始されず、自動修復が実行されない。
-Lambda 関数の CloudWatch Logs にもエントリがない。
-```
-
-**調査コマンド**:
-```bash
-# EventBridge ルールの確認
-aws events list-rules --name-prefix "guardduty"
-
-# Lambda の呼び出し状況確認
-aws lambda get-function --function-name security-event-router-production
-
-# EventBridge のイベント履歴確認（CloudTrail）
-aws cloudtrail lookup-events \
-    --lookup-attributes AttributeKey=EventName,AttributeValue=PutEvents
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: EventBridge ルールの Lambda 呼び出し権限が不足している
-
-**解決手順**:
-```bash
-# 1. EventBridge ルールのターゲット確認
-aws events list-targets-by-rule --rule guardduty-findings-production
-
-# 2. Lambda のリソースベースポリシー確認
-aws lambda get-policy --function-name security-event-router-production
-
-# 3. Lambda 呼び出し権限を追加
-aws lambda add-permission \
-    --function-name security-event-router-production \
-    --statement-id EventBridgeInvoke \
-    --action lambda:InvokeFunction \
-    --principal events.amazonaws.com \
-    --source-arn arn:aws:events:ap-northeast-1:123456789012:rule/guardduty-findings-production
-
-# 4. テストイベントを送信して確認
-aws events put-events --entries '[{
-    "Source": "aws.guardduty",
-    "DetailType": "GuardDuty Finding",
-    "Detail": "{\"severity\": 8.0, \"type\": \"UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration\", \"title\": \"Test Critical Finding\", \"accountId\": \"123456789012\"}"
-}]'
-
-# 5. Lambda ログを確認
-aws logs tail /aws/lambda/security-event-router-production --follow
-```
-
-**追加確認事項**:
-- EventBridge ルールの State が ENABLED になっているか
-- イベントパターンが正しくマッチしているか
-- Lambda 関数のタイムアウト設定は十分か
-</details>
-
-### 課題3: クロスアカウント修復が失敗する
-
-**症状**:
-```
-メンバーアカウントで検出されたセキュリティイベントに対して、
-セキュリティアカウントからの自動修復が "AccessDenied" で失敗する。
-```
-
-**エラーログ**:
-```json
-{
-    "errorType": "ClientError",
-    "errorMessage": "An error occurred (AccessDenied) when calling the AssumeRole operation: User: arn:aws:sts::111111111111:assumed-role/security-auto-remediation-role-production/security-auto-remediation-production is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::222222222222:role/SecurityRemediationRole"
-}
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: メンバーアカウントの SecurityRemediationRole の信頼ポリシーが
-セキュリティアカウントからのロール引き受けを許可していない
-
-**解決手順**:
-```bash
-# メンバーアカウントで実行
-
-# 1. 信頼ポリシーを確認
-aws iam get-role --role-name SecurityRemediationRole
-
-# 2. 正しい信頼ポリシーを設定
-cat > trust-policy.json << 'EOF'
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Principal": {
-                "AWS": "arn:aws:iam::111111111111:role/security-auto-remediation-role-production"
-            },
-            "Action": "sts:AssumeRole",
-            "Condition": {
-                "StringEquals": {
-                    "sts:ExternalId": "MedSecureSecurityRemediation"
-                }
-            }
-        }
-    ]
-}
-EOF
-
-aws iam update-assume-role-policy \
-    --role-name SecurityRemediationRole \
-    --policy-document file://trust-policy.json
-
-# 3. ロールに必要な権限を付与
-cat > remediation-policy.json << 'EOF'
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeInstances",
-                "ec2:ModifyInstanceAttribute",
-                "ec2:StopInstances",
-                "ec2:CreateSnapshot",
-                "ec2:CreateTags",
-                "s3:PutBucketPublicAccessBlock"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-EOF
-
-aws iam put-role-policy \
-    --role-name SecurityRemediationRole \
-    --policy-name RemediationActions \
-    --policy-document file://remediation-policy.json
-
-# 4. Lambda コードを更新して ExternalId を使用
-# assume_role 呼び出しに ExternalId を追加
-```
-
-**Lambda コード修正**:
+**解決方法:**
 ```python
-def assume_role_in_account(account_id):
-    response = sts_client.assume_role(
-        RoleArn=f'arn:aws:iam::{account_id}:role/SecurityRemediationRole',
-        RoleSessionName='SecurityAutoRemediation',
-        ExternalId='MedSecureSecurityRemediation'  # 追加
-    )
-    return response['Credentials']
-```
-</details>
-
----
-
-## 9. 設計課題
-
-### 設計課題: マルチリージョン・マルチアカウントのセキュリティ集約アーキテクチャ
-
-**シナリオ**:
-MedSecure社は事業拡大に伴い、以下の構成でAWSを運用することになりました：
-
-- **アカウント構成**:
-  - Production Account（東京）
-  - Production Account（バージニア北部）※ DR用
-  - Development Account（東京）
-  - Staging Account（東京）
-  - Security Account（中央管理）
-
-- **要件**:
-  1. 全アカウント・全リージョンのセキュリティイベントを一元管理
-  2. 検出から通知まで5分以内
-  3. HIPAA、SOC2 準拠の監査証跡
-  4. コスト効率の良い設計
-
-**設計すべき項目**:
-```
-1. セキュリティサービスの集約構成
-   - GuardDuty のマルチアカウント・マルチリージョン集約方法
-   - Security Hub のリージョン間アグリゲーション設計
-   - CloudTrail のマルチアカウントログ集約
-
-2. イベント処理アーキテクチャ
-   - EventBridge によるクロスアカウント・クロスリージョンイベント転送
-   - 中央での処理と分散処理のバランス
-   - 障害時のフェイルオーバー設計
-
-3. コンプライアンス対応
-   - 監査ログの保持と暗号化
-   - アクセス制御と証跡
-   - レポート自動生成
-
-4. コスト最適化
-   - ログ保持期間の階層化
-   - リージョン間データ転送の最小化
+# 正しいHLS設定
+"HlsGroupSettings": {
+    "SegmentLength": 6,
+    "MinSegmentLength": 0,
+    "Destination": f"s3://{OUTPUT_BUCKET}/hls/{content_id}/",
+    "ManifestCompression": "NONE",
+    "DirectoryStructure": "SINGLE_DIRECTORY",
+    "OutputSelection": "MANIFESTS_AND_SEGMENTS"  # これを追加
+}
 ```
 
-**期待する成果物**:
-- アーキテクチャ図（マルチアカウント・マルチリージョン）
-- サービス設定のベストプラクティス
-- 推定月額コスト
-- 実装の優先順位
+### 問題3: CloudFrontでCORSエラー
 
-<details>
-<summary>設計例を見る</summary>
-
-### マルチリージョン・マルチアカウント セキュリティアーキテクチャ
-
-```mermaid
-architecture-beta
-    group org(cloud)[AWS Organizations]
-
-    group sec_account(server)[Security Account us-east-1 Aggregation Hub] in org
-    service sec_hub(server)[Security Hub Aggregation Region] in sec_account
-    service guard_duty(server)[GuardDuty Delegated Admin] in sec_account
-    service cloud_trail(server)[CloudTrail Organization Trail] in sec_account
-    service event_bridge(server)[EventBridge Central Bus] in sec_account
-    service lambda(server)[Lambda Process] in sec_account
-    service step_fn(server)[Step Functions] in sec_account
-    service sns(internet)[SNS Topics] in sec_account
-    service s3_logs(disk)[S3 Central Security Logs CloudTrail GuardDuty Config VPC Flow] in sec_account
-
-    group tokyo(server)[ap-northeast-1 Tokyo] in org
-    service prod_tokyo(server)[Production Account GuardDuty Security Hub Config CloudTrail] in tokyo
-    service dev_tokyo(server)[Development Account GuardDuty Security Hub] in tokyo
-    service stag_tokyo(server)[Staging Account GuardDuty Security Hub] in tokyo
-
-    group virginia(server)[us-east-1 Virginia] in org
-    service prod_dr(server)[Production DR Account GuardDuty Security Hub Config CloudTrail] in virginia
-
-    service aggregation(server)[Security Hub Aggregation Region us-east-1] in org
-
-    sec_hub:B --> T:event_bridge
-    guard_duty:B --> T:event_bridge
-    cloud_trail:B --> T:event_bridge
-    event_bridge:B --> T:lambda
-    event_bridge:B --> T:step_fn
-    event_bridge:B --> T:sns
-    cloud_trail:R --> L:s3_logs
-    prod_tokyo:B --> T:aggregation
-    dev_tokyo:B --> T:aggregation
-    stag_tokyo:B --> T:aggregation
-    prod_dr:B --> T:aggregation
+**症状:**
+```
+Access-Control-Allow-Origin エラー
+動画プレイヤーで再生できない
 ```
 
-### サービス設定のベストプラクティス
+**ヒント:**
+1. S3のCORS設定を確認
+2. CloudFrontのResponse Headers Policyを確認
+3. ブラウザのキャッシュをクリア
 
-```yaml
-# 1. Security Hub 設定
-security_hub:
-  aggregation_region: us-east-1
-  linked_regions:
-    - ap-northeast-1
-  auto_enable_controls: true
-  standards:
-    - AWS-Foundational-Security-Best-Practices
-    - CIS-AWS-Foundations-Benchmark
-  finding_aggregator:
-    region_linking_mode: ALL_REGIONS
-
-# 2. GuardDuty 設定
-guardduty:
-  delegated_admin: security-account-id
-  auto_enable_members: true
-  auto_enable_organization_members: ALL
-  publishing_frequency: FIFTEEN_MINUTES
-  features:
-    - S3_DATA_EVENTS
-    - EKS_AUDIT_LOGS
-    - EBS_MALWARE_PROTECTION
-    - RDS_LOGIN_EVENTS
-    - LAMBDA_NETWORK_LOGS
-
-# 3. CloudTrail 設定
-cloudtrail:
-  organization_trail: true
-  multi_region: true
-  log_file_validation: true
-  kms_encryption: true
-  s3_bucket: central-security-logs
-  cloudwatch_logs: true
-  data_events:
-    - S3
-    - Lambda
-
-# 4. EventBridge 設定
-eventbridge:
-  cross_account_policy: allow-from-org
-  archive:
-    enabled: true
-    retention_days: 90
-  rules:
-    - pattern: guardduty-findings
-      targets: [lambda, sns]
-    - pattern: securityhub-findings
-      targets: [lambda, step-functions]
-```
-
-### 推定月額コスト
-
-| サービス | 構成 | 月額コスト |
-|----------|------|-----------|
-| GuardDuty | 4アカウント × 2リージョン | $150-300 |
-| Security Hub | 4アカウント × 2リージョン | $50-100 |
-| CloudTrail | Organization Trail | $50-100 |
-| EventBridge | イベント処理 | $20-50 |
-| Lambda | 修復・通知 | $10-30 |
-| S3 | ログ保存（1TB/月） | $30-50 |
-| Step Functions | ワークフロー | $10-20 |
-| **合計** | | **$320-650** |
-
-### 実装の優先順位
-
-```
-Phase 1（Week 1-2）: 基盤構築
-├── Organizations 設定確認
-├── Security Hub Aggregation Region 設定
-├── GuardDuty Delegated Admin 設定
-└── CloudTrail Organization Trail 設定
-
-Phase 2（Week 3-4）: 検知・通知
-├── EventBridge ルール設定
-├── SNS トピック・サブスクリプション設定
-├── Lambda 通知関数デプロイ
-└── 基本的なアラート動作確認
-
-Phase 3（Week 5-6）: 自動修復
-├── Step Functions ワークフロー構築
-├── 自動修復 Lambda 関数デプロイ
-├── クロスアカウント IAM ロール設定
-└── 修復シナリオテスト
-
-Phase 4（Week 7-8）: コンプライアンス・最適化
-├── Config ルール（カスタム含む）設定
-├── 監査レポート自動生成
-├── ダッシュボード構築
-└── コスト最適化レビュー
-```
-
-</details>
-
----
-
-## 10. 発展課題
-
-### 発展課題1: SIEM 統合（難易度：上級）
-
-**課題内容**:
-セキュリティイベントを外部 SIEM（Splunk または Elastic SIEM）に連携し、
-より高度な相関分析を実現してください。
-
-**要件**:
-- リアルタイムでのイベント転送
-- カスタムフィールドマッピング
-- 双方向の連携（SIEM からの修復トリガー）
-
-```python
-# ヒント: Kinesis Data Firehose を使用した SIEM 連携
-def create_firehose_to_splunk():
-    """
-    Security Hub findings を Splunk HEC に送信する
-    Kinesis Data Firehose の設定
-    """
-    firehose_config = {
-        'DeliveryStreamName': 'security-findings-to-splunk',
-        'DeliveryStreamType': 'DirectPut',
-        'SplunkDestinationConfiguration': {
-            'HECEndpoint': 'https://splunk-hec.medsecure.com:8088',
-            'HECEndpointType': 'Raw',
-            'HECToken': '{{resolve:secretsmanager:splunk-hec-token}}',
-            'HECAcknowledgmentTimeoutInSeconds': 180,
-            'RetryOptions': {
-                'DurationInSeconds': 60
-            },
-            'S3BackupMode': 'FailedEventsOnly',
-            'ProcessingConfiguration': {
-                'Enabled': True,
-                'Processors': [{
-                    'Type': 'Lambda',
-                    'Parameters': [{
-                        'ParameterName': 'LambdaArn',
-                        'ParameterValue': 'arn:aws:lambda:...:transform-for-splunk'
-                    }]
-                }]
-            }
-        }
-    }
-    return firehose_config
-```
-
-### 発展課題2: 脅威インテリジェンス統合（難易度：上級）
-
-**課題内容**:
-サードパーティの脅威インテリジェンスフィード（例：AlienVault OTX）を
-GuardDuty のカスタム脅威リストとして統合し、業界特有の脅威を検出してください。
-
-**要件**:
-- 脅威インテリジェンスフィードの自動取得
-- GuardDuty 脅威リストの自動更新
-- ヘルスケア業界特有の IoC（Indicators of Compromise）の監視
-
-### 発展課題3: セキュリティダッシュボード構築（難易度：中級）
-
-**課題内容**:
-Amazon Managed Grafana を使用して、経営層向けのセキュリティダッシュボードを
-構築してください。
-
-**要件**:
-- リアルタイムの脅威可視化
-- トレンド分析（過去30日間）
-- コンプライアンススコアの表示
-- 自動 PDF レポート生成
-
----
-
-## 11. 振り返りと次のステップ
-
-### 学習のまとめ
-
-```
-本課題で学んだこと:
-□ GuardDuty による ML ベースの脅威検知
-□ Security Hub によるセキュリティ統合管理
-□ EventBridge を使ったイベント駆動セキュリティ
-□ Lambda/Step Functions による自動修復
-□ HIPAA 準拠のセキュリティ要件
-□ マルチアカウント・マルチリージョンセキュリティ
-
-GCP との主な違い:
-- Security Hub は SCC よりサードパーティ統合が豊富
-- GuardDuty は専用の ML モデルで検知精度が高い
-- EventBridge はより柔軟なイベントルーティングが可能
-- Organizations との統合が深い
-```
-
-### GCP経験者向けポイント
-
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| 統合セキュリティ | Security Command Center | Security Hub | 検出結果のスキーマが異なる |
-| 脅威検知 | Event Threat Detection | GuardDuty | ML モデルの検知パターンが異なる |
-| イベント処理 | Eventarc | EventBridge | イベントパターンの記法が異なる |
-| ポリシー管理 | Organization Policy | AWS Config | ルール定義方法が異なる |
-| ログ集約 | Cloud Logging | CloudWatch + CloudTrail | ログの構造と検索方法が異なる |
-
-### 推奨される次のステップ
-
-```
-1. AWS Certified Security - Specialty の学習
-   - より深いセキュリティサービスの理解
-   - ベストプラクティスの習得
-
-2. Incident Response Playbook の作成
-   - 組織固有のシナリオ対応手順
-   - 自動化可能な範囲の拡大
-
-3. Chaos Engineering for Security
-   - GameDay の実施
-   - セキュリティ対応訓練
-
-4. 関連課題への挑戦
-   - 課題25: セキュアネットワーク基盤
-   - 課題26: DDoS対策とエッジセキュリティ
+**解決方法:**
+```bash
+# CloudFront Response Headers Policy設定
+# コンソールから:
+# 1. CloudFront → ディストリビューション → Behaviors
+# 2. Response headers policy: SimpleCORS または カスタムポリシー
+# 3. Access-Control-Allow-Origin: *
+# 4. Access-Control-Allow-Methods: GET, HEAD, OPTIONS
 ```
 
 ---
 
-## 12. 推定コストと注意事項
+## 設計の考察ポイント
 
-### 本課題の推定コスト
+### 1. MediaConvert vs 自前エンコード（FFmpeg）
 
-| サービス | 使用量 | 推定コスト（演習時） |
-|----------|--------|---------------------|
-| GuardDuty | 1アカウント、基本検出 | $5-10 |
-| Security Hub | 基本機能 | $3-5 |
-| Lambda | 100回実行 | < $1 |
-| Step Functions | 50回実行 | < $1 |
-| EventBridge | 1000イベント | < $1 |
-| DynamoDB | オンデマンド | $1-2 |
-| S3 | 1GB | < $1 |
-| **合計** | | **$10-20** |
+**考察ポイント:**
+- MediaConvert: マネージド、スケーラブル、品質保証
+- FFmpeg on EC2/ECS: 柔軟性、カスタマイズ性
+- コスト比較（長時間動画の場合）
 
-### コスト最適化のヒント
+### 2. 出力フォーマットの選定
 
-```
-1. GuardDuty の最適化
-   - S3 保護は必要なバケットのみ有効化
-   - 検出結果のエクスポート頻度を調整
+**考察ポイント:**
+- HLS vs DASH（デバイスカバレッジ）
+- ビットレートラダーの設計
+- ABR（Adaptive Bitrate）の最適化
 
-2. Security Hub の最適化
-   - 不要なセキュリティ基準を無効化
-   - 自動修復で解決済みの検出結果をアーカイブ
+### 3. 並列処理のアプローチ
 
-3. ログ保存の最適化
-   - S3 ライフサイクルポリシーで Glacier に移行
-   - CloudWatch Logs の保持期間を適切に設定
-```
+**考察ポイント:**
+- MediaConvert単独 vs AWS Batch併用
+- チャンク分割エンコード
+- コスト効率とスループットのバランス
 
-### 注意事項
+### 4. CDN配信の最適化
 
-```
-⚠️ セキュリティサービスの有効化
-- GuardDuty、Security Hub は有効化すると即座に課金開始
-- テスト後は必ず無効化するか、コストを監視
+**考察ポイント:**
+- CloudFrontのキャッシュ戦略
+- セグメントサイズと初回再生時間
+- リージョン配置（エッジロケーション）
 
-⚠️ 自動修復のテスト
-- 本番環境では十分なテスト後に有効化
-- 誤検知による影響を最小化する設計を
+### 5. DRMとセキュリティ
 
-⚠️ IAM 権限
-- 自動修復用のロールには最小権限を付与
-- クロスアカウントアクセスには ExternalId を使用
+**考察ポイント:**
+- 有料コンテンツの保護
+- Widevine / FairPlay対応
+- 署名付きURL / Cookie
+
+---
+
+## 発展課題（オプション）
+
+### 1. DRM対応（SPEKE）
+- AWS Elemental MediaPackage連携
+- Widevine / FairPlay / PlayReady
+- ライセンスサーバー統合
+
+### 2. ライブ配信対応
+- MediaLive + MediaPackage
+- ライブ to VODワークフロー
+- 低遅延配信（LL-HLS）
+
+### 3. コンテンツモデレーション
+- Rekognition Video連携
+- 不適切コンテンツの自動検出
+- 年齢制限の自動判定
+
+### 4. 字幕・多言語対応
+- Transcribe連携（自動字幕）
+- Translate連携（翻訳）
+- WebVTT埋め込み
+
+### 5. 視聴分析
+- CloudFrontログ分析
+- Athena + QuickSight
+- コンテンツ人気度ダッシュボード
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（月間500本 × 平均30分処理想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| MediaConvert | 500本 × 30分 × 5出力 = 1,250時間 | $625 |
+| Amazon S3 | 入力500GB + 出力2TB | $55 |
+| AWS Lambda | 処理関数実行 | $5 |
+| Step Functions | 500ワークフロー | $0.15 |
+| CloudFront | 5TB転送 | $425 |
+| DynamoDB | オンデマンド | $2 |
+| SNS | 通知 | $0.50 |
+| CloudWatch | ログ | $10 |
+| **合計** | | **約$1,123（約168,000円）** |
+
+### コスト削減のポイント
+
+1. **MediaConvertの最適化**
+   - On-Demand vs Reserved Capacity
+   - 品質レベルの調整（SINGLE_PASS vs MULTI_PASS）
+   - → 最大30%削減
+
+2. **S3ストレージクラス**
+   - 入力: Standard（一時）→ 処理後削除
+   - 出力: Intelligent-Tiering
+   - → ストレージコスト40%削減
+
+3. **CloudFront Reserved Capacity**
+   - 年間契約で割引
+   - → 配信コスト最大30%削減
+
+4. **不要解像度の削除**
+   - 4K対応が不要なら4K出力を削除
+   - → MediaConvertコスト削減
+
+### リソース削除手順
+
+```bash
+# CloudFront（コンソールから無効化→削除）
+
+# S3
+aws s3 rm s3://streamnow-master-${ACCOUNT_ID} --recursive
+aws s3 rm s3://streamnow-output-${ACCOUNT_ID} --recursive
+aws s3 rb s3://streamnow-master-${ACCOUNT_ID}
+aws s3 rb s3://streamnow-output-${ACCOUNT_ID}
+
+# DynamoDB
+aws dynamodb delete-table --table-name streamnow-encoding-jobs
+
+# Step Functions
+aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
+
+# Lambda
+aws lambda delete-function --function-name streamnow-trigger
+aws lambda delete-function --function-name streamnow-start-encoding
+aws lambda delete-function --function-name streamnow-check-encoding
+aws lambda delete-function --function-name streamnow-finalize
+
+# SNS
+aws sns delete-topic --topic-arn arn:aws:sns:...
+
+# IAM
+aws iam detach-role-policy --role-name StreamNowMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+aws iam delete-role --role-name StreamNowMediaConvertRole
 ```
 
 ---
 
-**課題作成日**: 2024年1月
-**最終更新日**: 2024年1月
-**作成者**: AWS学習プログラム
+## 学習のポイント
+
+### 1. MediaConvertの基本
+AWS の動画変換サービスとして、入力 → 出力グループ → 出力の構造を理解する。HLS/DASH などのストリーミングフォーマットの基本も押さえる。
+
+### 2. イベント駆動アーキテクチャ
+S3イベント → Lambda → Step Functions の流れは、バッチ処理の典型パターン。非同期処理の状態管理方法を学ぶ。
+
+### 3. ABR（Adaptive Bitrate）の概念
+ネットワーク状況に応じて品質を切り替えるストリーミング技術。ビットレートラダーの設計がユーザー体験に直結する。
+
+### 4. CDN配信の基礎
+CloudFront によるグローバル配信、キャッシュ戦略、CORSの設定など、コンテンツ配信の基本を習得する。
+
+### 5. ワークフローの可視化
+Step Functions でエンコード処理を可視化することで、進捗確認やエラー対応が容易になる。長時間バッチ処理では特に重要。

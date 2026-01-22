@@ -1,4 +1,4 @@
-# 課題32: TeamHub - マルチテナントSaaS認証基盤
+# 課題32: TechCorp - IAM Identity Center (AWS SSO) 構築
 
 **難易度: 🟡 中級**
 
@@ -11,34 +11,34 @@
 | 難易度 | 中級 |
 | カテゴリ | 認証・認可 / セキュリティ |
 | 処理タイプ | リアルタイム |
-| 使用IaC | CDK |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. シナリオ
 
-BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可システムを AWS CDK で構築します。テナント分離、ロールベースアクセス制御（RBAC）、テナント管理機能を実装し、セキュアなマルチテナントSaaSアーキテクチャを学びます。
+ITコンサルティング会社「TechCorp株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
 
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| 企業名 | 〇〇株式会社 |
-| 業種 | BtoB SaaS（プロジェクト管理ツール） |
-| テナント数 | 100社 |
-| 総ユーザー数 | 5,000名 |
-| テナント規模 | 小規模（10名以下）〜大規模（500名） |
-| 課題 | テナント間のデータ分離とセキュリティ確保 |
+| 企業名 | TechCorp株式会社 |
+| 業種 | ITコンサルティング |
+| 従業員数 | 500名 |
+| AWSアカウント数 | 15アカウント（開発/本番/共有サービス等） |
+| 部門数 | 6部門（開発、インフラ、セキュリティ、営業、管理、経営） |
+| 課題 | 複数アカウントへのアクセス管理の複雑化、セキュリティ強化 |
 
 ### 達成目標（white hat KPI）
 
 | KPI | 目標値 | 測定方法 |
 |-----|--------|----------|
-| テナント分離 | 100% | クロステナントアクセス試行のブロック率 |
-| 認証成功率 | 99.9% | 正当なリクエストの認証成功率 |
-| 認可レイテンシ | < 50ms | カスタム認可処理の平均応答時間 |
-| テナントオンボーディング | < 5分 | 新規テナント作成の所要時間 |
+| SSO認証成功率 | 99.9% | CloudWatch メトリクス |
+| アクセス権プロビジョニング | < 5分 | 権限変更の反映時間 |
+| セキュリティコンプライアンス | 100% | MFA必須、監査ログ完全性 |
+| 運用負荷削減 | 80%削減 | アカウント管理作業時間 |
 
 ---
 
@@ -46,135 +46,113 @@ BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可シス�
 
 ```mermaid
 architecture-beta
-    group teamhub(cloud)[TeamHub マルチテナント認証アーキテクチャ]
+    group techcorp(cloud)[TechCorp IAM Identity Center]
 
-    group tenants(cloud)[Tenants] in teamhub
-    group cognito(server)[Amazon Cognito] in teamhub
-    group triggers(server)[Lambda Triggers] in teamhub
-    group api(server)[API Layer] in teamhub
-    group backend(server)[Backend Services] in teamhub
-    group data(database)[Data Layer] in teamhub
-    group portal(server)[Management Portal] in teamhub
+    group idp(server)[External Identity Provider] in techcorp
+    group idc(server)[AWS IAM Identity Center] in techcorp
+    group org(cloud)[AWS Organizations] in techcorp
 
-    service tenant_a(internet)[Tenant A Users] in tenants
-    service tenant_b(internet)[Tenant B Users] in tenants
-    service tenant_c(internet)[Tenant C Users] in tenants
+    service external_idp(server)[Azure AD / Okta / Google SAML 2.0 / SCIM] in idp
 
-    service userpool(server)[Cognito User Pool] in cognito
+    service identity_store(database)[Identity Store Users & Groups] in idc
+    service permission_sets(server)[Permission Sets] in idc
 
-    service pre_signup(server)[Pre-SignUp Trigger] in triggers
-    service post_auth(server)[Post-Auth Trigger] in triggers
-    service pre_token(server)[Pre-Token Generation] in triggers
+    service mgmt_acct(server)[Management Account] in org
+    service security_ou(server)[Security OU] in org
+    service workloads_ou(server)[Workloads OU] in org
+    service sandbox_ou(server)[Sandbox OU] in org
 
-    service apigw(server)[API Gateway] in api
-    service authorizer(server)[Lambda Authorizer JWT RBAC] in api
+    service security_acct(server)[Security Account] in org
+    service log_archive(server)[Log Archive Account] in org
+    service prod_acct(server)[Production Account] in org
+    service stg_acct(server)[Staging Account] in org
+    service dev_acct(server)[Development Account] in org
+    service sandbox_dev(server)[Sandbox-Dev Account] in org
 
-    service project_svc(server)[Project Service Lambda] in backend
-    service task_svc(server)[Task Service Lambda] in backend
-    service team_svc(server)[Team Service Lambda] in backend
+    service access_portal(internet)[Access Portal] in techcorp
 
-    service dynamodb(database)[DynamoDB Single Table] in data
-    service tenant_meta(database)[Tenant Metadata Table] in data
-
-    service admin_ui(server)[Tenant Admin UI] in portal
-    service user_mgmt(server)[User Management] in portal
-    service usage_dash(server)[Usage Dashboard] in portal
-
-    tenant_a:B --> T:userpool
-    tenant_b:B --> T:userpool
-    tenant_c:B --> T:userpool
-    userpool:B --> T:pre_signup
-    userpool:B --> T:post_auth
-    userpool:B --> T:pre_token
-    pre_token:B --> T:authorizer
-    authorizer:B --> T:project_svc
-    authorizer:B --> T:task_svc
-    authorizer:B --> T:team_svc
-    project_svc:B --> T:dynamodb
-    task_svc:B --> T:dynamodb
-    team_svc:B --> T:dynamodb
+    external_idp:B --> T:identity_store
+    identity_store:B --> T:permission_sets
+    permission_sets:B --> T:mgmt_acct
+    mgmt_acct:B --> T:security_ou
+    mgmt_acct:B --> T:workloads_ou
+    mgmt_acct:B --> T:sandbox_ou
+    permission_sets:R --> L:access_portal
 ```
 
-**Custom Attributes:** tenant_id (必須), tenant_role (admin/manager/member), tenant_tier (free/standard/enterprise)
+**Identity Store Groups:**
+- 開発部門 (80 users) / インフラ部門 (40 users) / セキュリティ部門 (20 users)
+- 営業部門 (200 users) / 管理部門 (100 users) / 経営層 (60 users)
 
-**Lambda Authorizer:** JWT検証、テナントコンテキスト抽出、RBAC権限チェック、リソースレベル認可
+**Permission Sets:**
+- AdministratorPS (Full Admin) / DeveloperPS (Dev Resources) / ReadOnlyPS (View Only)
+- SecurityAuditPS / NetworkAdminPS / BillingViewerPS
 
-**DynamoDB Single Table Design:** PK: TENANT#X, SK: PROJECT#/TASK# (Tenant Partition)
+**Access Portal:** https://techcorp.awsapps.com/start
 
-### RBACモデル
+### アクセス管理マトリクス
 
-```mermaid
-flowchart TB
-    subgraph platform[Platform Level - Super Admin]
-        admin[platform:admin<br/>テナント作成/削除<br/>システム設定管理<br/>全テナントのモニタリング]
-    end
-
-    subgraph tenant[Tenant Level]
-        tadmin[tenant:admin<br/>テナント設定管理<br/>ユーザー招待/削除<br/>ロール割り当て<br/>全リソースへのフルアクセス]
-        manager[tenant:manager<br/>プロジェクト作成/編集<br/>タスク管理<br/>チームメンバー管理<br/>レポート閲覧]
-        member[tenant:member<br/>割り当てタスクの閲覧/更新<br/>コメント投稿<br/>自分のプロファイル管理]
-        guest[tenant:guest read-only<br/>プロジェクト閲覧のみ<br/>コメント閲覧のみ]
-    end
-
-    admin --> tadmin
-    tadmin --> manager
-    manager --> member
-    member --> guest
-```
+| 部門 | Production | Staging | Development | Sandbox | Security |
+|------|------------|---------|-------------|---------|----------|
+| 開発部門 | Developer, ReadOnly | Admin | Admin | Admin | - |
+| インフラ部門 | Admin, Network | Admin, Network | Admin, Network | Admin | ReadOnly |
+| セキュリティ部門 | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | SecAudit, ReadOnly | Admin |
+| 営業部門 | - | - | - | - | - |
+| 管理部門 | Billing, ReadOnly | Billing | - | - | - |
+| 経営層 | ReadOnly, Billing | ReadOnly | ReadOnly | - | ReadOnly |
 
 ---
 
 ## 3. 前提知識
 
-### 3.1 マルチテナントアーキテクチャ
+### 3.1 IAM Identity Center の概念
 
-GCPでのマルチテナント経験がある方向けの比較：
+GCPでのアイデンティティ管理経験がある方向けの比較：
 
 | 観点 | GCP | AWS |
 |------|-----|-----|
-| 認証基盤 | Firebase Authentication | Cognito User Pool |
-| カスタムクレーム | Custom Claims | Custom Attributes + Pre Token Generation |
-| テナント分離 | Identity Platform Multi-tenancy | Cognito + Custom Lambda |
-| RBAC | Custom Claims based | Groups + Custom Attributes |
+| SSO基盤 | Cloud Identity | IAM Identity Center |
+| IdP連携 | Cloud Identity + SAML | Identity Center + SAML/SCIM |
+| 権限管理 | IAM Roles | Permission Sets |
+| ディレクトリ | Cloud Identity Directory | Identity Center Directory |
+| マルチプロジェクト | Project IAM Bindings | Account Assignments |
 
-### 3.2 テナント分離パターン
+### 3.2 IAM Identity Center の主要概念
 
 ```mermaid
 flowchart TB
-    subgraph silo[1. Silo Model 完全分離]
-        direction TB
-        subgraph siloA[Tenant A]
-            poolA[User Pool A] --> dbA[Database A]
+    subgraph concepts[IAM Identity Center Core Concepts]
+        subgraph identity[1. Identity Source]
+            builtin[Identity Center Directory<br/>Built-in]
+            ad[Active Directory<br/>Connector]
+            external[External IdP<br/>Okta, Azure AD]
         end
-        subgraph siloB[Tenant B]
-            poolB[User Pool B] --> dbB[Database B]
-        end
-        subgraph siloC[Tenant C]
-            poolC[User Pool C] --> dbC[Database C]
-        end
-    end
-    siloNote[✓ 完全分離  ✗ コスト高  ✗ 管理複雑]
 
-    subgraph pool[2. Pool Model 共有+論理分離 - 本課題で採用]
-        direction TB
-        sharedPool[Shared Cognito User Pool<br/>User tenant_id=A / B / C]
-        sharedPool --> authorizer[Lambda Authorizer<br/>tenant context]
-        sharedPool --> dynamodb[DynamoDB<br/>partition by tenant_id]
-    end
-    poolNote[✓ コスト効率  ✓ 管理容易  △ 分離はアプリケーション責務]
+        subgraph permission[2. Permission Set]
+            ps_desc[AWSアカウントで使用する権限の集合]
+            ps_example[例: DeveloperPermissionSet]
+            ps_example --> managed[AWS管理ポリシー: PowerUserAccess]
+            ps_example --> custom[カスタムポリシー: DenyIAMChanges]
+            ps_example --> session[セッション時間: 8時間]
+        end
 
-    subgraph bridge[3. Bridge Model ハイブリッド]
-        direction LR
-        subgraph enterprise[Enterprise Tenants - Silo]
-            dedA[Dedicated Tenant A]
-            dedB[Dedicated Tenant B]
+        subgraph assignment[3. Account Assignment]
+            formula[User/Group + Permission Set + AWS Account]
+            example[例: Developers Group + DeveloperPS + Development Account<br/>→ 開発グループが開発アカウントにDeveloper権限でアクセス]
         end
-        subgraph standard[Standard Tenants - Pool]
-            shared[Shared Infrastructure<br/>Tenants C, D, E...]
+
+        subgraph portal[4. Access Portal]
+            portal_desc[ユーザーがSSOでログインするWebポータル<br/>割り当てられたアカウント・ロールの一覧表示<br/>マネジメントコンソール or CLI認証情報の取得]
+            portal_url[URL例: https://d-1234567890.awsapps.com/start]
         end
     end
-    bridgeNote[✓ 柔軟性  ✓ エンタープライズ対応  △ 複雑性増加]
+
+    identity --> permission
+    permission --> assignment
+    assignment --> portal
 ```
+
+**📝 補足**: 本課題では Built-in Directory を使用します。
 
 ---
 
@@ -182,213 +160,235 @@ flowchart TB
 
 ### 6.1 ハンズオン課題
 
-#### 課題1: テナントティア別の機能制限（難易度：初級）
+#### 課題1: 緊急アクセス用 Break Glass アカウント（難易度：初級）
 
-**目標**: テナントの契約プランに応じて利用可能な機能を制限する
+**目標**: 緊急時用の高権限アカウントを設定する
 
 **要件**:
-- Freeプラン: 基本機能のみ
-- Standardプラン: レポート機能追加
-- Enterpriseプラン: 監査ログ、SSO対応
+- 緊急時のみ使用する管理者アカウント
+- 使用時にアラート通知
+- 使用履歴の完全な監査ログ
 
 **実装ポイント**:
-```typescript
-// テナントティアによる機能フラグの例
-const TIER_FEATURES: Record<string, string[]> = {
-  free: ['projects', 'tasks', 'basic-reports'],
-  standard: ['projects', 'tasks', 'advanced-reports', 'integrations'],
-  enterprise: ['projects', 'tasks', 'advanced-reports', 'integrations', 'audit-logs', 'sso', 'custom-branding'],
-};
-```
+```hcl
+# Break Glass用のPermission Set
+resource "aws_ssoadmin_permission_set" "break_glass" {
+  name             = "BreakGlassAccess"
+  description      = "Emergency access - use only in critical situations"
+  instance_arn     = local.instance_arn
+  session_duration = "PT1H" # 緊急アクセスは1時間に制限
+}
 
-**確認方法**:
-- Freeプランのテナントが高度なレポート機能にアクセスしようとすると403エラーが返ること
-- Enterpriseプランのテナントは全機能にアクセスできること
+# 使用時のCloudWatch Alarm設定
+# ...
+```
 
 ---
 
-#### 課題2: ユーザー招待フロー（難易度：中級）
+#### 課題2: 外部IdP（Okta）との連携（難易度：中級）
 
-**目標**: テナント管理者が新規ユーザーを招待するフローを実装する
+**目標**: OktaをIdentity Providerとして設定し、SCIM自動同期を構成する
 
 **要件**:
-- 招待メールの送信
-- 招待リンクの有効期限管理（48時間）
-- 招待の承認/拒否
-- 招待状況のトラッキング
+- SAML 2.0による認証連携
+- SCIMによるユーザー・グループの自動プロビジョニング
+- 属性マッピングの設定
 
-**実装の流れ**:
-1. 招待レコードをDynamoDBに作成
-2. 招待コード付きのリンクを含むメールを送信
-3. ユーザーがリンクをクリックしてパスワード設定
-4. Cognito Pre-SignUpトリガーで招待コードを検証
+**設定手順の概要**:
+1. Okta側でAWS IAM Identity Centerアプリケーションを追加
+2. SAMLメタデータの交換
+3. SCIM APIトークンの発行
+4. 属性マッピングの設定
 
 ---
 
-#### 課題3: リソースレベル認可（難易度：中級〜上級）
+#### 課題3: 一時的アクセス権限の付与（難易度：中級〜上級）
 
-**目標**: プロジェクト単位でのアクセス制御を実装する
+**目標**: 限定的な期間だけ追加権限を付与する仕組みを作る
 
 **要件**:
-- プロジェクトごとにアクセス可能なユーザーを設定
-- プロジェクトオーナー、メンバー、閲覧者の権限レベル
-- チーム単位でのアクセス権付与
+- 申請・承認ワークフロー
+- 自動的な権限の付与・削除
+- 監査証跡の記録
 
-**データモデル**:
+**実装アプローチ**:
 ```
-PK: TENANT#A#PROJECT#001
-SK: ACCESS#USER#alice
-Data: { role: "owner", grantedAt: "...", grantedBy: "..." }
-
-PK: TENANT#A#PROJECT#001
-SK: ACCESS#TEAM#engineering
-Data: { role: "member", grantedAt: "...", grantedBy: "..." }
+┌─────────────────────────────────────────────────────────────────┐
+│              Temporary Access Workflow                          │
+│                                                                 │
+│  1. 申請  →  2. 承認  →  3. 権限付与  →  4. 自動削除           │
+│     │           │            │              │                   │
+│     ▼           ▼            ▼              ▼                   │
+│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐         │
+│  │API GW   │ │Step     │ │Lambda    │ │EventBridge   │         │
+│  │+ Lambda │ │Functions│ │+ SSO API │ │Scheduled     │         │
+│  └─────────┘ └─────────┘ └──────────┘ └──────────────┘         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ### 6.2 トラブルシューティング課題
 
-#### 問題1: クロステナントアクセス
+#### 問題1: Permission Set が反映されない
 
-**症状**: テナントAのユーザーがテナントBのデータを取得できてしまう
+**症状**: Permission Setを更新したが、ユーザーの権限に反映されない
 
 **調査のヒント**:
-1. Lambda Authorizerのログを確認
-2. トークンに含まれるtenant_idクレームを確認
-3. APIバックエンドのテナントIDフィルタリングを確認
+1. Permission Setのプロビジョニング状態を確認
+2. アカウント割り当ての状態を確認
+3. IAMロールの更新状態を確認
 
 <details>
 <summary>原因と解決策</summary>
 
-**原因**: バックエンドのLambda関数でテナントIDのフィルタリングが漏れていた
+**原因**: Permission Setの変更後、アカウントへの再プロビジョニングが必要
 
-```typescript
-// 問題のあるコード
-const result = await dynamodb.send(new QueryCommand({
-  TableName: TABLE_NAME,
-  KeyConditionExpression: 'PK = :pk',
-  ExpressionAttributeValues: {
-    ':pk': { S: `PROJECT#${projectId}` }, // テナントIDがない
-  },
-}));
-
-// 修正後
-const tenantId = event.requestContext.authorizer?.tenantId;
-const result = await dynamodb.send(new QueryCommand({
-  TableName: TABLE_NAME,
-  KeyConditionExpression: 'PK = :pk',
-  ExpressionAttributeValues: {
-    ':pk': { S: `TENANT#${tenantId}#PROJECT#${projectId}` },
-  },
-}));
-```
-</details>
-
----
-
-#### 問題2: トークン内のカスタムクレームが欠落
-
-**症状**: ログイン後のトークンにtenant_idやpermissionsが含まれていない
-
-**調査のヒント**:
-1. Pre-Token Generationトリガーのログを確認
-2. トリガーがUser Poolに正しく設定されているか確認
-3. トリガー関数の実行ロールを確認
-
-<details>
-<summary>原因と解決策</summary>
-
-**原因1**: Pre-Token Generationトリガーの設定ミス
 ```bash
-# トリガーの設定確認
-aws cognito-idp describe-user-pool \
-  --user-pool-id $USER_POOL_ID \
-  --query 'UserPool.LambdaConfig'
+# Permission Setのプロビジョニング状態確認
+aws sso-admin list-permission-sets-provisioned-to-account \
+  --instance-arn $INSTANCE_ARN \
+  --account-id $ACCOUNT_ID
+
+# 手動でプロビジョニング実行
+aws sso-admin provision-permission-set \
+  --instance-arn $INSTANCE_ARN \
+  --permission-set-arn $PERMISSION_SET_ARN \
+  --target-type ALL_PROVISIONED_ACCOUNTS
+
+# プロビジョニングステータスの確認
+aws sso-admin describe-permission-set-provisioning-status \
+  --instance-arn $INSTANCE_ARN \
+  --provision-request-id $REQUEST_ID
 ```
 
-**原因2**: Lambda関数の戻り値形式が不正
-```typescript
-// 不正な形式
-event.response.claimsOverrideDetails = {
-  claimsToAddOrOverride: {
-    tenant_id: tenantId, // IDトークンには追加されるがアクセストークンには追加されない
+**Terraformでの対策**:
+```hcl
+# プロビジョニングのトリガー（null_resource使用）
+resource "null_resource" "provision_permission_set" {
+  triggers = {
+    permission_set_arn = aws_ssoadmin_permission_set.developer.arn
+    inline_policy      = md5(aws_ssoadmin_permission_set_inline_policy.developer_deny_iam.inline_policy)
   }
-};
 
-// 正しい形式（アクセストークンにも追加）
-event.response.claimsOverrideDetails = {
-  claimsToAddOrOverride: {
-    tenant_id: tenantId,
-  },
-  // V2トリガーを使用している場合
-  accessTokenGeneration: {
-    claimsToAddOrOverride: {
-      tenant_id: tenantId,
-    },
-  },
-};
+  provisioner "local-exec" {
+    command = <<-EOF
+      aws sso-admin provision-permission-set \
+        --instance-arn ${local.instance_arn} \
+        --permission-set-arn ${aws_ssoadmin_permission_set.developer.arn} \
+        --target-type ALL_PROVISIONED_ACCOUNTS
+    EOF
+  }
+}
 ```
 </details>
 
 ---
 
-#### 問題3: 認可エラーでAPIが403を返す
+#### 問題2: SSOログインでエラーが発生
 
-**症状**: 正しい権限を持つユーザーでも403エラーが返される
+**症状**: アクセスポータルでログイン後、「An error occurred」と表示される
 
 **調査のヒント**:
-1. Authorizerのキャッシュを確認
-2. 権限マッピングの定義を確認
-3. パスパラメータの正規化ロジックを確認
+1. CloudTrail でSSO関連イベントを確認
+2. ブラウザのCookieとキャッシュをクリア
+3. セッション設定を確認
 
 <details>
 <summary>原因と解決策</summary>
 
-**原因**: Authorizerのキャッシュが古いポリシーを返している
-
+**原因1**: MFAデバイスの時刻ずれ
 ```bash
-# キャッシュの無効化（API Gateway設定変更）
-aws apigateway update-authorizer \
-  --rest-api-id <api-id> \
-  --authorizer-id <authorizer-id> \
-  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=0
-
-# 本番では適切なTTLを設定
-aws apigateway update-authorizer \
-  --rest-api-id <api-id> \
-  --authorizer-id <authorizer-id> \
-  --patch-operations op=replace,path=/authorizerResultTtlInSeconds,value=300
+# TOTPは30秒の時刻ウィンドウを使用
+# デバイスの時刻同期を確認
 ```
+
+**原因2**: セッションタイムアウト
+```bash
+# セッション設定の確認
+aws sso-admin describe-permission-set \
+  --instance-arn $INSTANCE_ARN \
+  --permission-set-arn $PERMISSION_SET_ARN \
+  --query 'PermissionSet.SessionDuration'
+```
+
+**原因3**: ブラウザのサードパーティCookie設定
+- シークレットモードでテスト
+- awsapps.comドメインのCookieを許可
+</details>
+
+---
+
+#### 問題3: SCIMプロビジョニングが失敗
+
+**症状**: 外部IdPからのユーザー同期が完了しない
+
+**調査のヒント**:
+1. SCIM APIのエラーログを確認
+2. 属性マッピングを確認
+3. ネットワーク設定を確認
+
+<details>
+<summary>原因と解決策</summary>
+
+**原因1**: SCIM APIトークンの有効期限切れ
+```bash
+# 新しいトークンを生成
+# IAM Identity Center コンソール → 設定 → プロビジョニング → トークンを再生成
+```
+
+**原因2**: 必須属性の欠落
+```json
+// SCIM リクエストに必要な属性
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+  "userName": "user@example.com",
+  "name": {
+    "givenName": "First",
+    "familyName": "Last"
+  },
+  "emails": [{
+    "value": "user@example.com",
+    "primary": true
+  }],
+  "displayName": "First Last",
+  "active": true
+}
+```
+
+**原因3**: IdP側のエラー
+- Okta/Azure AD のプロビジョニングログを確認
+- リトライ設定を調整
 </details>
 
 ---
 
 ### 6.3 設計課題
 
-#### 課題: エンタープライズテナント向けSAML SSO統合
+#### 課題: ゼロトラストアーキテクチャへの拡張
 
-**シナリオ**: 大企業テナントから「自社のIdP（Okta/Azure AD）でSSOしたい」という要望がありました。
+**シナリオ**: 経営層から「ゼロトラストセキュリティモデルに移行したい」という要望がありました。
 
 **検討事項**:
-1. Cognito User Pool + SAML Identity Providerの構成
-2. テナントごとに異なるIdPを設定する方法
-3. Just-In-Timeプロビジョニングの実装
-4. 属性マッピング（tenant_id、roleの引き継ぎ）
+1. デバイス信頼の検証（AWS Verified Access との連携）
+2. 継続的な認証（セッション中の再認証）
+3. コンテキストベースのアクセス制御
+4. マイクロセグメンテーション
 
 **設計案を作成してください**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     SSO Integration Design                       │
+│                Zero Trust Architecture Design                    │
 │                                                                 │
 │  [ここに設計図を作成]                                            │
 │                                                                 │
 │  考慮点：                                                        │
-│  - テナントドメインとIdPのマッピング                              │
-│  - JIT プロビジョニング時の初期ロール設定                         │
-│  - 既存ユーザーとのリンク                                        │
-│  - セッション管理（SLO対応）                                      │
+│  - 「Never trust, always verify」の原則                          │
+│  - デバイスポスチャの評価                                        │
+│  - 最小権限の原則の徹底                                          │
+│  - リアルタイムのリスク評価                                      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -398,255 +398,289 @@ aws apigateway update-authorizer \
 ## 7. 学習リソース
 
 ### 公式ドキュメント
-- [Amazon Cognito User Pools](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html)
-- [Cognito Lambda Triggers](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-identity-pools-working-with-aws-lambda-triggers.html)
-- [API Gateway Lambda Authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-use-lambda-authorizer.html)
-- [Multi-tenant SaaS Best Practices](https://docs.aws.amazon.com/wellarchitected/latest/saas-lens/saas-lens.html)
+- [IAM Identity Center User Guide](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)
+- [IAM Identity Center API Reference](https://docs.aws.amazon.com/singlesignon/latest/APIReference/welcome.html)
+- [AWS Organizations User Guide](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html)
+- [Terraform AWS SSO Admin Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssoadmin_permission_set)
 
-### 参考記事
-- [Building Multi-Tenant Solutions on AWS](https://aws.amazon.com/blogs/apn/building-a-multi-tenant-saas-solution-using-amazon-cognito-and-aws-identity-and-access-management/)
-- [SaaS Identity and Isolation with Amazon Cognito](https://aws.amazon.com/blogs/apn/saas-identity-and-isolation-with-amazon-cognito-on-the-aws-cloud/)
+### ベストプラクティス
+- [AWS Security Best Practices for IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/security-best-practices.html)
+- [Multi-Account Strategy](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)
 
 ---
 
 ## 8. 解答例
 
-### 課題1: テナントティア別の機能制限
+### 課題1: Break Glass アカウント
 
-```typescript
-// lib/lambda/middleware/feature-gate.ts
-interface FeatureGateResult {
-  allowed: boolean;
-  reason?: string;
+```hcl
+# break-glass.tf
+
+# Break Glass グループ
+resource "aws_identitystore_group" "break_glass" {
+  identity_store_id = local.identity_store_id
+  display_name      = "BreakGlass-Admins"
+  description       = "Emergency access administrators - use only in critical situations"
 }
 
-const TIER_FEATURES: Record<string, Set<string>> = {
-  free: new Set(['projects', 'tasks', 'basic-reports']),
-  standard: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access']),
-  enterprise: new Set(['projects', 'tasks', 'advanced-reports', 'integrations', 'api-access', 'audit-logs', 'sso', 'custom-branding', 'data-export']),
-};
+# Break Glass Permission Set
+resource "aws_ssoadmin_permission_set" "break_glass" {
+  name             = "BreakGlassAccess"
+  description      = "EMERGENCY USE ONLY - Full administrative access for critical incidents"
+  instance_arn     = local.instance_arn
+  session_duration = "PT1H"
 
-export function checkFeatureAccess(tenantTier: string, feature: string): FeatureGateResult {
-  const allowedFeatures = TIER_FEATURES[tenantTier] || TIER_FEATURES['free'];
-
-  if (allowedFeatures.has(feature)) {
-    return { allowed: true };
+  tags = {
+    Purpose     = "emergency-access"
+    ManagedBy   = "terraform"
+    AlertOnUse  = "true"
   }
-
-  // どのティアで利用可能かを提案
-  const availableIn = Object.entries(TIER_FEATURES)
-    .filter(([_, features]) => features.has(feature))
-    .map(([tier]) => tier);
-
-  return {
-    allowed: false,
-    reason: `Feature '${feature}' is not available in '${tenantTier}' plan. Available in: ${availableIn.join(', ')}`,
-  };
 }
 
-// Lambda関数での使用例
-export const handler = async (event: APIGatewayProxyEvent) => {
-  const tenantTier = event.requestContext.authorizer?.tenant_tier || 'free';
+resource "aws_ssoadmin_managed_policy_attachment" "break_glass_admin" {
+  instance_arn       = local.instance_arn
+  permission_set_arn = aws_ssoadmin_permission_set.break_glass.arn
+  managed_policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
 
-  // 高度なレポート機能へのアクセスチェック
-  const featureCheck = checkFeatureAccess(tenantTier, 'advanced-reports');
+# Break Glassの使用を検知するCloudWatch Alarm
+resource "aws_cloudwatch_log_metric_filter" "break_glass_usage" {
+  name           = "BreakGlassUsageFilter"
+  pattern        = "{ ($.eventName = AssumeRole) && ($.requestParameters.roleSessionName = \"*BreakGlass*\") }"
+  log_group_name = "aws-cloudtrail-logs"
 
-  if (!featureCheck.allowed) {
-    return {
-      statusCode: 403,
-      body: JSON.stringify({
-        error: 'Feature not available',
-        message: featureCheck.reason,
-        upgradeUrl: 'https://teamhub.example.com/pricing',
-      }),
-    };
+  metric_transformation {
+    name      = "BreakGlassUsageCount"
+    namespace = "Security/BreakGlass"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "break_glass_alert" {
+  alarm_name          = "BreakGlassAccessUsed"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "BreakGlassUsageCount"
+  namespace           = "Security/BreakGlass"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "CRITICAL: Break Glass access has been used"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.security_alerts.arn]
+  ok_actions    = [aws_sns_topic.security_alerts.arn]
+}
+
+# SNS Topic for security alerts
+resource "aws_sns_topic" "security_alerts" {
+  name = "security-break-glass-alerts"
+}
+
+resource "aws_sns_topic_subscription" "security_email" {
+  topic_arn = aws_sns_topic.security_alerts.arn
+  protocol  = "email"
+  endpoint  = "security-team@techcorp.example.com"
+}
+
+# 使用記録用のDynamoDBテーブル
+resource "aws_dynamodb_table" "break_glass_log" {
+  name         = "break-glass-usage-log"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "sessionId"
+  range_key    = "timestamp"
+
+  attribute {
+    name = "sessionId"
+    type = "S"
   }
 
-  // 機能の処理を続行
-  // ...
-};
+  attribute {
+    name = "timestamp"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "UserIdIndex"
+    hash_key        = "userId"
+    range_key       = "timestamp"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = {
+    Purpose = "break-glass-audit"
+  }
+}
 ```
 
-### 課題2: ユーザー招待フロー
+### 課題3: 一時的アクセス権限の付与
 
-```typescript
-// lib/lambda/api/invite-user.ts
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDBClient, PutItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { randomBytes } from 'crypto';
+```hcl
+# temporary-access.tf
 
-const dynamodb = new DynamoDBClient({});
-const ses = new SESClient({});
-const TABLE_NAME = process.env.TENANT_TABLE_NAME!;
-const INVITATION_TTL_HOURS = 48;
-
-interface InviteUserRequest {
-  email: string;
-  name: string;
-  role: 'admin' | 'manager' | 'member' | 'guest';
+# 一時アクセス申請用API Gateway
+resource "aws_apigatewayv2_api" "temp_access" {
+  name          = "temporary-access-api"
+  protocol_type = "HTTP"
 }
 
-export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  const tenantId = event.pathParameters?.tenantId;
-  const authContext = event.requestContext.authorizer;
-  const inviterId = authContext?.principalId;
-  const inviterName = authContext?.name || 'Team Administrator';
+# Step Functions ワークフロー定義
+resource "aws_sfn_state_machine" "temp_access_workflow" {
+  name     = "temporary-access-workflow"
+  role_arn = aws_iam_role.sfn_role.arn
 
-  const body: InviteUserRequest = JSON.parse(event.body || '{}');
+  definition = jsonencode({
+    Comment = "Temporary access request workflow"
+    StartAt = "ValidateRequest"
+    States = {
+      ValidateRequest = {
+        Type     = "Task"
+        Resource = aws_lambda_function.validate_request.arn
+        Next     = "NotifyApprover"
+        Catch = [{
+          ErrorEquals = ["ValidationError"]
+          Next        = "RequestDenied"
+        }]
+      }
+      NotifyApprover = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::sns:publish.waitForTaskToken"
+        Parameters = {
+          TopicArn = aws_sns_topic.approval_requests.arn
+          Message = {
+            "taskToken.$"  = "$$.Task.Token"
+            "requestId.$"  = "$.requestId"
+            "requester.$"  = "$.requester"
+            "reason.$"     = "$.reason"
+            "duration.$"   = "$.duration"
+            "permissions.$" = "$.permissions"
+          }
+        }
+        Next           = "CheckApproval"
+        TimeoutSeconds = 86400 # 24時間で自動拒否
+        Catch = [{
+          ErrorEquals = ["States.Timeout"]
+          Next        = "RequestExpired"
+        }]
+      }
+      CheckApproval = {
+        Type = "Choice"
+        Choices = [{
+          Variable      = "$.approved"
+          BooleanEquals = true
+          Next          = "GrantAccess"
+        }]
+        Default = "RequestDenied"
+      }
+      GrantAccess = {
+        Type     = "Task"
+        Resource = aws_lambda_function.grant_access.arn
+        Next     = "WaitForExpiry"
+      }
+      WaitForExpiry = {
+        Type           = "Wait"
+        TimestampPath = "$.expiryTime"
+        Next           = "RevokeAccess"
+      }
+      RevokeAccess = {
+        Type     = "Task"
+        Resource = aws_lambda_function.revoke_access.arn
+        End      = true
+      }
+      RequestDenied = {
+        Type     = "Task"
+        Resource = aws_lambda_function.notify_denial.arn
+        End      = true
+      }
+      RequestExpired = {
+        Type     = "Task"
+        Resource = aws_lambda_function.notify_expiry.arn
+        End      = true
+      }
+    }
+  })
+}
 
-  // 招待コードの生成
-  const inviteCode = randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + INVITATION_TTL_HOURS * 60 * 60 * 1000);
-  const now = new Date().toISOString();
+# 権限付与Lambda
+resource "aws_lambda_function" "grant_access" {
+  filename         = "${path.module}/lambda/grant-access.zip"
+  function_name    = "temp-access-grant"
+  role             = aws_iam_role.lambda_temp_access.arn
+  handler          = "index.handler"
+  runtime          = "nodejs20.x"
+  timeout          = 60
 
-  // テナント情報の取得
-  const tenantResult = await dynamodb.send(new GetItemCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      PK: { S: `TENANT#${tenantId}` },
-      SK: { S: 'METADATA' },
-    },
+  environment {
+    variables = {
+      INSTANCE_ARN       = local.instance_arn
+      IDENTITY_STORE_ID  = local.identity_store_id
+    }
+  }
+}
+
+# Lambda実装例（JavaScript）
+# lambda/grant-access/index.js
+/*
+const { SSOAdminClient, CreateAccountAssignmentCommand } = require("@aws-sdk/client-sso-admin");
+
+exports.handler = async (event) => {
+  const client = new SSOAdminClient({});
+
+  const { userId, accountId, permissionSetArn, duration } = event;
+
+  // アカウント割り当ての作成
+  await client.send(new CreateAccountAssignmentCommand({
+    InstanceArn: process.env.INSTANCE_ARN,
+    TargetId: accountId,
+    TargetType: "AWS_ACCOUNT",
+    PermissionSetArn: permissionSetArn,
+    PrincipalType: "USER",
+    PrincipalId: userId,
   }));
 
-  const tenantName = tenantResult.Item?.name?.S || 'TeamHub';
-
-  // 招待レコードの作成
-  await dynamodb.send(new PutItemCommand({
-    TableName: TABLE_NAME,
-    Item: {
-      PK: { S: `TENANT#${tenantId}#INVITATION#${inviteCode}` },
-      SK: { S: 'METADATA' },
-      tenantId: { S: tenantId! },
-      inviteCode: { S: inviteCode },
-      email: { S: body.email },
-      name: { S: body.name },
-      role: { S: body.role },
-      status: { S: 'pending' },
-      invitedBy: { S: inviterId },
-      createdAt: { S: now },
-      expiresAt: { S: expiresAt.toISOString() },
-      ttl: { N: String(Math.floor(expiresAt.getTime() / 1000)) },
-      // メールでの検索用
-      GSI1PK: { S: `INVITATION#EMAIL#${body.email}` },
-      GSI1SK: { S: now },
-    },
-  }));
-
-  // 招待メールの送信
-  const inviteUrl = `https://app.teamhub.example.com/accept-invite?code=${inviteCode}`;
-
-  await ses.send(new SendEmailCommand({
-    Source: 'noreply@teamhub.example.com',
-    Destination: {
-      ToAddresses: [body.email],
-    },
-    Message: {
-      Subject: {
-        Data: `You've been invited to join ${tenantName} on TeamHub`,
-      },
-      Body: {
-        Html: {
-          Data: `
-            <h2>You're invited!</h2>
-            <p>${inviterName} has invited you to join <strong>${tenantName}</strong> on TeamHub.</p>
-            <p>Your role will be: <strong>${body.role}</strong></p>
-            <p>Click the button below to accept the invitation:</p>
-            <p>
-              <a href="${inviteUrl}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; border-radius: 4px;">
-                Accept Invitation
-              </a>
-            </p>
-            <p><small>This invitation expires in ${INVITATION_TTL_HOURS} hours.</small></p>
-          `,
-        },
-      },
-    },
-  }));
+  // 有効期限の計算
+  const expiryTime = new Date(Date.now() + duration * 60 * 60 * 1000).toISOString();
 
   return {
-    statusCode: 201,
-    body: JSON.stringify({
-      message: 'Invitation sent successfully',
-      email: body.email,
-      expiresAt: expiresAt.toISOString(),
-    }),
+    ...event,
+    expiryTime,
+    status: "granted"
   };
 };
-
-// lib/lambda/api/accept-invite.ts
-export const acceptInviteHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  const { code, password } = JSON.parse(event.body || '{}');
-
-  // 招待コードの検証
-  const inviteResult = await dynamodb.send(new GetItemCommand({
-    TableName: TABLE_NAME,
-    Key: {
-      PK: { S: `INVITATION#${code}` },
-      SK: { S: 'METADATA' },
-    },
-  }));
-
-  if (!inviteResult.Item) {
-    return {
-      statusCode: 404,
-      body: JSON.stringify({ error: 'Invalid or expired invitation' }),
-    };
-  }
-
-  const invitation = inviteResult.Item;
-  const expiresAt = new Date(invitation.expiresAt.S!);
-
-  if (new Date() > expiresAt) {
-    return {
-      statusCode: 410,
-      body: JSON.stringify({ error: 'This invitation has expired' }),
-    };
-  }
-
-  if (invitation.status.S !== 'pending') {
-    return {
-      statusCode: 409,
-      body: JSON.stringify({ error: 'This invitation has already been used' }),
-    };
-  }
-
-  // Cognitoユーザーの作成と招待ステータスの更新は
-  // 前述のcreate-user.tsと同様の処理を実行
-  // ...
-
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ message: 'Invitation accepted. Welcome to TeamHub!' }),
-  };
-};
+*/
 ```
 
 ---
 
 ## 9. 追加学習
 
-### マルチテナントパターンの深掘り
+### IAM Identity Center の高度な機能
 
-1. **テナント分離レベルの選択**
-   - Silo: 完全分離（高コスト、高セキュリティ）
-   - Pool: 共有インフラ（低コスト、アプリケーション責務）
-   - Bridge: ハイブリッド（柔軟性重視）
+1. **カスタムSAMLアプリケーション**
+   - 非AWSアプリケーションへのSSO
+   - カスタム属性マッピング
 
-2. **ノイジーネイバー問題への対処**
-   - テナント単位のレート制限
-   - リソースクォータの設定
-   - 優先度に基づくリソース配分
+2. **AWS Verified Access との連携**
+   - デバイス信頼の検証
+   - ゼロトラストネットワークアクセス
 
-3. **コンプライアンス対応**
-   - データレジデンシー要件
-   - 監査ログの保持
-   - GDPR/個人情報保護法対応
+3. **Service Catalog との統合**
+   - セルフサービスポータル
+   - 承認済みリソースのプロビジョニング
 
 ### 次のステップ
-- 課題40でIAM Identity Center（AWS SSO）を使った従業員認証を学習
-- より高度なIdP統合パターンの実装
-- ゼロトラストアーキテクチャへの拡張
+- 課題38-39で学んだCognito認証との使い分けを理解
+- マルチリージョン展開の検討
+- AWS Control Tower との統合
 
 ---
 
@@ -656,47 +690,54 @@ export const acceptInviteHandler = async (event: APIGatewayProxyEvent): Promise<
 
 | 機能 | GCP | AWS |
 |------|-----|-----|
-| ユーザー認証 | Firebase Auth / Identity Platform | Cognito User Pool |
-| マルチテナント | Identity Platform Multi-tenancy | Cognito + Custom Implementation |
-| カスタムクレーム | Firebase Admin SDK | Pre-Token Generation Trigger |
-| SAML/OIDC | Identity Platform | Cognito Identity Provider |
-| 認可 | Cloud IAM + Custom | Lambda Authorizer + Custom |
-| SSO | Cloud Identity | IAM Identity Center |
+| 企業SSO | Cloud Identity | IAM Identity Center |
+| マルチプロジェクトアクセス | Organization IAM | Account Assignments |
+| 権限テンプレート | Custom Roles | Permission Sets |
+| IdP連携 | Cloud Identity SAML | Identity Center SAML/SCIM |
+| ディレクトリ同期 | GCDS | AD Connector / SCIM |
+| 監査ログ | Cloud Audit Logs | CloudTrail |
 
 ### セキュリティチェックリスト
 
-- [ ] テナントIDは変更不可（immutable）として設定
-- [ ] 全てのAPIエンドポイントでテナントコンテキストを検証
-- [ ] データベースクエリでテナントIDフィルタリングを必須化
-- [ ] トークンの有効期限を適切に設定（アクセストークン: 1時間以内）
-- [ ] 監査ログで全ての認証・認可イベントを記録
-- [ ] 定期的なセキュリティレビューの実施
+- [ ] MFAが全ユーザーで必須化されている
+- [ ] Permission Setで最小権限の原則が適用されている
+- [ ] セッション時間が適切に設定されている（本番は短く）
+- [ ] Break Glassアカウントが設定され、監視されている
+- [ ] CloudTrailで全SSOイベントが記録されている
+- [ ] 定期的なアクセス権レビューが実施されている
+- [ ] 退職者のアクセス無効化プロセスが確立されている
 
 ---
 
 ## 11. FAQ
 
-**Q: なぜCognitoのマルチテナント機能ではなくカスタム実装を選択したのですか？**
+**Q: IAM Identity CenterとCognitoの使い分けは？**
 
-A: Cognitoには直接的なマルチテナント機能がないため、カスタム属性とLambdaトリガーを組み合わせた実装が必要です。この方法により、以下の柔軟性が得られます：
-- テナント固有のビジネスロジックの実装
-- 細かい権限制御（RBAC）
-- テナントメタデータの管理
+A:
+- **IAM Identity Center**: 従業員がAWSリソースにアクセスする場合（内部向け）
+- **Cognito**: アプリケーションのエンドユーザー認証（外部向け）
 
-**Q: テナント数が1000を超えた場合のスケーラビリティは？**
+両者は異なるユースケースのため、同じ組織で両方使用することが一般的です。
 
-A: Pool モデルでは以下の対策を検討してください：
-- DynamoDBのパーティション設計の最適化
-- Lambda Authorizerのキャッシュ戦略
-- 大規模テナント向けのSilo移行オプション
+**Q: Identity CenterのIdentity Storeと外部IdPどちらを使うべき？**
 
-**Q: Cognito User Poolの制限に達した場合はどうすれば？**
+A:
+- **Identity Store（ビルトイン）**: 小規模組織、AWSのみの環境
+- **外部IdP**: 既存の企業ディレクトリ（AD/Okta/Azure AD）がある場合
 
-A: Cognito User Poolには以下のデフォルト制限があります：
-- 1ユーザープールあたりの最大ユーザー数: 無制限（ただしAPIレート制限あり）
-- 1ユーザープールあたりのグループ数: 10,000
+既存のIdPがある場合は、SCIMで同期することで一元管理できます。
 
-制限に近づいた場合は、リージョン分散または複数User Poolの管理を検討してください。
+**Q: Permission SetはどのAWSアカウントに作成される？**
+
+A: Permission Set自体はIAM Identity Center（管理アカウント）に存在しますが、アカウント割り当て時に各メンバーアカウントにIAMロールが自動作成されます。
+
+**Q: セッション時間の推奨値は？**
+
+A:
+- 本番環境: 1-4時間
+- 開発環境: 8時間
+- サンドボックス: 4時間
+- Break Glass: 1時間
 
 ---
 
@@ -704,10 +745,12 @@ A: Cognito User Poolには以下のデフォルト制限があります：
 
 以下の項目を確認して、学習内容の定着度を確認してください：
 
-- [ ] Cognito User Poolのカスタム属性を設定できる
-- [ ] Lambda Triggersを使ってトークンにカスタムクレームを追加できる
-- [ ] Lambda Authorizerでテナントコンテキストを抽出・検証できる
-- [ ] RBACの権限モデルを設計できる
-- [ ] DynamoDBでテナント分離を実現するキー設計ができる
-- [ ] テナントのオンボーディングフローを実装できる
-- [ ] クロステナントアクセスを防ぐセキュリティ対策を説明できる
+- [ ] IAM Identity Centerの基本概念（Identity Source, Permission Set, Account Assignment）を説明できる
+- [ ] Terraformでユーザー・グループを作成できる
+- [ ] 適切なPermission Setを設計・作成できる
+- [ ] アカウント割り当てを設定できる
+- [ ] ABAC（属性ベースアクセス制御）の設定ができる
+- [ ] 外部IdP連携の概念を理解している
+- [ ] Break Glassアカウントの設計ができる
+- [ ] 一時的アクセス権限の付与フローを設計できる
+- [ ] トラブルシューティングの基本手順を理解している

@@ -1,4 +1,4 @@
-# 課題15: LearnHub株式会社の動画教材自動字幕生成システム構築
+# 課題15: スタートアップのAWS基盤設計（Organizations + Landing Zone）
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,469 +9,948 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | AI / メディア処理 / EdTech |
-| 処理タイプ | バッチ / 非同期 |
-| 使用IaC | CloudFormation |
-| 所要時間 | 5〜6時間 |
+| カテゴリ | マルチアカウント戦略・ガバナンス |
+| 処理タイプ | バッチ |
+| 使用IaC | Terraform |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
-## シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロフィール
-
-**LearnHub株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
-
-| 項目 | 内容 |
-|------|------|
-| 業種 | EdTech（オンライン教育） |
-| 設立 | 2020年 |
-| 従業員数 | 25名 |
-| 月間アクティブ視聴者 | 3万人 |
-| 登録ユーザー | 10万人 |
-| 動画コンテンツ数 | 500本（総時間300時間） |
-| 平均動画長 | 36分 |
-| 月商 | 2,500万円 |
-| 講師数 | 30名（外部委託含む） |
+### 企業プロファイル
+- **企業名**: DevBoost株式会社
+- **業種**: SaaSスタートアップ（開発者向け生産性ツール）
+- **規模**: 従業員15名（今後1年で50名予定）、エンジニア8名
+- **フェーズ**: シリーズA調達完了、急成長期
+- **現状インフラ**: 単一AWSアカウントで全環境を運用
 
 ### 現状の課題
+DevBoost株式会社は、単一のAWSアカウントで本番・開発・検証環境を運用しています。
+急成長に伴い、以下の問題が深刻化しています：
 
-海外展開を進めるため、既存の日本語動画コンテンツに多言語字幕を追加したいが、外注費用と時間がかかりすぎています。また、聴覚障害者向けのアクセシビリティ対応も求められています。
-
-### 数値で示された問題
-
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 字幕付き動画比率 | 20%（日本語のみ） | 100%（日英中） |
-| 字幕作成コスト | 15,000円/時間 | 3,000円/時間以下 |
-| 字幕作成リードタイム | 2週間 | 24時間以内 |
-| 多言語対応言語数 | 日本語のみ | 日本語・英語・中国語 |
-| 月間新規動画 | 20本 | - |
-| 字幕外注費 | 月90万円 | 月20万円以下 |
-
-### 現状の字幕作成フロー
-
+```mermaid
+flowchart TB
+    subgraph CurrentSystem["現行システム構成（単一アカウント）"]
+        subgraph Security["1. セキュリティリスク"]
+            S1["本番環境に全員がアクセス可能"]
+            S2["IAMポリシーが複雑化、管理不能"]
+            S3["機密データへのアクセス制御が不十分"]
+        end
+        subgraph Cost["2. コスト管理の困難"]
+            C1["環境別・チーム別のコストが把握できない"]
+            C2["開発者が本番リソースを誤って変更"]
+            C3["リソースの野放し状態"]
+        end
+        subgraph Operations["3. 運用効率の低下"]
+            O1["新環境構築に30分以上"]
+            O2["設定ミスによるインシデント頻発"]
+            O3["チーム間の依存関係で開発停滞"]
+        end
+        subgraph Compliance["4. コンプライアンス不備"]
+            CP1["監査証跡が整備されていない"]
+            CP2["セキュリティ基準の統一管理ができない"]
+            CP3["顧客からのSOC2要求に対応困難"]
+        end
+    end
 ```
-1. 動画を外部字幕制作会社に送付
-2. 制作会社が文字起こし（3-5日）
-3. 内容確認・修正依頼（2-3日）
-4. 翻訳発注（3-5日）
-5. 翻訳確認・修正（2-3日）
-6. VTT/SRTファイル納品
-7. 動画プレイヤーへ統合
-→ 合計: 2-3週間
+
+### ビジネス要件
 ```
+機能要件:
+- マルチアカウント環境の構築（本番/ステージング/開発/共有）
+- セキュリティベースラインの自動適用
+- 新アカウント作成の自動化（5分以内）
+- 統合ログ・監査基盤
 
-### 解決したいこと
-
-1. 動画の音声からの自動文字起こし（日本語）
-2. 日本語字幕の自動生成（タイムスタンプ付き）
-3. 英語・中国語への自動翻訳
-4. 字幕ファイル（VTT形式）の自動生成
-5. 生成された字幕の品質向上（AI校正）
+非機能要件:
+- 環境構築時間：30分 → 5分
+- セキュリティインシデント：0件/月
+- コンプライアンススコア：95%以上
+- 運用工数：週10時間 → 週2時間
+```
 
 ### 成功指標（KPI）
-
-| KPI | 現状 | 目標 | 達成期限 |
-|-----|------|------|----------|
-| 字幕カバー率 | 20% | 100% | 3ヶ月後 |
-| 文字起こし精度 | - | 95%以上 | 1ヶ月後 |
-| 字幕作成時間 | 2週間 | 24時間以内 | 1ヶ月後 |
-| コスト削減率 | - | 70%以上 | 3ヶ月後 |
-| 海外ユーザー増加 | - | +30% | 6ヶ月後 |
-
----
-
-## 達成目標
-
-この演習で習得できるスキル：
-
-### 技術的な学習ポイント
-
-1. **Amazon Transcribeの実践活用**
-   - 音声からの自動文字起こし
-   - 日本語モデルの活用
-   - カスタムボキャブラリー設定
-
-2. **Amazon Translateの実践活用**
-   - 多言語翻訳
-   - 用語集（Terminology）の活用
-   - バッチ翻訳処理
-
-3. **Amazon Bedrockによる品質向上**
-   - 字幕の校正・修正
-   - 文脈を考慮した翻訳改善
-
-4. **メディアパイプラインの構築**
-   - S3イベント駆動
-   - Lambda + SQSによる非同期処理
-   - VTT/SRT形式の生成
-
-### 実務で活かせる知識
-
-- 音声処理パイプラインの設計
-- 多言語対応システムの構築
-- メディアファイル処理の自動化
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| 音声認識 | Amazon Transcribe | Speech-to-Text |
-| 翻訳 | Amazon Translate | Cloud Translation |
-| 生成AI | Bedrock | Vertex AI |
-| メディア処理 | MediaConvert | Transcoder API |
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 新環境構築時間 | 30分 | 5分 |
+| セキュリティインシデント | 月2-3件 | 0件 |
+| コスト可視性 | 0%（不明） | 100% |
+| IAMポリシー数 | 150+ | 20以下 |
+| コンプライアンススコア | 40% | 95% |
 
 ---
 
-## 使用するAWSサービス
+## 3. 学習目標
+
+### 本課題で習得するスキル
+
+```
+1. AWS Organizations（理解度：詳細）
+   - OU（組織単位）設計
+   - SCP（サービスコントロールポリシー）
+   - 一括請求とコスト配分
+
+2. Landing Zone設計（理解度：実装）
+   - Control Tower の概念理解
+   - Account Factory パターン
+   - ベースラインセキュリティ
+
+3. Terraform によるIaC（理解度：実装）
+   - マルチアカウントプロビジョニング
+   - モジュール設計
+   - State管理（S3 + DynamoDB）
+
+4. セキュリティガバナンス（理解度：基礎）
+   - GuardDuty / Security Hub 統合
+   - CloudTrail 組織トレイル
+   - Config 集約
+```
+
+### GCPエンジニア向け補足
+```
+GCP → AWS マッピング:
+- Resource Manager → AWS Organizations
+- Folders → Organizational Units (OU)
+- Organization Policies → Service Control Policies (SCP)
+- Cloud Identity → IAM Identity Center
+- Security Command Center → Security Hub
+
+主な違い:
+1. AWS Organizations: アカウント単位での分離が基本
+   （GCPはプロジェクト単位）
+
+2. SCP: 明示的な許可ではなく、最大権限の境界を設定
+   （Organization Policies に近いが、IAMとの組み合わせが必要）
+
+3. Landing Zone: AWS独自の概念
+   （GCPではCloud Foundation Toolkitが近い）
+```
+
+---
+
+## 4. 使用するAWSサービス
 
 ### メインサービス
-
-| サービス | 役割 | 選定理由 |
+| サービス | 役割 | 使用機能 |
 |----------|------|----------|
-| Amazon Transcribe | 音声→テキスト変換 | 日本語対応、字幕形式出力 |
-| Amazon Translate | 多言語翻訳 | リアルタイム翻訳、用語集対応 |
-| Amazon Bedrock | 字幕校正・品質向上 | 文脈理解、自然な表現 |
-| AWS Lambda | 各処理の実行 | サーバーレス |
-| Amazon S3 | 動画・字幕ファイル保存 | 大容量対応 |
-| Amazon SQS | 非同期処理キュー | 順序制御、リトライ |
+| **AWS Organizations** | アカウント管理 | OU、SCP、一括請求 |
+| **AWS IAM Identity Center** | ID管理 | SSO、権限セット |
+| **AWS CloudTrail** | 監査ログ | 組織トレイル |
+| **AWS Config** | 構成管理 | アグリゲーター |
 
-### 補助サービス
-
-| サービス | 役割 |
+### サポートサービス
+| サービス | 用途 |
 |----------|------|
-| Amazon DynamoDB | 処理ステータス管理 |
-| Amazon SNS | 処理完了通知 |
-| Amazon CloudWatch | 監視・ログ |
+| **Amazon S3** | Terraform State、ログ保存 |
+| **Amazon DynamoDB** | Terraform State Lock |
+| **AWS Security Hub** | セキュリティ統合 |
+| **Amazon GuardDuty** | 脅威検知 |
+| **AWS Budgets** | コスト管理 |
+| **Amazon SNS** | 通知 |
 
----
+### アーキテクチャ図
+```mermaid
+flowchart TB
+    subgraph Organizations["DevBoost AWS Organizations"]
+        subgraph Management["Management Account (Root)"]
+            OrgMgmt["Organizations<br/>Management"]
+            IAMCenter["IAM Identity<br/>Center"]
+            Billing["Billing &<br/>Cost Mgmt"]
+            RootSCP["SCP: DenyRootUser, RequireIMDSv2, DenyLeaveOrg"]
+        end
 
-## 前提条件
+        subgraph SecurityOU["Security OU"]
+            subgraph LogAccount["Log Account"]
+                CloudTrail["CloudTrail"]
+                ConfigAgg["Config Agg"]
+                S3Logs["S3 Logs"]
+            end
+            subgraph SecAccount["Security Account"]
+                GuardDuty["GuardDuty"]
+                SecHub["Security Hub"]
+                Detective["Detective"]
+            end
+            SecuritySCP["SCP: Restrict Regions"]
+        end
 
-### 必要な事前知識
+        subgraph InfraOU["Infrastructure OU"]
+            subgraph NetworkAccount["Network Account"]
+                TransitGW["Transit GW"]
+                VPNDX["VPN/DX"]
+                DNS["DNS (R53)"]
+            end
+            subgraph SharedServices["Shared Services"]
+                ECR["ECR"]
+                CICD["CI/CD"]
+                Artifacts["Artifacts"]
+            end
+            InfraSCP["SCP: Network Admin Only"]
+        end
 
-- AWSの基本操作（S3, Lambda）
-- Python基礎
-- 字幕フォーマット（VTT/SRT）の基本理解
+        subgraph WorkloadsOU["Workloads OU"]
+            subgraph ProdOU["Production OU"]
+                ProdAccount["Production Account"]
+            end
+            subgraph NonProdOU["Non-Production"]
+                StagingAccount["Staging Account"]
+                DevAccount["Dev Account"]
+            end
+            subgraph SandboxOU["Sandbox OU"]
+                SandboxAccount["Sandbox Account"]
+                SandboxSCP["SCP: Strict Budget"]
+            end
+            WorkloadsSCP["SCP: Budget Limit"]
+        end
+    end
 
-### 準備するもの
-
-1. **AWSアカウント**
-   - Bedrock有効化（Claude 3 Haiku推奨）
-   - Transcribe/Translate アクセス権限
-
-2. **開発環境**
-   - AWS CLI v2
-   - Python 3.9以上
-
-3. **テストデータ**
-   - サンプル動画ファイル（MP4, 5-10分）
-   - または音声ファイル（MP3/WAV）
-
----
-
-## アーキテクチャ概要
-
-### システム全体構成
-
-```
-[講師が動画アップロード]
-        ↓
-[S3: 動画入力バケット]
-        ↓ S3イベント
-[SQS: 処理キュー]
-        ↓
-[Lambda: transcribe-starter]
-        ↓
-[Amazon Transcribe]（非同期ジョブ）
-        ↓ 完了イベント
-[Lambda: transcribe-callback]
-        ↓
-[S3: 日本語字幕JSON保存]
-        ↓
-[Lambda: translator]
-        ├── Amazon Translate（英語）
-        └── Amazon Translate（中国語）
-        ↓
-[Lambda: vtt-generator]
-        ├── Bedrock（字幕校正）
-        └── VTT/SRTファイル生成
-        ↓
-[S3: 字幕出力バケット]
-        ↓
-[SNS: 完了通知]
-```
-
-### 字幕生成フロー
-
-1. **動画アップロード**: S3にMP4をアップロード
-2. **音声抽出**: Transcribeが自動で音声を認識
-3. **文字起こし**: 日本語テキスト+タイムスタンプ生成
-4. **翻訳**: Translateで英語・中国語に翻訳
-5. **校正**: Bedrockで字幕の品質向上
-6. **出力**: VTT形式で3言語分の字幕ファイル生成
-7. **通知**: 処理完了をメール通知
-
----
-
-## トラブルシューティング課題
-
-### 問題1: Transcribeジョブが失敗
-
-**症状:**
-```
-TranscriptionJobStatus: FAILED
-FailureReason: "The media format provided does not match the detected media format."
-```
-
-**ヒント:**
-1. ファイル拡張子と実際のフォーマットが一致しているか確認
-2. サポートされているフォーマットか確認（MP3, MP4, WAV, FLAC等）
-3. ファイルが破損していないか確認
-
-**解決方法:**
-```python
-# Lambda内でファイル形式を自動検出
-import mimetypes
-
-def get_media_format(key):
-    extension = key.split('.')[-1].lower()
-    format_map = {
-        'mp4': 'mp4',
-        'mp3': 'mp3',
-        'wav': 'wav',
-        'm4a': 'mp4',
-        'flac': 'flac'
-    }
-    return format_map.get(extension, 'mp4')
-```
-
-### 問題2: 翻訳結果が不自然
-
-**症状:**
-```
-技術用語が一般的な意味で翻訳される
-プログラミング用語が変な日本語になる
-```
-
-**ヒント:**
-1. Amazon Translateの用語集（Terminology）を活用
-2. Bedrockの校正プロンプトを調整
-3. カスタムボキャブラリーを設定
-
-**解決方法:**
-```python
-# 用語集の使用
-def translate_with_terminology(text, source_lang, target_lang, terminology_names):
-    response = translate.translate_text(
-        Text=text,
-        SourceLanguageCode=source_lang,
-        TargetLanguageCode=target_lang,
-        TerminologyNames=terminology_names
-    )
-    return response['TranslatedText']
-
-# 用語集の例（事前にCSVでアップロード）
-# en,ja
-# Lambda,Lambda
-# API Gateway,API Gateway
-# serverless,サーバーレス
-```
-
-### 問題3: 字幕のタイミングがずれる
-
-**症状:**
-```
-音声と字幕が同期していない
-特に翻訳後の字幕で顕著
-```
-
-**ヒント:**
-1. VTTパース時にタイムスタンプが正しく保持されているか
-2. 翻訳で文が長くなりすぎていないか
-3. セグメント分割が適切か
-
-**解決方法:**
-```python
-# 長すぎる字幕を分割
-MAX_CHARS_PER_LINE = 40
-
-def split_long_subtitle(text, max_chars=MAX_CHARS_PER_LINE):
-    if len(text) <= max_chars:
-        return text
-
-    # 適切な位置で改行
-    words = text.split()
-    lines = []
-    current_line = []
-
-    for word in words:
-        if len(' '.join(current_line + [word])) <= max_chars:
-            current_line.append(word)
-        else:
-            lines.append(' '.join(current_line))
-            current_line = [word]
-
-    if current_line:
-        lines.append(' '.join(current_line))
-
-    return '\n'.join(lines)
+    Management --> SecurityOU
+    Management --> InfraOU
+    Management --> WorkloadsOU
 ```
 
 ---
 
-## 設計の考察ポイント
+## 5. 前提条件と事前準備
 
-### 1. なぜTranscribeの標準字幕出力を使わないのか？
-
-**考察ポイント:**
-- Transcribeの標準VTT出力 vs カスタム処理
-- 翻訳を挟む必要性
-- 品質向上のためのカスタマイズ余地
-
-### 2. Bedrockによる校正は必要か？
-
-**考察ポイント:**
-- Amazon Translateの品質
-- 追加コストと品質向上のトレードオフ
-- 処理時間への影響
-
-### 3. 同期処理 vs 非同期処理の選択
-
-**考察ポイント:**
-- Transcribeは非同期のみ
-- 翻訳は同期/非同期どちらも可能
-- ユーザー体験とシステム設計のバランス
-
-### 4. カスタムボキャブラリーの運用
-
-**考察ポイント:**
-- 技術用語の一貫性
-- 更新頻度と管理方法
-- 講師ごとの専門用語対応
-
-### 5. 字幕品質のモニタリング
-
-**考察ポイント:**
-- 自動評価の方法
-- 人間によるサンプリング確認
-- フィードバックループの設計
-
----
-
-## 発展課題（オプション）
-
-### 1. リアルタイム字幕（ライブ配信対応）
-- Amazon Transcribe Streamingの活用
-- WebSocketによるリアルタイム配信
-- 遅延最小化の工夫
-
-### 2. 話者分離（Speaker Diarization）
-- 複数講師の動画対応
-- 話者ラベルの自動付与
-- 対話形式コンテンツへの対応
-
-### 3. 字幕エディターUIの構築
-- Webベースの字幕編集ツール
-- タイムライン表示
-- 修正→再生成のワークフロー
-
-### 4. 品質スコアリング
-- 文字起こし精度の自動評価
-- WER（Word Error Rate）計測
-- 低品質字幕の自動フラグ
-
-### 5. 対応言語の拡大
-- 韓国語、スペイン語等の追加
-- 言語自動検出
-- 多言語プレイリスト対応
-
----
-
-## 想定コストと削減方法
-
-### 月額概算コスト（月20本×平均36分処理想定）
-
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| Amazon Transcribe | 20本 × 36分 = 720分 | $17 |
-| Amazon Translate | 720分 × 2言語 × 約2000文字 | $30 |
-| Amazon Bedrock (Haiku) | 720分 × 2言語 × 50セグメント | $5 |
-| AWS Lambda | 処理時間合計 | $2 |
-| Amazon S3 | 動画+字幕保存 | $5 |
-| Amazon DynamoDB | オンデマンド | $1 |
-| Amazon SQS | メッセージ | $0.01 |
-| Amazon SNS | 通知 | $0.01 |
-| CloudWatch | ログ | $3 |
-| **合計** | | **約$63（約9,500円）** |
-
-### コスト削減のポイント
-
-1. **Transcribeの効率化**
-   - 同じ動画の再処理を避ける（キャッシング）
-   - 短い動画は結合して処理
-
-2. **翻訳の最適化**
-   - 繰り返しフレーズのキャッシュ
-   - バッチ翻訳API（大量処理時）
-
-3. **Bedrock校正の選択的適用**
-   - 全セグメントではなく長いセグメントのみ
-   - Claude 3 Haikuの使用（Sonnetより安価）
-
-4. **S3ライフサイクル**
-   - 古い中間ファイルの自動削除
-   - Intelligent-Tieringの活用
-
-### リソース削除手順
-
+### 必要な環境
 ```bash
-# S3バケット内容削除
-aws s3 rm s3://learnhub-videos-input-${ACCOUNT_ID} --recursive
-aws s3 rm s3://learnhub-subtitles-output-${ACCOUNT_ID} --recursive
+# Terraform
+terraform --version  # 1.5以上
 
-# S3バケット削除
-aws s3 rb s3://learnhub-videos-input-${ACCOUNT_ID}
-aws s3 rb s3://learnhub-subtitles-output-${ACCOUNT_ID}
+# AWS CLI v2
+aws --version  # 2.x以上
 
-# DynamoDBテーブル削除
-aws dynamodb delete-table --table-name learnhub-subtitle-jobs
+# Git
+git --version
 
-# SQSキュー削除
-aws sqs delete-queue --queue-url https://sqs.${AWS_REGION}.amazonaws.com/${ACCOUNT_ID}/learnhub-subtitle-queue
+# jq（JSON処理）
+jq --version
+```
 
-# SNSトピック削除
-aws sns delete-topic --topic-arn arn:aws:sns:${AWS_REGION}:${ACCOUNT_ID}:learnhub-subtitle-notifications
+### AWSアカウント要件
+```
+- AWS Organizations が有効化可能なアカウント
+- 管理者権限を持つIAMユーザーまたはロール
+- 請求情報へのアクセス権限
+- 新規アカウント作成権限
+```
 
-# EventBridgeルール削除
-aws events remove-targets --rule learnhub-transcribe-complete --ids 1
-aws events delete-rule --name learnhub-transcribe-complete
+### 事前準備スクリプト
+```bash
+#!/bin/bash
+# setup-landing-zone.sh
 
-# Lambda関数削除
-aws lambda delete-function --function-name learnhub-transcribe-starter
-aws lambda delete-function --function-name learnhub-transcribe-callback
-aws lambda delete-function --function-name learnhub-translator-vtt-generator
+# 変数設定
+PROJECT_NAME="devboost"
+REGION="ap-northeast-1"
 
-# CloudFormation スタック削除
-aws cloudformation delete-stack --stack-name learnhub-subtitle-iam
+# ディレクトリ構造の作成
+mkdir -p ${PROJECT_NAME}-landing-zone/{modules,environments,policies}
+cd ${PROJECT_NAME}-landing-zone
+
+# ディレクトリ構造
+cat << 'EOF'
+devboost-landing-zone/
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── providers.tf
+├── backend.tf
+├── modules/
+│   ├── organization/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── account/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── scp/
+│   │   ├── main.tf
+│   │   └── policies/
+│   │       ├── deny-root.json
+│   │       ├── require-imdsv2.json
+│   │       └── region-restriction.json
+│   ├── security-baseline/
+│   │   ├── main.tf
+│   │   ├── guardduty.tf
+│   │   ├── securityhub.tf
+│   │   └── config.tf
+│   └── logging/
+│       ├── main.tf
+│       ├── cloudtrail.tf
+│       └── s3.tf
+├── environments/
+│   ├── production/
+│   ├── staging/
+│   └── development/
+└── policies/
+    └── scp/
+EOF
+
+# AWS Organizations の状態確認
+echo "=== Checking AWS Organizations Status ==="
+aws organizations describe-organization 2>/dev/null || echo "Organizations not enabled yet"
+
+# 現在の認証情報確認
+echo "=== Current AWS Identity ==="
+aws sts get-caller-identity
 ```
 
 ---
 
-## 学習のポイント
+## 6. アーキテクチャ設計
 
-### 1. メディア処理パイプラインの設計
-Transcribe（音声認識）→ Translate（翻訳）→ カスタム処理の流れは、メディア処理の典型パターン。各サービスの特性（同期/非同期、制限）を理解して設計する。
+### OU（組織単位）設計
+```yaml
+# ou-design.yaml
+organizational_units:
+  root:
+    name: "Root"
+    scps:
+      - DenyLeaveOrganization
+      - RequireIMDSv2
 
-### 2. 非同期処理の設計
-Transcribeのような長時間ジョブは必然的に非同期になる。EventBridgeでジョブ完了イベントをキャッチし、後続処理につなげるパターンを習得する。
+  security:
+    name: "Security"
+    purpose: "セキュリティ・監査機能の集約"
+    scps:
+      - DenyAllExceptSecurityServices
+    accounts:
+      - name: "log-archive"
+        email: "aws-log@devboost.example.com"
+        purpose: "CloudTrail, Config, VPCフローログの集約"
+      - name: "security-tooling"
+        email: "aws-security@devboost.example.com"
+        purpose: "GuardDuty, Security Hub, Detective"
 
-### 3. 多言語対応の考慮点
-翻訳品質は用語集（Terminology）やカスタムボキャブラリーで大きく向上する。技術コンテンツでは特に重要。
+  infrastructure:
+    name: "Infrastructure"
+    purpose: "共有インフラストラクチャ"
+    scps:
+      - NetworkAdminOnly
+    accounts:
+      - name: "network"
+        email: "aws-network@devboost.example.com"
+        purpose: "Transit Gateway, VPN, Direct Connect"
+      - name: "shared-services"
+        email: "aws-shared@devboost.example.com"
+        purpose: "ECR, CI/CD, 共有ツール"
 
-### 4. 字幕フォーマットの理解
-VTT/SRT形式の構造を理解し、パース・生成ができるようになる。タイムスタンプの精度が視聴体験に直結する。
+  workloads:
+    name: "Workloads"
+    children:
+      production:
+        name: "Production"
+        scps:
+          - DenyDestructiveActions
+          - RequireTagging
+        accounts:
+          - name: "production"
+            email: "aws-prod@devboost.example.com"
 
-### 5. AI校正による品質向上
-機械翻訳の結果をLLMで校正する「翻訳後編集（Post-editing）」パターン。コストと品質のバランスを取りながら、実用的な品質を実現する。
+      non_production:
+        name: "Non-Production"
+        scps:
+          - BudgetLimit
+        accounts:
+          - name: "staging"
+            email: "aws-staging@devboost.example.com"
+          - name: "development"
+            email: "aws-dev@devboost.example.com"
+
+      sandbox:
+        name: "Sandbox"
+        scps:
+          - StrictBudgetLimit
+          - LimitedServices
+        accounts:
+          - name: "sandbox"
+            email: "aws-sandbox@devboost.example.com"
+```
+
+### SCP設計
+```yaml
+# scp-design.yaml
+service_control_policies:
+  # 全組織に適用
+  DenyLeaveOrganization:
+    description: "組織からの離脱を禁止"
+    effect: "DENY"
+    actions:
+      - "organizations:LeaveOrganization"
+
+  RequireIMDSv2:
+    description: "EC2でIMDSv2を必須化"
+    effect: "DENY"
+    actions:
+      - "ec2:RunInstances"
+    conditions:
+      StringNotEquals:
+        "ec2:MetadataHttpTokens": "required"
+
+  # 本番環境用
+  DenyDestructiveActions:
+    description: "破壊的操作の禁止"
+    effect: "DENY"
+    actions:
+      - "ec2:TerminateInstances"
+      - "rds:DeleteDBInstance"
+      - "s3:DeleteBucket"
+    conditions:
+      StringNotLike:
+        "aws:PrincipalArn": "arn:aws:iam::*:role/Admin*"
+
+  # 開発環境用
+  BudgetLimit:
+    description: "高額サービスの制限"
+    effect: "DENY"
+    actions:
+      - "ec2:RunInstances"
+    conditions:
+      ForAnyValue:StringLike:
+        "ec2:InstanceType":
+          - "*.metal"
+          - "*.24xlarge"
+          - "*.16xlarge"
+          - "p*.*"
+          - "g*.*"
+
+  # リージョン制限
+  RegionRestriction:
+    description: "許可リージョンの制限"
+    effect: "DENY"
+    not_actions:
+      - "iam:*"
+      - "organizations:*"
+      - "support:*"
+      - "budgets:*"
+    conditions:
+      StringNotEquals:
+        "aws:RequestedRegion":
+          - "ap-northeast-1"
+          - "us-east-1"  # グローバルサービス用
+```
+
+---
+
+## 8. トラブルシューティング課題
+
+### 課題1: アカウント作成が失敗する
+
+**症状**:
+```
+Error: error creating Organizations Account: ConstraintViolationException:
+You have exceeded the allowed number of AWS accounts.
+```
+
+**調査コマンド**:
+```bash
+# アカウント制限の確認
+aws organizations describe-organization
+
+# 既存アカウント数の確認
+aws organizations list-accounts --query 'Accounts[*].[Id,Name,Status]' --output table
+
+# Service Quotas の確認
+aws service-quotas get-service-quota \
+    --service-code organizations \
+    --quota-code L-29A0C5DF
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: Organizations のデフォルトアカウント制限（10）に達している
+
+**解決手順**:
+```bash
+# 1. Service Quotas でクォータ引き上げリクエスト
+aws service-quotas request-service-quota-increase \
+    --service-code organizations \
+    --quota-code L-29A0C5DF \
+    --desired-value 50
+
+# 2. または、AWS サポートケースを作成
+# - カテゴリ: Service Limit Increase
+# - サービス: AWS Organizations
+# - 理由: ビジネス要件を記載
+
+# 3. 待機中の対応策
+# - 不要なアカウントのクローズ検討
+# - アカウント統合の検討
+```
+
+**追加確認事項**:
+- 閉鎖中のアカウントも制限にカウントされる（90日間）
+- アカウントメールの重複確認
+</details>
+
+### 課題2: SCP が意図通りに機能しない
+
+**症状**:
+```
+SCP でリージョン制限を設定したが、制限されているはずのリージョンで
+リソースが作成できてしまう。
+```
+
+**調査手順**:
+```bash
+# SCP のアタッチ状態確認
+aws organizations list-policies-for-target \
+    --target-id ou-xxxx-xxxxxxxx \
+    --filter SERVICE_CONTROL_POLICY
+
+# SCP の内容確認
+aws organizations describe-policy --policy-id p-xxxxxxxx
+
+# 対象アカウントの有効なポリシー確認
+aws organizations describe-effective-policy \
+    --target-id 123456789012 \
+    --policy-type SERVICE_CONTROL_POLICY
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: SCP の条件や NotAction の設定が不適切
+
+**解決手順**:
+```hcl
+# 1. NotAction の使用に注意
+# NotAction で指定したサービスは SCP の制限を受けない
+# グローバルサービスを適切に除外する
+
+resource "aws_organizations_policy" "region_restriction_fixed" {
+  name = "RegionRestrictionFixed"
+  type = "SERVICE_CONTROL_POLICY"
+
+  content = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyOtherRegions"
+        Effect    = "Deny"
+        NotAction = [
+          # グローバルサービスのみを除外
+          "iam:*",
+          "organizations:*",
+          "route53:*",
+          "cloudfront:*",
+          "waf:*",
+          "wafv2:*",
+          "globalaccelerator:*",
+          "support:*",
+          "budgets:*",
+          "ce:*",
+          "s3:GetBucketLocation",  # S3 は特定のアクションのみ除外
+          "s3:ListAllMyBuckets"
+        ]
+        Resource = "*"
+        Condition = {
+          StringNotEquals = {
+            "aws:RequestedRegion" = ["ap-northeast-1", "us-east-1"]
+          }
+        }
+      }
+    ]
+  })
+}
+
+# 2. SCP が OU に正しくアタッチされているか確認
+# 3. OU の階層構造を確認（親 OU の SCP も影響）
+# 4. マネジメントアカウントは SCP の対象外であることに注意
+```
+
+**テスト方法**:
+```bash
+# 制限されるべきリージョンでテスト
+aws ec2 describe-vpcs --region eu-west-1
+# Access Denied が返ることを確認
+```
+</details>
+
+### 課題3: クロスアカウントアクセスが機能しない
+
+**症状**:
+```
+Terraform で別アカウントにリソースを作成しようとすると
+Access Denied エラーが発生する。
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: AssumeRole の設定が不完全
+
+**解決手順**:
+```hcl
+# 1. Terraform provider でロールを指定
+provider "aws" {
+  alias  = "production"
+  region = "ap-northeast-1"
+
+  assume_role {
+    role_arn     = "arn:aws:iam::PRODUCTION_ACCOUNT_ID:role/OrganizationAccountAccessRole"
+    session_name = "TerraformSession"
+  }
+}
+
+# 2. Organizations 作成時のデフォルトロールを確認
+# アカウント作成時に OrganizationAccountAccessRole が自動作成される
+
+# 3. 信頼ポリシーの確認（対象アカウントで）
+aws iam get-role --role-name OrganizationAccountAccessRole
+
+# 4. 必要に応じて信頼ポリシーを更新
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::MANAGEMENT_ACCOUNT_ID:root"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+</details>
+
+---
+
+## 9. 設計課題
+
+### 設計課題: 50名規模への成長対応
+
+**シナリオ**:
+DevBoost社は1年後に従業員50名（エンジニア20名）への成長を計画しています。
+現在の Landing Zone 設計を拡張し、以下の要件に対応してください。
+
+**要件**:
+```
+1. チーム構成（想定）
+   - プラットフォームチーム: 5名
+   - プロダクトチームA: 5名
+   - プロダクトチームB: 5名
+   - データチーム: 3名
+   - SRE: 2名
+
+2. アクセス要件
+   - チームごとに専用の開発アカウント
+   - 本番環境は SRE + プラットフォームのみ
+   - データチームは分析環境のみ
+
+3. セキュリティ要件
+   - SOC2 Type II 準拠準備
+   - 監査ログの13ヶ月保持
+   - PII データの暗号化必須
+
+4. コスト要件
+   - チーム別コスト可視化
+   - 開発環境の予算制限（チームあたり月10万円）
+```
+
+**設計すべき項目**:
+- 拡張OU構造
+- IAM Identity Center の権限セット設計
+- 追加SCP
+- コスト配分戦略
+
+<details>
+<summary>設計例を見る</summary>
+
+### 拡張 OU 構造
+
+```mermaid
+flowchart TB
+    Root["Root"]
+
+    Root --> SecurityOU["Security OU"]
+    SecurityOU --> LogArchive["Log Archive Account"]
+    SecurityOU --> SecTooling["Security Tooling Account"]
+
+    Root --> InfraOU["Infrastructure OU"]
+    InfraOU --> NetworkAcc["Network Account"]
+    InfraOU --> SharedSvc["Shared Services Account"]
+
+    Root --> WorkloadsOU["Workloads OU"]
+    WorkloadsOU --> ProdOU["Production OU"]
+    ProdOU --> ProdAcc["Production Account"]
+
+    WorkloadsOU --> PreProdOU["Pre-Production OU"]
+    PreProdOU --> StagingAcc["Staging Account"]
+    PreProdOU --> QAAcc["QA Account"]
+
+    WorkloadsOU --> DevOU["Development OU"]
+    DevOU --> PlatformDev["Platform-Dev Account"]
+    DevOU --> ProductADev["ProductA-Dev Account"]
+    DevOU --> ProductBDev["ProductB-Dev Account"]
+    DevOU --> DataDev["Data-Dev Account"]
+
+    WorkloadsOU --> SandboxOU["Sandbox OU"]
+    SandboxOU --> SandboxAcc["Sandbox Account"]
+
+    Root --> AnalyticsOU["Analytics OU (New)"]
+    AnalyticsOU --> DataLakeAcc["Data Lake Account"]
+    AnalyticsOU --> BIAcc["BI Account"]
+```
+
+### IAM Identity Center 権限セット設計
+
+```yaml
+permission_sets:
+  # 管理者用
+  AdministratorAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+    session_duration: 4h
+    assignment:
+      - group: SRE
+        accounts: [All]
+      - group: PlatformTeam
+        accounts: [Infrastructure, Development OUs]
+
+  # 開発者用
+  DeveloperAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/PowerUserAccess
+    inline_policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Deny",
+            "Action": [
+              "iam:CreateUser",
+              "iam:CreateAccessKey",
+              "organizations:*"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    session_duration: 8h
+    assignment:
+      - group: ProductTeamA
+        accounts: [ProductA-Dev]
+      - group: ProductTeamB
+        accounts: [ProductB-Dev]
+
+  # 読み取り専用
+  ViewOnlyAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/ViewOnlyAccess
+    session_duration: 8h
+    assignment:
+      - group: AllDevelopers
+        accounts: [Production]
+
+  # データ分析用
+  DataAnalystAccess:
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+      - arn:aws:iam::aws:policy/AmazonRedshiftReadOnlyAccess
+    inline_policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:ListBucket"
+            ],
+            "Resource": [
+              "arn:aws:s3:::*-data-lake-*",
+              "arn:aws:s3:::*-data-lake-*/*"
+            ]
+          }
+        ]
+      }
+    assignment:
+      - group: DataTeam
+        accounts: [Data Lake, BI]
+```
+
+### コスト配分戦略
+
+```yaml
+cost_allocation:
+  # 必須タグ
+  mandatory_tags:
+    - Team
+    - Environment
+    - CostCenter
+    - Project
+
+  # Budget 設定
+  budgets:
+    - name: ProductA-Dev-Monthly
+      amount: 100000  # 10万円
+      filter:
+        account: ProductA-Dev
+      alerts:
+        - threshold: 80
+          action: notify
+        - threshold: 100
+          action: [notify, restrict_expensive_services]
+
+    - name: ProductB-Dev-Monthly
+      amount: 100000
+      filter:
+        account: ProductB-Dev
+      alerts:
+        - threshold: 80
+          action: notify
+        - threshold: 100
+          action: [notify, restrict_expensive_services]
+
+  # Cost Categories
+  cost_categories:
+    - name: Team
+      rules:
+        - value: Platform
+          match: Account IN [Platform-Dev, Shared-Services, Network]
+        - value: ProductA
+          match: Account IN [ProductA-Dev] OR Tag:Team = ProductA
+        - value: ProductB
+          match: Account IN [ProductB-Dev] OR Tag:Team = ProductB
+        - value: Data
+          match: Account IN [Data-Dev, Data-Lake, BI]
+```
+
+</details>
+
+---
+
+## 10. 発展課題
+
+### 発展課題1: Control Tower の導入（難易度：中級）
+
+**課題内容**:
+現在の Terraform ベースの Landing Zone を AWS Control Tower に移行し、
+ガードレールと Account Factory を活用してください。
+
+**要件**:
+- 既存アカウントの Control Tower への登録
+- カスタムガードレールの作成
+- Account Factory Customization (AFC) の設定
+
+### 発展課題2: GitOps によるアカウント管理（難易度：上級）
+
+**課題内容**:
+新規アカウント作成をGitOps で管理し、PR ベースの承認フローを実装してください。
+
+**要件**:
+- GitHub/GitLab リポジトリでアカウント定義を管理
+- PR 作成 → レビュー → マージで自動プロビジョニング
+- Terraform Cloud / Atlantis の活用
+
+### 発展課題3: FinOps 基盤の構築（難易度：中級）
+
+**課題内容**:
+組織全体のコスト可視化と最適化を自動化する FinOps 基盤を構築してください。
+
+**要件**:
+- Cost and Usage Report の設定と分析
+- 異常コスト検知の自動化
+- 月次コストレポートの自動配信
+
+---
+
+## 11. 振り返りと次のステップ
+
+### 学習のまとめ
+
+```
+本課題で学んだこと:
+□ AWS Organizations によるマルチアカウント管理
+□ OU 設計とベストプラクティス
+□ SCP による権限境界の設定
+□ IAM Identity Center による統合 ID 管理
+□ Terraform でのマルチアカウントプロビジョニング
+□ 組織レベルのセキュリティ・監査基盤
+
+GCP との主な違い:
+- アカウント vs プロジェクトの粒度の違い
+- SCP は Organization Policy より IAM 統合が深い
+- Control Tower という Landing Zone ソリューション
+```
+
+### GCP経験者向けポイント
+
+| 観点 | GCP | AWS | 移行時の注意 |
+|------|-----|-----|-------------|
+| 階層構造 | Folders | Organizational Units | OU は移動可能だが制限あり |
+| ポリシー | Organization Policies | SCP | SCP は許可ではなく境界を設定 |
+| ID 管理 | Cloud Identity | IAM Identity Center | SCIM 連携の設定が異なる |
+| 請求 | Billing Account | 一括請求 | 支払いアカウントは1つ |
+| ログ集約 | Log Router | CloudTrail 組織トレイル | 設定方法が異なる |
+
+### 推奨される次のステップ
+
+```
+1. AWS Certified Solutions Architect Associate
+   - Organizations の詳細理解
+
+2. Control Tower の学習
+   - マネージドな Landing Zone
+
+3. 実環境での適用
+   - 段階的な移行計画の策定
+   - チームへの教育
+
+4. 関連課題への挑戦
+   - 課題32: マルチリージョン構成
+   - 課題40: IAM Identity Center 統合
+```
+
+---
+
+## 12. 推定コストと注意事項
+
+### 本課題の推定コスト
+
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| Organizations | 管理機能 | 無料 |
+| CloudTrail | 組織トレイル | $2-5/月 |
+| Config | ルール評価 | $2-5/月 |
+| S3 | ログ保存 | $1-2/月 |
+| IAM Identity Center | ユーザー管理 | 無料 |
+| **合計** | | **$5-15/月** |
+
+### 注意事項
+
+```
+⚠️ Organizations の有効化
+- 一度有効化すると、完全な無効化は困難
+- 既存のアカウント構造に影響
+
+⚠️ アカウント作成
+- アカウント作成には一意のメールアドレスが必要
+- 作成後のメールアドレス変更は不可
+- アカウントのクローズには90日の待機期間
+
+⚠️ SCP の適用
+- マネジメントアカウントには SCP が適用されない
+- SCP は許可を与えない（IAM との AND 条件）
+- テスト環境で十分な検証後に適用
+
+⚠️ 本番環境への適用
+- 段階的に適用（Sandbox → Dev → Staging → Prod）
+- ロールバック計画を準備
+- チームへの事前周知
+```
+
+---
+
+**課題作成日**: 2024年1月
+**最終更新日**: 2024年1月
+**作成者**: AWS学習プログラム

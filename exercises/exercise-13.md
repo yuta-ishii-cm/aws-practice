@@ -1,6 +1,6 @@
-# 課題13: PayEasy Step Functionsワークフロー - 決済処理オーケストレーション
+# 課題13: EC企業のデータレイク構築
 
-**難易度: 🟡 中級**
+**難易度: 🟡 初級〜中級**
 
 ---
 
@@ -8,862 +8,666 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 中級 |
-| カテゴリ | サーバーレス / ワークフロー |
-| 処理タイプ | 非同期 |
-| 使用IaC | CDK |
+| 難易度 | 初級〜中級 |
+| カテゴリ | データ基盤 |
+| 処理タイプ | バッチ |
+| 使用IaC | CloudFormation |
 | 想定所要時間 | 5-6時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## 2. 学習するAWSサービス
 
-### 企業プロファイル: PayEasy株式会社
+この演習では以下のAWSサービスを実践的に学習します。
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     PayEasy株式会社                              │
-│                    決済代行サービス                              │
-├─────────────────────────────────────────────────────────────────┤
-│  設立: 2019年    従業員: 80名    本社: 東京                      │
-│  事業: EC事業者向け決済代行、サブスクリプション決済             │
-│  取引額: 月間50億円    加盟店: 2000社    API: 1日500万リクエスト │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【決済処理の現状】                                              │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                                                              ││
-│  │    ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐    ││
-│  │    │認証 │───►│与信 │───►│決済 │───►│通知 │───►│記録 │    ││
-│  │    └─────┘    └─────┘    └─────┘    └─────┘    └─────┘    ││
-│  │       │          │          │          │          │        ││
-│  │       ▼          ▼          ▼          ▼          ▼        ││
-│  │    [複雑な条件分岐とリトライ処理がコード内に散在]            ││
-│  │                                                              ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【現在の課題】                                                  │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │  ・決済フローが複雑化し、コードの可読性が低下               ││
-│  │  ・エラー発生時の状態把握が困難                             ││
-│  │  ・リトライ・補償処理のロジックが複雑                       ││
-│  │  ・処理時間の長い決済でLambdaタイムアウト発生               ││
-│  │  ・監査対応のための処理追跡が困難                           ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【目指す姿】                                                    │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │                   Step Functions                             ││
-│  │  ┌─────────────────────────────────────────────────────┐    ││
-│  │  │  ┌────┐   ┌────┐   ┌────┐   ┌────┐   ┌────┐       │    ││
-│  │  │  │認証│──►│与信│──►│決済│──►│通知│──►│完了│       │    ││
-│  │  │  └────┘   └──┬─┘   └──┬─┘   └────┘   └────┘       │    ││
-│  │  │              │        │                            │    ││
-│  │  │         ┌────▼────┐  ┌▼───────────┐               │    ││
-│  │  │         │与信失敗 │  │決済失敗    │               │    ││
-│  │  │         │→拒否通知│  │→ロールバック│               │    ││
-│  │  │         └─────────┘  └────────────┘               │    ││
-│  │  └─────────────────────────────────────────────────────┘    ││
-│  │                                                              ││
-│  │  ・視覚的なワークフロー管理                                 ││
-│  │  ・組み込みのエラーハンドリング                             ││
-│  │  ・実行履歴の自動記録                                       ││
-│  │  ・長時間処理のサポート（最大1年）                          ││
-│  └────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+### コア技術スタック
 
-### 決済フロー要件
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon S3** | データレイクストレージ | 3層アーキテクチャ、ライフサイクル管理 |
+| **AWS Glue** | ETL、データカタログ | クローラー、ETLジョブ、スキーマ管理 |
+| **Amazon Athena** | サーバーレスSQL | パーティションプルーニング、コスト最適化 |
+| **Amazon QuickSight** | BIダッシュボード | SPICE、可視化 |
 
-#### クレジットカード決済フロー
+---
+
+## 3. 最終構成図
 
 ```mermaid
 flowchart TB
-    subgraph step1[1. 決済リクエスト受付]
-        req[リクエスト検証]
-        dup[重複チェック - べき等性]
+    subgraph DataSources["Data Sources"]
+        RDS[("RDS MySQL<br/>(購買データ)")]
+        DynamoDB[("DynamoDB<br/>(商品マスタ)")]
+        CloudWatchLogs["CloudWatch Logs"]
+        ExternalAPI["外部API<br/>(広告データ)"]
     end
 
-    subgraph step2[2. カード認証 - 3Dセキュア]
-        judge[3DS必要判定]
-        auth_req[認証リクエスト送信]
-        auth_wait[認証結果待機 - コールバック]
+    subgraph S3DataLake["Amazon S3 Data Lake"]
+        Raw["Raw Zone<br/>(CSV/JSON)"]
+        Processed["Processed Zone<br/>(Parquet)"]
+        Curated["Curated Zone<br/>(ビジネス指標)"]
+        Raw --> Processed --> Curated
     end
 
-    subgraph step3[3. 与信確保]
-        card_api[カード会社API呼び出し]
-        credit_check[与信枠確認]
-        credit_num[与信番号取得]
+    subgraph Analytics["分析レイヤー"]
+        GlueCatalog["Glue Data Catalog"]
+        Athena["Amazon Athena<br/>(SQL Queries)"]
+        QuickSight["QuickSight<br/>(Dashboard)"]
     end
 
-    subgraph step4[4. 決済実行]
-        settle[売上確定処理]
-        issue[決済番号発行]
-    end
+    RDS --> Raw
+    DynamoDB --> Raw
+    CloudWatchLogs --> Raw
+    ExternalAPI --> Raw
 
-    subgraph step5[5. 後処理]
-        merchant[加盟店への通知]
-        buyer[購入者への通知]
-        record[取引記録保存]
-    end
-
-    step1 --> step2 --> step3 --> step4 --> step5
-```
-
-#### エラーパターンと処理
-
-| エラー種別 | 処理方針 | リトライ |
-|-----------|---------|---------|
-| カード認証失敗 | 拒否通知→終了 | なし |
-| 与信失敗 | 拒否通知→終了 | なし |
-| 与信タイムアウト | 再試行 | 3回まで |
-| 決済失敗 | 与信取消→拒否通知 | なし |
-| 決済タイムアウト | 状態確認→判断 | 確認3回 |
-| 通知失敗 | キュー→再送 | 5回まで |
-| システムエラー | アラート→手動対応 | 要確認 |
-
-### ビジネス要件と KPI
-
-#### パフォーマンス目標
-
-| 指標 | 現状 | 目標 | 改善 |
-|-----|------|------|------|
-| 決済完了時間 | 8秒 | 3秒 | 62%↓ |
-| 決済成功率 | 97% | 99% | 2%↑ |
-| エラー検知時間 | 30分 | 1分 | 96%↓ |
-| 障害復旧時間 | 2時間 | 15分 | 87%↓ |
-
-#### 運用目標
-
-| 指標 | 現状 | 目標 | 改善 |
-|-----|------|------|------|
-| コード行数 | 5000行 | 2000行 | 60%↓ |
-| デプロイ時間 | 30分 | 5分 | 83%↓ |
-| 監査対応工数 | 20時間/月 | 2時間/月 | 90%↓ |
-| 新機能追加工数 | 2週間 | 3日 | 78%↓ |
-
-#### 処理量
-
-- 1日あたり決済件数: 50万件
-- ピーク時: 1000件/秒
-- 平均決済金額: 5,000円
-- 3Dセキュア対象: 30%
-
----
-
-## 3. 学習目標
-
-### 習得スキル
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       学習目標マップ                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【主要スキル】                                                  │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. Step Functions 基礎                                      ││
-│  │     ├── Amazon States Language (ASL) 構文                    ││
-│  │     ├── Standard vs Express ワークフロー                     ││
-│  │     ├── 各種ステート（Task, Choice, Parallel, Map等）        ││
-│  │     └── 入出力処理（InputPath, OutputPath, ResultPath）      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  2. エラーハンドリング                                       ││
-│  │     ├── Retry設定（指数バックオフ）                          ││
-│  │     ├── Catch設定（エラー分岐）                              ││
-│  │     ├── 補償トランザクション（Saga パターン）                ││
-│  │     └── タイムアウト設定                                     ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  3. 高度なパターン                                           ││
-│  │     ├── コールバックパターン（waitForTaskToken）             ││
-│  │     ├── 並列処理（Parallel, Map）                            ││
-│  │     ├── 動的並列処理（Distributed Map）                      ││
-│  │     └── ネストされたワークフロー                             ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  4. CDKによるStep Functions構築                              ││
-│  │     ├── StepFunctions Constructs                             ││
-│  │     ├── Lambda統合                                           ││
-│  │     ├── 他AWSサービス統合                                    ││
-│  │     └── テスト戦略                                           ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【副次スキル】                                                  │
-│  ・イベント駆動アーキテクチャ                                    │
-│  ・CloudWatch Logs Insights でのデバッグ                        │
-│  ・X-Ray による分散トレーシング                                 │
-│  ・コスト最適化                                                  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### GCPとの対応関係
-
-| AWS サービス | GCP 対応サービス | 主な違い |
-|-------------|-----------------|---------|
-| Step Functions | Cloud Workflows | Step FunctionsはASL、WorkflowsはYAML |
-| Step Functions Express | Cloud Run Jobs | 短時間実行の高スループット |
-| EventBridge | Eventarc | イベントルーティング |
-| X-Ray | Cloud Trace | 分散トレーシング |
-
----
-
-## 4. 使用するAWSサービス
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    使用AWSサービス一覧                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【コアサービス】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス          │ 用途                    │ 重要度      ││
-│  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  Step Functions    │ ワークフロー管理        │ ★★★★★      ││
-│  │  Lambda            │ 各処理ステップ実行      │ ★★★★★      ││
-│  │  API Gateway       │ 決済API受付             │ ★★★★☆      ││
-│  │  DynamoDB          │ 取引データ保存          │ ★★★★☆      ││
-│  │  CDK               │ インフラ定義            │ ★★★★★      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【支援サービス】                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  サービス          │ 用途                    │ 重要度      ││
-│  ├────────────────────┼─────────────────────────┼─────────────┤│
-│  │  SQS               │ 非同期通知キュー        │ ★★★☆☆      ││
-│  │  SNS               │ 通知配信                │ ★★★☆☆      ││
-│  │  Secrets Manager   │ 認証情報管理            │ ★★★★☆      ││
-│  │  CloudWatch        │ 監視・アラート          │ ★★★★☆      ││
-│  │  X-Ray             │ 分散トレーシング        │ ★★★☆☆      ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+    S3DataLake --> GlueCatalog
+    GlueCatalog <--> Athena
+    Athena <--> QuickSight
 ```
 
 ---
 
-## 5. 前提条件と事前準備
+## 4. シナリオ
 
-### 必要な環境
+### 企業プロファイル
+
+| 項目 | 内容 |
+|------|------|
+| **企業名** | 〇〇株式会社 |
+| **業種** | 総合EC（家電・日用品・ファッション） |
+| **従業員数** | 500名（データチーム10名） |
+| **月間購買件数** | 100万件 |
+| **SKU数** | 10万点 |
+| **月間PV** | 5000万PV |
+
+### 現状の課題
+
+```
+〇〇株式会社は急成長する総合ECサイトを運営しています。
+データ活用において以下の課題を抱えています：
+
+1. データサイロ化
+   - 購買データはRDS (MySQL)
+   - アクセスログはElasticsearch
+   - 商品データはDynamoDB
+   - それぞれ別々に分析、統合できない
+
+2. 分析の遅延
+   - 月次レポート作成に3日かかる
+   - アドホック分析の依頼対応に1週間
+   - リアルタイムな意思決定ができない
+
+3. コスト非効率
+   - 分析用に本番DBのレプリカを使用
+   - 高額なBIツールのライセンス費用
+   - データエンジニアの工数が分析に消費
+
+4. スケーラビリティの限界
+   - データ量増加でクエリが遅くなっている
+   - 過去データの保持コストが増大
+   - 新しい分析要件への対応が困難
+```
+
+### ビジネス目標
+
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| 月次レポート作成時間 | 3日 | 自動化（0日） |
+| アドホック分析対応 | 1週間 | 1時間以内（セルフサービス） |
+| データ統合率 | 0%（サイロ化） | 100% |
+| 過去データ保持期間 | 1年 | 5年以上 |
+| 分析コスト | 月100万円 | 月30万円 |
+
+---
+
+## 5. 達成目標
+
+### 主要な学習成果
+
+```
+この課題を完了すると、以下ができるようになります：
+
+1. S3ベースのデータレイク構築
+   - Raw/Processed/Curatedの3層アーキテクチャ
+   - パーティショニングによる効率化
+   - ライフサイクル管理でコスト最適化
+
+2. AWS Glueによるデータ統合
+   - クローラーによるスキーマ自動検出
+   - ETLジョブでのデータ変換
+   - Data Catalogによるメタデータ管理
+
+3. Amazon Athenaによるクエリ分析
+   - サーバーレスでのSQLクエリ
+   - パーティションプルーニング
+   - クエリ結果のキャッシング
+
+4. Amazon QuickSightによるBI
+   - ダッシュボード作成
+   - SPICE によるパフォーマンス最適化
+   - セルフサービス分析の実現
+```
+
+### 合格基準
+
+| 項目 | 基準 |
+|------|------|
+| データレイク | S3に3層構造でデータが格納されていること |
+| ETL | Glueジョブで日次データ処理が自動化されていること |
+| クエリ | Athenaで主要な分析クエリが実行できること |
+| ダッシュボード | QuickSightで売上ダッシュボードが作成されていること |
+| コスト | スキャン量の最適化が実装されていること |
+
+---
+
+## 6. 使用するAWSサービス
+
+### コア技術スタック
+
+```yaml
+ストレージ:
+  - Amazon S3: データレイクストレージ
+  - S3 Glacier: 長期アーカイブ
+
+データ処理:
+  - AWS Glue: ETL、データカタログ
+  - AWS Glue DataBrew: データ準備（ノーコード）
+  - Amazon EMR: 大規模データ処理（オプション）
+
+クエリエンジン:
+  - Amazon Athena: サーバーレスSQL
+  - Amazon Redshift Spectrum: DWH連携（オプション）
+
+可視化:
+  - Amazon QuickSight: BIダッシュボード
+
+オーケストレーション:
+  - AWS Step Functions: ワークフロー管理
+  - Amazon EventBridge: スケジュール実行
+
+セキュリティ:
+  - AWS Lake Formation: データレイクガバナンス
+  - AWS IAM: アクセス制御
+  - AWS KMS: 暗号化
+```
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| オブジェクトストレージ | S3 | Cloud Storage |
+| データカタログ | Glue Data Catalog | Data Catalog |
+| ETL | Glue | Dataflow / Dataproc |
+| サーバーレスクエリ | Athena | BigQuery |
+| BI | QuickSight | Looker |
+
+---
+
+## 7. 前提条件
+
+### 技術要件
 
 ```bash
-# Node.js バージョン確認
-node --version
-# v18.x 以上
+# 必要なCLIツール
+aws --version          # 2.x
+python --version       # 3.9+
 
-# AWS CDK バージョン確認
-cdk --version
-# 2.x 以上
-
-# AWS CLI バージョン確認
-aws --version
-# aws-cli/2.x.x 以上
-
-# TypeScript
-npm list typescript
-```
-
-### AWS環境の準備
-
-```bash
-# 環境変数設定
+# AWS設定
+aws configure
 export AWS_REGION=ap-northeast-1
-export PROJECT_NAME=payeasy
-export ENVIRONMENT=dev
-
-# プロジェクトディレクトリ作成
-mkdir -p ~/payeasy-stepfunctions
-cd ~/payeasy-stepfunctions
-
-# CDKプロジェクト初期化
-cdk init app --language typescript
-
-# 必要なパッケージインストール
-npm install @aws-cdk/aws-stepfunctions @aws-cdk/aws-stepfunctions-tasks \
-            @aws-cdk/aws-lambda @aws-cdk/aws-lambda-nodejs \
-            @aws-cdk/aws-dynamodb @aws-cdk/aws-apigateway \
-            @aws-cdk/aws-sqs @aws-cdk/aws-sns @aws-cdk/aws-sns-subscriptions \
-            @aws-cdk/aws-secretsmanager @aws-cdk/aws-logs \
-            esbuild
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export DATALAKE_BUCKET=company-datalake-${AWS_ACCOUNT_ID}
 ```
 
-### IAMポリシー（必要な権限）
+### 事前準備
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "states:*",
-        "lambda:*",
-        "dynamodb:*",
-        "apigateway:*",
-        "sqs:*",
-        "sns:*",
-        "secretsmanager:*",
-        "logs:*",
-        "xray:*",
-        "cloudformation:*",
-        "iam:*",
-        "s3:*"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
+```bash
+# サンプルデータの概要
+# 以下のデータソースを想定:
+
+1. 購買データ (orders.csv)
+   - order_id, customer_id, order_date, total_amount, status
+
+2. 注文明細 (order_items.csv)
+   - order_item_id, order_id, product_id, quantity, unit_price
+
+3. 商品マスタ (products.csv)
+   - product_id, product_name, category, subcategory, brand, price
+
+4. 顧客データ (customers.csv)
+   - customer_id, name, email, prefecture, city, registration_date
+
+5. アクセスログ (access_logs.json)
+   - timestamp, user_id, page_url, action, device, session_id
 ```
 
 ---
 
-## 6. アーキテクチャ設計
+## 8. トラブルシューティングチャレンジ
 
-### 決済ワークフロー全体像
-
-```mermaid
-flowchart TB
-    subgraph Client["EC加盟店"]
-        MerchantAPI["EC加盟店 API"]
-    end
-
-    subgraph AWS["AWS Cloud"]
-        APIGW["API Gateway REST"]
-
-        subgraph StepFunctions["Step Functions: PaymentWorkflow"]
-            Validate["ValidateRequest<br/>リクエスト検証・重複チェック"]
-            Check3DS{"Check3DSRequired<br/>Choice"}
-            Request3DS["Request3DS<br/>コールバック待機"]
-            Authorize["AuthorizePayment<br/>与信確保"]
-            Capture["CapturePayment<br/>売上確定"]
-            Notify["SendNotifications<br/>Parallel: 加盟店/購入者通知"]
-            Save["SaveTransaction<br/>取引記録保存"]
-        end
-    end
-
-    MerchantAPI --> APIGW
-    APIGW --> Validate
-    Validate --> Check3DS
-    Check3DS -->|3DS必要| Request3DS
-    Check3DS -->|3DS不要| Authorize
-    Request3DS --> Authorize
-    Authorize -->|成功| Capture
-    Capture --> Notify
-    Notify --> Save
-```
-
-**エラー処理フロー:**
-- 各ステップで Catch → ErrorHandler → 補償処理/通知
-- 与信失敗 → 拒否通知
-- 決済失敗 → 与信取消 → 拒否通知
-- 通知失敗 → SQS → リトライ
-
-### ステートマシン詳細設計
-
-#### ステート一覧
-
-| ステート名 | タイプ | 説明 |
-|-----------|--------|------|
-| ValidateRequest | Task | 入力検証・重複チェック |
-| Check3DSRequired | Choice | 3DS認証要否判定 |
-| Request3DS | Task | 3DS認証リクエスト |
-| Wait3DSCallback | Task | コールバック待機 |
-| Validate3DSResult | Choice | 3DS結果判定 |
-| AuthorizePayment | Task | 与信確保 |
-| CheckAuthResult | Choice | 与信結果判定 |
-| CapturePayment | Task | 売上確定 |
-| SendNotifications | Parallel | 通知送信（並列） |
-| SaveTransaction | Task | 取引記録保存 |
-| PaymentSuccess | Succeed | 正常終了 |
-| HandleAuthFailure | Task | 与信失敗処理 |
-| HandleCaptureFailure | Task | 決済失敗→与信取消 |
-| HandleError | Task | 汎用エラー処理 |
-| PaymentFailed | Fail | 異常終了 |
-
-#### エラーハンドリング戦略
-
-**リトライ対象:**
-- States.TaskFailed (一時的な失敗)
-- States.Timeout (タイムアウト)
-- Lambda.ServiceException (サービスエラー)
-
-**リトライ設定:**
-- MaxAttempts: 3
-- IntervalSeconds: 1
-- BackoffRate: 2.0
-- MaxDelaySeconds: 10
-
-**Catch対象:**
-- AuthorizationError → HandleAuthFailure
-- CaptureError → HandleCaptureFailure
-- States.ALL → HandleError
-
----
-
-## 8. トラブルシューティング演習
-
-### 演習8-1: タイムアウト問題
+### Challenge 1: Athenaクエリが遅い
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 8-1                      │
-│                  タイムアウト問題                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  3DS認証で外部サービスからのコールバックが                       │
-│  タイムアウトになり、決済が失敗するケースが増加している。        │
-│                                                                  │
-│  【エラー】                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  States.Timeout: Task timed out after 600 seconds           ││
-│  │  State: Request3DS                                          ││
-│  │  ExecutionArn: arn:aws:states:...:execution:xxx             ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. タイムアウトの原因を調査してください                         │
-│  2. 適切なタイムアウト設定を検討してください                     │
-│  3. タイムアウト時のユーザー体験を改善してください               │
-│                                                                  │
-│  【ヒント】                                                      │
-│  - CloudWatch Logs Insights                                     │
-│  - Step Functions 実行履歴                                      │
-│  - Heartbeat機能                                                │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+問題:
+カテゴリ別売上クエリの実行に5分以上かかる。
+データスキャン量も10GB以上になっている。
+
+クエリ:
+SELECT category, SUM(total_amount)
+FROM company_processed.orders o
+JOIN company_processed.order_items oi ON o.order_id = oi.order_id
+JOIN company_processed.products p ON oi.product_id = p.product_id
+WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY category
+
+調査項目:
+1. パーティションの活用状況
+2. ファイルフォーマットとサイズ
+3. JOIN最適化
 ```
 
-**解決策例**
+<details>
+<summary>解決のヒント</summary>
 
-```typescript
-// ハートビートを使用した改善版
-const request3DSWithHeartbeat = new tasks.LambdaInvoke(this, 'Request3DS', {
-  lambdaFunction: lambdas.request3DS,
-  integrationPattern: sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-  payload: sfn.TaskInput.fromObject({
-    'paymentId.$': '$.paymentId',
-    'taskToken.$': '$$.Task.Token',
-  }),
-  // タイムアウト設定
-  taskTimeout: sfn.Timeout.duration(cdk.Duration.minutes(10)),
-  // ハートビート：30秒ごとに生存確認
-  heartbeat: cdk.Duration.seconds(30),
-  resultPath: '$.threeDSResult',
-});
+```sql
+-- 1. パーティションフィルタを使用
+SELECT category, SUM(total_amount)
+FROM company_processed.orders o
+JOIN company_processed.order_items oi ON o.order_id = oi.order_id
+JOIN company_processed.products p ON oi.product_id = p.product_id
+WHERE o.year = 2024 AND o.month = 1  -- パーティションキーを使用
+GROUP BY category;
 
-// Lambda側でハートビートを送信
-// lambda/request-3ds/index.ts
-import { SFNClient, SendTaskHeartbeatCommand } from '@aws-sdk/client-sfn';
+-- 2. EXPLAIN で実行計画確認
+EXPLAIN
+SELECT category, SUM(total_amount)
+FROM company_processed.orders ...;
 
-const sfnClient = new SFNClient({});
+-- 3. パーティション状態確認
+SHOW PARTITIONS company_processed.orders;
 
-async function sendHeartbeat(taskToken: string): Promise<void> {
-  await sfnClient.send(new SendTaskHeartbeatCommand({ taskToken }));
-}
+-- 4. テーブル統計情報更新
+ANALYZE TABLE company_processed.orders COMPUTE STATISTICS;
 
-// 外部サービス待機中に定期的にハートビートを送信
-const heartbeatInterval = setInterval(async () => {
-  try {
-    await sendHeartbeat(taskToken);
-    console.log('Heartbeat sent successfully');
-  } catch (error) {
-    console.error('Failed to send heartbeat:', error);
-    clearInterval(heartbeatInterval);
-  }
-}, 25000); // 30秒のハートビートタイムアウトより短く
+-- 5. Curatedゾーンの事前集計テーブルを使用
+-- 日次バッチで集計済みデータを参照
+SELECT category, SUM(total_sales)
+FROM company_curated.daily_sales
+WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY category;
+
+-- パフォーマンス比較:
+-- Before: スキャン10GB、5分
+-- After: スキャン100MB、5秒
 ```
+</details>
 
-### 演習8-2: 補償トランザクション失敗
+### Challenge 2: Glue ETLジョブがOOM（メモリ不足）で失敗
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 8-2                      │
-│               補償トランザクション失敗                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  決済（売上確定）が失敗し、与信取消（補償）も失敗した。          │
-│  結果として与信枠が確保されたままの状態になっている。            │
-│                                                                  │
-│  【エラーログ】                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  CapturePayment: Failed - Network timeout                   ││
-│  │  RollbackAuthorization: Failed - Service unavailable        ││
-│  │                                                              ││
-│  │  Payment Status: UNKNOWN                                     ││
-│  │  Authorization Status: ACTIVE (should be VOIDED)            ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. 二重障害パターンへの対策を設計してください                   │
-│  2. 未解決トランザクションの検出・解決方法を実装してください     │
-│  3. 運用対応フローを策定してください                             │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+問題:
+日次ETLジョブが大量データ処理時にメモリ不足で失敗する。
+
+エラーログ:
+Container killed by YARN for exceeding memory limits.
+10.0 GB of 10 GB physical memory used.
+
+データ量:
+- 入力: 500万レコード
+- 処理後: 1億レコード（JOIN後）
+
+調査項目:
+1. Spark設定
+2. データ処理パターン
+3. ワーカー設定
 ```
 
-**解決策例**
+<details>
+<summary>解決のヒント</summary>
 
-```typescript
-// 補償トランザクションの堅牢化
-const rollbackWithRetry = new sfn.Parallel(this, 'RobustRollback', {
-  resultPath: '$.rollbackResult',
-})
-.branch(
-  // メイン：即座にロールバック試行
-  new tasks.LambdaInvoke(this, 'ImmediateRollback', {
-    lambdaFunction: lambdas.rollbackAuthorization,
-  })
-  .addRetry({
-    errors: ['States.ALL'],
-    interval: cdk.Duration.seconds(5),
-    maxAttempts: 5,
-    backoffRate: 2,
-  })
+```python
+# 1. ブロードキャスト結合の活用（小さいテーブル）
+from pyspark.sql.functions import broadcast
+
+# 商品マスタは小さいのでブロードキャスト
+orders_with_products = orders_df.join(
+    broadcast(products_df),  # 小さいテーブルをブロードキャスト
+    'product_id'
 )
-.addCatch(
-  // フォールバック：SQSに保存して後で処理
-  new sfn.Chain(this, 'RollbackFallback')
-    .next(new tasks.SqsSendMessage(this, 'QueueFailedRollback', {
-      queue: rollbackDLQ,
-      messageBody: sfn.TaskInput.fromObject({
-        'paymentId.$': '$.paymentId',
-        'authorizationCode.$': '$.authorizationCode',
-        'error.$': '$.error',
-        'timestamp.$': '$$.State.EnteredTime',
-      }),
-    }))
-    .next(new tasks.SnsPublish(this, 'AlertRollbackFailure', {
-      topic: alertTopic,
-      message: sfn.TaskInput.fromObject({
-        'alert': 'CRITICAL: Rollback failed',
-        'paymentId.$': '$.paymentId',
-        'requiresManualIntervention': true,
-      }),
-    })),
-  { errors: ['States.ALL'] }
-);
 
-// 未解決トランザクション検出用のスケジュール実行
-// EventBridge -> Step Functions
-const reconciliationWorkflow = new sfn.StateMachine(this, 'ReconciliationWorkflow', {
-  definitionBody: sfn.DefinitionBody.fromChainable(
-    new tasks.LambdaInvoke(this, 'FindStaleAuthorizations', {
-      lambdaFunction: findStaleAuthLambda,
-    })
-    .next(new sfn.Map(this, 'ProcessEachStale', {
-      itemsPath: '$.staleAuthorizations',
-      maxConcurrency: 5,
-    })
-    .itemProcessor(
-      new tasks.LambdaInvoke(this, 'ResolveStaleAuth', {
-        lambdaFunction: resolveStaleAuthLambda,
-      })
-    ))
-  ),
-});
+# 2. データのパーティショニング
+orders_df = orders_df.repartition(100, 'order_date')
+
+# 3. キャッシュの適切な使用
+products_df.cache()  # 複数回使うテーブルのみキャッシュ
+
+# 4. 不要なカラムを早期に除外
+orders_df = orders_df.select('order_id', 'customer_id', 'order_date', 'total_amount')
+
+# 5. Glueジョブ設定の調整
+# --conf spark.sql.shuffle.partitions=200
+# --conf spark.sql.autoBroadcastJoinThreshold=52428800
+
+# 6. ワーカー数とタイプの変更
+aws glue update-job \
+    --job-name company-orders-etl \
+    --job-update '{
+        "NumberOfWorkers": 10,
+        "WorkerType": "G.2X"
+    }'
 ```
+</details>
 
-### 演習8-3: 高負荷時のスロットリング
+### Challenge 3: QuickSight SPICEデータセットの更新エラー
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│              トラブルシューティング演習 8-3                      │
-│                 高負荷時スロットリング                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【状況】                                                        │
-│  セール期間中にAPI呼び出しが急増し、                             │
-│  Step Functionsのスロットリングが発生している。                  │
-│                                                                  │
-│  【メトリクス】                                                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ExecutionsStarted: 10,000/sec (limit: 2,000)               ││
-│  │  ThrottledEvents: 8,000                                     ││
-│  │  API Gateway 429 errors: 急増                               ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【課題】                                                        │
-│  1. スロットリングの原因を特定してください                       │
-│  2. Standard vs Express ワークフローの使い分けを検討             │
-│  3. バッファリング戦略を実装してください                         │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+問題:
+SPICEへのデータインポートが失敗する。
+QuickSightダッシュボードが古いデータのまま。
+
+エラー:
+SPICE ingestion failed: Source data exceeds SPICE limits
+
+状況:
+- データセットサイズ: 50GB
+- SPICE容量: 10GB
+- 更新頻度: 日次
+
+調査項目:
+1. SPICEの制限
+2. データ量の最適化
+3. 代替アプローチ
 ```
+
+<details>
+<summary>解決のヒント</summary>
+
+```sql
+-- 1. データ量を削減（直近データのみ）
+-- データセットのクエリを修正
+SELECT ...
+FROM company_curated.daily_sales
+WHERE order_date >= date_add('day', -90, current_date)  -- 直近90日のみ
+
+-- 2. 集計レベルを上げる
+-- 詳細データではなく日次/週次集計を使用
+SELECT
+    date_trunc('week', order_date) as week,
+    category,
+    SUM(total_sales) as weekly_sales
+FROM company_curated.daily_sales
+GROUP BY date_trunc('week', order_date), category
+
+-- 3. Direct Queryモードに切り替え（SPICEを使わない）
+aws quicksight update-data-set \
+    --aws-account-id ${AWS_ACCOUNT_ID} \
+    --data-set-id company-daily-sales \
+    --import-mode DIRECT_QUERY
+
+-- 4. SPICE容量の追加購入
+-- QuickSightコンソールから追加購入（$0.25/GB/月）
+
+-- 5. データセットの分割
+-- カテゴリ別に複数のデータセットを作成
+-- ダッシュボードでパラメータによる切り替え
+```
+</details>
 
 ---
 
-## 9. 設計課題
+## 9. 設計の考察ポイント
 
-### 設計課題9-1: サブスクリプション決済ワークフロー
+### データレイクアーキテクチャ
+
+```yaml
+3層アーキテクチャの設計原則:
+
+Raw Zone:
+  目的: ソースデータの忠実な保存
+  形式: CSV, JSON, Avro（ソース形式そのまま）
+  保持期間: 長期（Glacierへアーカイブ）
+  アクセス: ETLジョブのみ
+  注意点:
+    - スキーマ変更に対応できるよう柔軟に
+    - データリネージのためにメタデータ保持
+
+Processed Zone:
+  目的: 分析用に最適化されたデータ
+  形式: Parquet（カラムナー形式）
+  保持期間: 中期（1-2年）
+  アクセス: データエンジニア、アナリスト
+  最適化:
+    - パーティショニング（日付、カテゴリ等）
+    - 適切なファイルサイズ（128MB-1GB）
+    - Snappy圧縮
+
+Curated Zone:
+  目的: ビジネス指標、集計データ
+  形式: Parquet
+  保持期間: 長期
+  アクセス: 全ユーザー（セルフサービス）
+  特徴:
+    - ビジネス用語でのカラム名
+    - 事前計算されたKPI
+    - ドキュメント化されたスキーマ
+```
+
+### コスト最適化戦略
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      設計課題 9-1                                │
-│              サブスクリプション決済ワークフロー                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【課題】                                                        │
-│  月額課金のサブスクリプション決済を自動化するワークフローを      │
-│  設計してください。                                              │
-│                                                                  │
-│  【要件】                                                        │
-│  ・毎月指定日に自動課金                                          │
-│  ・決済失敗時は3回までリトライ（1日、3日、7日後）                │
-│  ・3回失敗でサブスクリプション一時停止                           │
-│  ・顧客への事前通知・失敗通知                                    │
-│  ・管理者への日次レポート                                        │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. ワークフロー設計図（ASL形式）                                │
-│  2. リトライ戦略の詳細設計                                       │
-│  3. 通知テンプレート                                             │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+1. ストレージ階層化:
+   - 頻繁アクセス: S3 Standard
+   - 低頻度アクセス: S3 Standard-IA
+   - アーカイブ: S3 Glacier
 
-### 設計課題9-2: マルチテナント決済基盤
+2. Athenaクエリ最適化:
+   - パーティショニング: 最大90%のコスト削減
+   - Parquet形式: 最大80%のコスト削減
+   - 結果キャッシュ: 同一クエリの再実行を防止
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      設計課題 9-2                                │
-│                マルチテナント決済基盤                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【課題】                                                        │
-│  複数の加盟店（テナント）がそれぞれ独自のワークフローを          │
-│  設定できる決済基盤を設計してください。                          │
-│                                                                  │
-│  【要件】                                                        │
-│  ・テナントごとに異なる決済フロー（3DS有無、審査有無等）         │
-│  ・テナントごとのAPI制限（レートリミット）                       │
-│  ・テナント間のデータ分離                                        │
-│  ・共通コンポーネントの再利用                                    │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. マルチテナントアーキテクチャ図                               │
-│  2. テナント設定管理の設計                                       │
-│  3. 動的ワークフロー生成の仕組み                                 │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+3. Glueジョブ最適化:
+   - Spot Instances: 最大70%のコスト削減
+   - 適切なワーカー数: 過剰プロビジョニング防止
+   - ジョブブックマーク: 増分処理
+
+4. QuickSight最適化:
+   - SPICEの適切なサイジング
+   - ユーザーライセンスの管理
+   - セッション容量の活用
 ```
 
 ---
 
 ## 10. 発展課題
 
-### 発展課題10-1: Express Workflowへの移行
+### 上級チャレンジ1: リアルタイムデータ取り込み
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      発展課題 10-1                               │
-│               Express Workflowへの移行                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【シナリオ】                                                    │
-│  決済処理の大部分（3DS不要の小額決済）を                         │
-│  Express Workflowに移行してコスト削減したい。                    │
-│                                                                  │
-│  【技術要件】                                                    │
-│  ・Standard/Expressの使い分け判断                                │
-│  ・Express Workflow用の設計変更                                  │
-│  ・同期実行APIの設計                                             │
-│  ・ログ・監視の設計                                              │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. Standard/Express振り分けロジック                             │
-│  2. Express Workflow用CDKコード                                  │
-│  3. コスト比較分析                                               │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+```yaml
+# Kinesis Firehoseでリアルタイムログ取り込み
 
-### 発展課題10-2: 分散トレーシングの実装
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      発展課題 10-2                               │
-│                分散トレーシングの実装                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【シナリオ】                                                    │
-│  決済処理全体のレイテンシボトルネックを特定し、                  │
-│  パフォーマンスを改善したい。                                    │
-│                                                                  │
-│  【技術要件】                                                    │
-│  ・X-Rayによるエンドツーエンドトレーシング                       │
-│  ・カスタムサブセグメントの追加                                  │
-│  ・サービスマップの構築                                          │
-│  ・パフォーマンス分析ダッシュボード                              │
-│                                                                  │
-│  【成果物】                                                      │
-│  1. X-Ray設定のCDKコード                                         │
-│  2. カスタムアノテーション設計                                   │
-│  3. パフォーマンス分析レポート                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+KinesisFirehose:
+  DeliveryStreamName: company-access-logs
+  S3DestinationConfiguration:
+    BucketARN: arn:aws:s3:::company-datalake-xxx
+    Prefix: raw/access_logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/
+    ErrorOutputPrefix: errors/
+    BufferingHints:
+      SizeInMBs: 128
+      IntervalInSeconds: 300
+    CompressionFormat: GZIP
+    DataFormatConversionConfiguration:
+      Enabled: true
+      InputFormatConfiguration:
+        Deserializer:
+          JsonSerDe: {}
+      OutputFormatConfiguration:
+        Serializer:
+          ParquetSerDe:
+            Compression: SNAPPY
+      SchemaConfiguration:
+        DatabaseName: company_raw
+        TableName: access_logs
+        RoleARN: arn:aws:iam::xxx:role/FirehoseRole
 ```
 
----
-
-## 11. 学習のまとめ
-
-### 学習チェックリスト
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     学習チェックリスト                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【Step Functions基礎】                                          │
-│  □ Standard/Expressワークフローの違いを説明できる               │
-│  □ ASL（Amazon States Language）を読み書きできる                │
-│  □ 各種ステートタイプの使い分けができる                         │
-│  □ 入出力処理（Path系）を理解した                               │
-│                                                                  │
-│  【エラーハンドリング】                                          │
-│  □ Retry設定を適切に設計できる                                  │
-│  □ Catch設定でエラー分岐を実装できる                            │
-│  □ 補償トランザクション（Saga）を設計できる                     │
-│  □ タイムアウト戦略を説明できる                                 │
-│                                                                  │
-│  【高度なパターン】                                              │
-│  □ コールバックパターン（waitForTaskToken）を実装できる         │
-│  □ Parallel/Mapステートを使い分けられる                         │
-│  □ ネストされたワークフローを設計できる                         │
-│  □ 動的並列処理を実装できる                                     │
-│                                                                  │
-│  【CDK実装】                                                     │
-│  □ CDKでStep Functionsを構築できる                              │
-│  □ Lambda統合を実装できる                                       │
-│  □ API Gateway統合を実装できる                                  │
-│  □ テスト戦略を確立した                                         │
-│                                                                  │
-│  【運用】                                                        │
-│  □ CloudWatch Logsでデバッグできる                              │
-│  □ 実行履歴を分析できる                                         │
-│  □ アラートを設定できる                                         │
-│  □ コスト最適化の観点で設計できる                               │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Step Functions ベストプラクティス
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Step Functions ベストプラクティス                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【設計原則】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  1. 単一責任の原則                                          ││
-│  │     - 各ステートは1つの責務のみ                             ││
-│  │     - Lambdaは小さく保つ                                    ││
-│  │                                                              ││
-│  │  2. 冪等性の確保                                            ││
-│  │     - 同じ入力で同じ結果                                    ││
-│  │     - リトライ安全な設計                                    ││
-│  │                                                              ││
-│  │  3. 失敗を前提とした設計                                    ││
-│  │     - すべてのタスクにCatch設定                             ││
-│  │     - 適切なリトライ戦略                                    ││
-│  │     - 補償トランザクションの準備                            ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【アンチパターン】                                              │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  ✗ 長時間実行のLambda（15分以上の処理）                     ││
-│  │  ✗ 大きなペイロード（256KB超）                              ││
-│  │  ✗ リトライなしのタスク                                     ││
-│  │  ✗ 無限ループの可能性があるChoice                           ││
-│  │  ✗ Catch なしのワークフロー                                 ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 12. コスト見積もり
-
-### 想定コスト（月額）
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      コスト見積もり                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  【開発環境】                                                    │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Step Functions Standard │ 1,000実行       │ $0.025         ││
-│  │  Lambda                  │ 10,000呼出      │ $0.002         ││
-│  │  API Gateway             │ 1,000リクエスト │ $0.004         ││
-│  │  DynamoDB                │ On-Demand       │ $1.00          ││
-│  │  CloudWatch Logs         │ 1GB             │ $0.50          ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $2          ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【本番環境想定（50万決済/日）】                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  項目                    │ 数量            │ 月額（USD）    ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  Step Functions Standard │ 15M状態遷移     │ $375           ││
-│  │  Lambda                  │ 100M呼出        │ $200           ││
-│  │  API Gateway             │ 15Mリクエスト   │ $53            ││
-│  │  DynamoDB                │ On-Demand       │ $150           ││
-│  │  SQS                     │ 10M メッセージ  │ $4             ││
-│  │  CloudWatch Logs         │ 100GB           │ $50            ││
-│  │  X-Ray                   │ トレース        │ $25            ││
-│  ├──────────────────────────┼─────────────────┼────────────────┤│
-│  │  小計                    │                 │ 約 $857        ││
-│  │                          │                 │ (約 ¥128,000)  ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-│  【コスト最適化のポイント】                                      │
-│  ・小額決済はExpress Workflow（1/10のコスト）                    │
-│  ・Lambda ARM64アーキテクチャ（20%削減）                         │
-│  ・CloudWatch Logs保持期間の最適化                               │
-│  ・不要なトレースの削減                                          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## リソースのクリーンアップ
+### 上級チャレンジ2: Lake Formation によるガバナンス
 
 ```bash
-# CDKスタック削除
-cdk destroy PayEasyStack-dev
+# Lake Formationでデータアクセス制御
 
-# 確認
-aws cloudformation list-stacks \
-  --query "StackSummaries[?StackName=='PayEasyStack-dev'].StackStatus"
+# データレイク管理者の設定
+aws lakeformation put-data-lake-settings \
+    --data-lake-settings '{
+        "DataLakeAdmins": [
+            {"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:user/datalake-admin"}
+        ]
+    }'
 
-# 手動で残ったリソースがないか確認
-aws stepfunctions list-state-machines \
-  --query "stateMachines[?contains(name, 'payeasy')]"
+# テーブルレベルの権限付与
+aws lakeformation grant-permissions \
+    --principal '{"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:role/AnalystRole"}' \
+    --resource '{
+        "Table": {
+            "DatabaseName": "company_curated",
+            "Name": "daily_sales"
+        }
+    }' \
+    --permissions SELECT
 
-aws lambda list-functions \
-  --query "Functions[?contains(FunctionName, 'payeasy')]"
+# カラムレベルの権限付与（PII保護）
+aws lakeformation grant-permissions \
+    --principal '{"DataLakePrincipalIdentifier": "arn:aws:iam::xxx:role/MarketingRole"}' \
+    --resource '{
+        "TableWithColumns": {
+            "DatabaseName": "company_processed",
+            "Name": "customers",
+            "ColumnNames": ["customer_id", "segment", "prefecture"]
+        }
+    }' \
+    --permissions SELECT
+# email, name などのPIIカラムは除外
+```
 
-echo "Cleanup completed!"
+### 上級チャレンジ3: データ品質チェックの自動化
+
+```python
+# Glue Data Quality ルール定義
+
+from awsgluedq.transforms import EvaluateDataQuality
+
+# 品質ルールセット
+rules = """
+Rules = [
+    ColumnValues "order_id" Uniqueness > 0.99,
+    ColumnValues "customer_id" IsComplete,
+    ColumnValues "total_amount" > 0,
+    ColumnValues "order_date" matches "\\d{4}-\\d{2}-\\d{2}",
+    RowCount > 1000,
+    ColumnValues "status" in ["completed", "shipped", "pending", "cancelled"]
+]
+"""
+
+# 品質チェック実行
+quality_result = EvaluateDataQuality.apply(
+    frame=orders_dyf,
+    ruleset=rules,
+    publishing_options={
+        "dataQualityEvaluationContext": "orders_quality_check",
+        "enableDataQualityCloudWatchMetrics": True,
+        "enableDataQualityResultsPublishing": True
+    }
+)
+
+# 結果に基づいてアクション
+if quality_result['Outcome'] == 'Failed':
+    # アラート送信、処理停止など
+    raise Exception(f"Data quality check failed: {quality_result['FailedRules']}")
 ```
 
 ---
 
-**次の課題**: [課題35: ShopNow Chaos Engineering](exercise-35.md)
+## 11. コスト見積もり
 
-**前の課題**: [課題33: MegaMart DynamoDB実践設計](exercise-33.md)
+### 月額コスト概算
+
+| サービス | 使用量 | 月額コスト |
+|----------|--------|------------|
+| S3 Standard | 500GB | $12 |
+| S3 Standard-IA | 1TB | $12 |
+| S3 Glacier | 2TB | $8 |
+| Glue Crawler | 10時間/月 | $4 |
+| Glue ETL | 100 DPU時間/月 | $44 |
+| Athena | 1TB スキャン/月 | $5 |
+| QuickSight | 5 Author + 20 Reader | $165 |
+| Data Transfer | 100GB | $9 |
+| **合計** | | **約 $259/月** |
+
+### 従来構成との比較
+
+```
+従来構成（RDSレプリカ + 商用BI）:
+- RDS レプリカ: $200/月
+- BIツールライセンス: $500/月
+- データエンジニア工数: $800/月相当
+- 合計: 約 $1,500/月
+
+データレイク構成:
+- 合計: 約 $259/月
+
+コスト削減: 83% (月額 $1,241 削減)
+```
+
+---
+
+## 12. 学習のポイント
+
+### 今回学んだこと
+
+```
+1. S3データレイク設計
+   □ 3層アーキテクチャ（Raw/Processed/Curated）
+   □ パーティショニング戦略
+   □ ライフサイクル管理
+
+2. AWS Glue活用
+   □ クローラーによるスキーマ検出
+   □ ETLジョブでのデータ変換
+   □ Data Catalogによるメタデータ管理
+
+3. Amazon Athena
+   □ サーバーレスSQLクエリ
+   □ パーティションプルーニング
+   □ コスト最適化（スキャン量削減）
+
+4. Amazon QuickSight
+   □ SPICE によるパフォーマンス向上
+   □ ダッシュボード作成
+   □ セルフサービスBI
+```
+
+### GCPとの比較まとめ
+
+| 観点 | AWS | GCP |
+|------|-----|-----|
+| サーバーレスクエリ | Athena（S3直接） | BigQuery（ストレージ統合） |
+| ETL | Glue（Spark） | Dataflow（Apache Beam） |
+| 価格モデル | スキャン量課金 | スキャン量 or 定額 |
+| 使いやすさ | 複数サービス組合せ | BigQuery一体型 |
+
+### 次のステップ
+
+```
+1. 発展学習:
+   - Amazon Redshift でのDWH構築
+   - Amazon EMR での大規模処理
+   - AWS Lake Formation でのガバナンス
+
+2. 実務応用:
+   - リアルタイムダッシュボード構築
+   - 機械学習パイプライン連携
+   - データメッシュアーキテクチャ
+
+3. 認定資格:
+   - AWS Certified Data Analytics - Specialty
+   - AWS Certified Solutions Architect - Professional
+```

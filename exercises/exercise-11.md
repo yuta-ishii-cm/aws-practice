@@ -1,4 +1,4 @@
-# 課題11: 〇〇株式会社の物件画像自動分析システム構築
+# 課題11: スタートアップのコンテナCI/CD構築
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,408 +9,686 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | AI / 画像分析 / 不動産テック |
-| 処理タイプ | バッチ / イベント駆動 |
-| 使用IaC | Terraform |
-| 所要時間 | 5〜7時間 |
+| カテゴリ | コンテナ |
+| 処理タイプ | 非同期 |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
 ## 2. シナリオ
 
-### 企業プロフィール
-
-**〇〇株式会社**は、AIを活用した不動産マッチングプラットフォームを運営する不動産テック企業です。
+### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | 不動産テック（PropTech） |
-| 設立 | 2019年 |
-| 従業員数 | 80名（うち画像チェック担当10名） |
-| 月間訪問者数 | 50万人 |
-| 掲載物件数 | 5万件 |
-| 提携不動産会社 | 300社 |
-| 月商 | 8,000万円 |
+| **企業名** | SmartAssist株式会社 |
+| **業種** | AIスタートアップ（チャットボットSaaS） |
+| **従業員数** | 25名（エンジニア8名） |
+| **サービス** | AIチャットボット「SmartBot」 |
+| **顧客数** | 導入企業50社、月間会話100万件 |
+| **デプロイ頻度** | 現状週2回 → 目標1日10回 |
 
 ### 現状の課題
 
-提携不動産会社から日次で約1万枚の物件画像がアップロードされますが、品質チェックとタグ付け作業を10名のスタッフが手作業で行っており、業務が逼迫しています。また、タグ付けの品質にばらつきがあり、ユーザーの検索精度に影響を与えています。
-
-### 数値で示された問題
-
-| 指標 | 現状 | 業界平均 |
-|------|------|----------|
-| 画像処理スタッフ | 10名 | - |
-| 1人あたり処理枚数 | 1,000枚/日 | - |
-| 画像処理人件費 | 月400万円 | - |
-| 平均処理時間 | 24秒/枚 | - |
-| タグ付け精度 | 75%（人によりばらつき） | 90% |
-| 掲載までのリードタイム | 48時間 | 12時間 |
-| 不適切画像の見落とし率 | 5% | 1%未満 |
-
-### 画像処理の現状フロー
-
 ```
-1. 不動産会社がS3に画像アップロード
-2. スタッフがS3から画像をダウンロード
-3. 目視で品質チェック（解像度、明るさ、ブレ）
-4. 手動でタグ付け（部屋タイプ、設備、特徴）
-5. 不適切画像は差し戻し
-6. 承認済み画像をCDNに公開
+SmartAssist株式会社は急成長するAIチャットボットSaaSを提供しています。
+現在のデプロイプロセスには以下の課題があります：
+
+1. 手動デプロイの限界
+   - エンジニアがEC2に手動でDocker pullしてデプロイ
+   - 1回のデプロイに30分以上かかる
+   - 深夜作業でエンジニアが疲弊
+
+2. デプロイの不安定さ
+   - 本番環境で問題が発覚することが多い
+   - ロールバックに1時間以上かかる
+   - 顧客影響が発生するリスク
+
+3. 環境差異の問題
+   - 開発環境と本番環境の設定が異なる
+   - 「自分のPCでは動いた」問題が頻発
+   - テスト環境がない
+
+4. スケーリングの課題
+   - ピーク時（平日9-11時）に応答遅延
+   - 手動でインスタンスを追加している
+   - コスト効率が悪い
 ```
 
-### 解決したいこと
-
-1. 画像品質チェックの自動化（解像度、明るさ、ブレ、不適切コンテンツ検出）
-2. AIによる自動タグ付け（部屋タイプ、設備、特徴の認識）
-3. 処理スタッフの業務時間70%削減
-4. タグ付け精度を90%以上に向上
-5. 掲載リードタイムを48時間から4時間に短縮
-
-### 成功指標（KPI）
+### ビジネス目標
 
 | KPI | 現状 | 目標 |
 |-----|------|------|
-| 自動処理率 | 0% | 85%以上 |
-| タグ付け精度 | 75% | 90%以上 |
-| 処理スタッフ工数 | 10名フルタイム | 3名（監視・例外対応） |
-| 掲載リードタイム | 48時間 | 4時間以内 |
-| 不適切画像検出率 | 95% | 99.5%以上 |
-| 月間コスト | 400万円（人件費） | 150万円（AWS+人件費） |
+| デプロイ所要時間 | 30分 | 5分以下 |
+| デプロイ頻度 | 週2回 | 1日10回（オンデマンド） |
+| ロールバック時間 | 1時間 | 5分以下 |
+| デプロイ成功率 | 80% | 99%以上 |
+| ダウンタイム | 5分/回 | ゼロ |
 
 ---
 
-## 3. 達成目標
+## 3. 達成目標（ゴール）
 
-この演習で習得できるスキル：
+### 主要な学習成果
 
-### 技術的な学習ポイント
+```
+この課題を完了すると、以下ができるようになります：
 
-1. **Amazon Rekognitionの実践活用**
-   - ラベル検出（DetectLabels）
-   - 不適切コンテンツ検出（DetectModerationLabels）
-   - 画像品質分析（顔検出APIの品質スコア活用）
+1. ECRによるコンテナイメージ管理
+   - プライベートリポジトリの作成と管理
+   - イメージのタグ付けとライフサイクル管理
+   - 脆弱性スキャンの活用
 
-2. **S3イベント駆動アーキテクチャ**
-   - S3イベント通知とLambdaトリガー
-   - 大量画像の並列処理パターン
+2. CodePipelineによるCI/CDパイプライン構築
+   - ソースステージ（GitHub/CodeCommit連携）
+   - ビルドステージ（CodeBuild）
+   - デプロイステージ（ECS）
 
-3. **Amazon Bedrockによる高度な画像分析**
-   - Claude 3のマルチモーダル機能（画像入力）
-   - 日本語での詳細な物件説明生成
+3. ECS Fargateによるコンテナ運用
+   - タスク定義とサービス設定
+   - Auto Scalingの構成
+   - Blue/Greenデプロイメント
 
-4. **Terraformによるインフラ構築**
-   - モジュール化されたTerraform構成
-   - 環境変数管理とワークスペース
+4. 運用監視の基礎
+   - CloudWatchによるログ・メトリクス監視
+   - アラート設定とSlack通知
+```
 
-### 実務で活かせる知識
+### 合格基準
 
-- 画像処理パイプラインの設計パターン
-- AI/MLサービスの組み合わせ方
-- 大量データ処理のスケーリング戦略
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| 画像認識 | Amazon Rekognition | Cloud Vision AI |
-| 生成AI（マルチモーダル） | Bedrock (Claude 3) | Vertex AI (Gemini) |
-| オブジェクトストレージ | S3 | Cloud Storage |
-| サーバーレス関数 | Lambda | Cloud Functions |
+| 項目 | 基準 |
+|------|------|
+| パイプライン | GitプッシュからECSデプロイまで自動化されること |
+| デプロイ時間 | 10分以内にデプロイが完了すること |
+| ゼロダウンタイム | Blue/Greenデプロイでダウンタイムがないこと |
+| ロールバック | 1クリックで前バージョンに戻せること |
+| 監視 | コンテナログとメトリクスが収集されていること |
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### メインサービス
+### コア技術スタック
 
-| サービス | 役割 | 選定理由 |
-|----------|------|----------|
-| Amazon S3 | 画像保存（入力/出力） | スケーラブル、イベント通知対応 |
-| Amazon Rekognition | ラベル検出・不適切コンテンツ検出 | 事前学習済み、日本語対応 |
-| Amazon Bedrock | Claude 3による詳細分析 | マルチモーダル、日本語の説明生成 |
-| AWS Lambda | 画像処理ロジック | イベント駆動、並列実行 |
-| Amazon DynamoDB | 処理結果・メタデータ保存 | 高スループット、柔軟なスキーマ |
-| Amazon SQS | 処理キュー | 大量リクエストのバッファリング |
+```yaml
+コンテナ基盤:
+  - Amazon ECR: コンテナイメージリポジトリ
+  - Amazon ECS: コンテナオーケストレーション
+  - AWS Fargate: サーバーレスコンテナ実行環境
 
-### 補助サービス
+CI/CD:
+  - AWS CodePipeline: CI/CDオーケストレーション
+  - AWS CodeBuild: コンテナビルド
+  - AWS CodeDeploy: Blue/Greenデプロイ
 
-| サービス | 役割 |
-|----------|------|
-| Amazon CloudFront | 承認済み画像の配信 |
-| Amazon SNS | 処理完了通知・エラー通知 |
-| Amazon CloudWatch | ログ・メトリクス・アラート |
-| AWS Step Functions | ワークフロー管理（オプション） |
+ネットワーク:
+  - Amazon VPC: ネットワーク分離
+  - Application Load Balancer: トラフィック分散
+  - AWS Certificate Manager: SSL/TLS証明書
+
+監視・運用:
+  - Amazon CloudWatch: ログ・メトリクス・アラーム
+  - AWS Systems Manager Parameter Store: 設定管理
+  - Amazon SNS: 通知
+
+セキュリティ:
+  - AWS IAM: アクセス制御
+  - AWS Secrets Manager: シークレット管理
+```
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| コンテナレジストリ | ECR | Artifact Registry |
+| コンテナ実行 | ECS Fargate | Cloud Run |
+| CI/CD | CodePipeline + CodeBuild | Cloud Build |
+| デプロイ戦略 | CodeDeploy | Cloud Deploy |
+| ロードバランサ | ALB | Cloud Load Balancing |
 
 ---
 
 ## 5. 前提条件
 
-### 必要な事前知識
-
-- AWSマネジメントコンソールの基本操作
-- Terraform基礎（HCL構文、state管理）
-- Python 3.9以上の基礎
-- 画像処理の基本概念
-
-### 準備するもの
-
-1. **AWSアカウント**
-   - Bedrockのモデルアクセス有効化（Claude 3 Sonnet）
-   - Rekognitionへのアクセス権限
-
-2. **開発環境**
-   - Terraform v1.5以上
-   - AWS CLI v2（設定済み）
-   - Python 3.9以上
-   - jq（JSON処理用）
-
-3. **テストデータ**
-   - サンプル物件画像（10-20枚）
-   - 不適切画像サンプル（テスト用）
-
-### Terraform初期設定
+### 技術要件
 
 ```bash
-# Terraformインストール確認
-terraform version
+# 必要なCLIツール
+aws --version          # 2.x
+docker --version       # 20.x+
+git --version          # 2.x+
 
-# AWS認証情報確認
-aws sts get-caller-identity
-
-# 作業ディレクトリ作成
-mkdir -p homematch-image-analyzer/{modules,environments}
-cd homematch-image-analyzer
+# AWS設定
+aws configure
+export AWS_REGION=ap-northeast-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ```
 
----
-
-## 6. トラブルシューティング課題
-
-### 問題1: Lambda実行時にタイムアウト
-
-**症状:**
-```
-Task timed out after 120.00 seconds
-CloudWatch Logsで処理が途中で終了している
-```
-
-**ヒント:**
-1. Bedrockの呼び出しに時間がかかっていないか確認
-2. 画像サイズが大きすぎないか確認
-3. S3からの画像ダウンロード時間を確認
-
-**解決方法:**
-```hcl
-# Lambda設定の調整
-resource "aws_lambda_function" "image_processor" {
-  # ...
-  timeout     = 180  # タイムアウトを延長
-  memory_size = 1024  # メモリを増やして処理速度向上
-}
-```
-
-また、画像サイズの制限を追加：
-```python
-# Lambda関数内で画像サイズチェック
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB
-
-response = s3.head_object(Bucket=bucket, Key=key)
-if response['ContentLength'] > MAX_IMAGE_SIZE:
-    raise ValueError(f"Image too large: {response['ContentLength']} bytes")
-```
-
-### 問題2: Rekognitionでエラー「InvalidS3ObjectException」
-
-**症状:**
-```
-botocore.exceptions.ClientError: An error occurred (InvalidS3ObjectException)
-when calling the DetectLabels operation: Unable to get object metadata from S3
-```
-
-**ヒント:**
-1. S3バケット名とキーが正しいか確認
-2. Lambda実行ロールにS3読み取り権限があるか確認
-3. リージョンが一致しているか確認
-
-**解決方法:**
-```hcl
-# IAMポリシーにs3:GetObjectが含まれているか確認
-{
-  Effect = "Allow"
-  Action = [
-    "s3:GetObject",
-    "s3:HeadObject"  # これも追加
-  ]
-  Resource = "${var.input_bucket_arn}/*"
-}
-```
-
-### 問題3: SQSメッセージが処理されずDLQに溜まる
-
-**症状:**
-```
-DLQにメッセージが溜まり続ける
-メインキューは空
-Lambda呼び出し回数は0
-```
-
-**ヒント:**
-1. SQS → Lambdaのイベントソースマッピングを確認
-2. Lambdaの実行ロールにSQS権限があるか確認
-3. SQSキューポリシーを確認
-
-**解決方法:**
-```bash
-# イベントソースマッピング確認
-aws lambda list-event-source-mappings --function-name homematch-image-processor-dev
-
-# 無効になっている場合は有効化
-aws lambda update-event-source-mapping \
-  --uuid <mapping-uuid> \
-  --enabled
-```
-
----
-
-## 設計の考察ポイント
-
-### 1. なぜSQSを間に挟んだのか？S3→Lambda直接でも良いのでは？
-
-**考察ポイント:**
-- S3直接トリガーの同時実行制限
-- リトライ戦略の柔軟性
-- デッドレターキューによる失敗管理
-- バッチ処理による効率化
-
-### 2. RekognitionとBedrockの両方を使う理由は？
-
-**考察ポイント:**
-- Rekognitionの高速・低コストなラベル検出
-- Bedrockの詳細な日本語説明生成
-- コストと精度のトレードオフ
-- 代替案：Bedrock単独（コスト増）
-
-### 3. 画像の保存先を分けた設計の意図は？
-
-**考察ポイント:**
-- 承認/却下フローの実装
-- 運用担当者のワークフロー
-- ライフサイクルポリシーの差別化
-- アクセス権限の分離
-
-### 4. DynamoDBのGSI設計は適切か？
-
-**考察ポイント:**
-- status-indexの用途（承認待ち一覧）
-- room_type-indexの用途（部屋タイプ別検索）
-- クエリパターンとの整合性
-- GSI追加コストの検討
-
-### 5. コールドスタート対策は必要か？
-
-**考察ポイント:**
-- 画像処理は非同期のため許容可能
-- 大量アップロード時のスパイク
-- Provisioned Concurrencyの費用対効果
-
----
-
-## 発展課題（オプション）
-
-### 1. 顔検出による個人情報保護
-- Rekognition DetectFacesで顔を検出
-- 顔部分に自動モザイク処理
-- プライバシー保護の自動化
-
-### 2. 画像のリサイズ・最適化
-- Lambda Layerにsharpを追加
-- 複数サイズ（サムネイル、中、大）を生成
-- WebP形式への変換で容量削減
-
-### 3. バッチ処理モードの追加
-- Step Functionsでオーケストレーション
-- 大量インポート時の一括処理
-- 進捗レポート機能
-
-### 4. 類似画像検出
-- Rekognition CompareFacesの応用
-- 重複画像の自動検出
-- 不正利用（他物件画像の流用）防止
-
-### 5. ダッシュボード構築
-- QuickSightとの連携
-- 日次処理統計
-- エラー傾向分析
-
----
-
-## 想定コストと削減方法
-
-### 月額概算コスト（日次1万枚処理想定）
-
-| サービス | 内訳 | 月額コスト |
-|----------|------|------------|
-| Amazon Rekognition | DetectLabels: 30万枚 × $0.001 | $300 |
-| Amazon Rekognition | DetectModeration: 30万枚 × $0.001 | $300 |
-| Amazon Bedrock | 30万リクエスト × $0.003/1K入力トークン | $150 |
-| AWS Lambda | 30万回 × 30秒 × 512MB | $40 |
-| Amazon S3 | 500GB保存 + リクエスト | $15 |
-| Amazon SQS | 60万メッセージ | $0.30 |
-| Amazon DynamoDB | オンデマンド、30万書き込み | $40 |
-| CloudWatch | ログ・メトリクス | $10 |
-| **合計** | | **約$855（約128,000円）** |
-
-### コスト削減のポイント
-
-1. **段階的な処理フロー**
-   - まずRekognitionで高速チェック
-   - 問題なければBedrockで詳細分析
-   - 問題画像はBedrock呼び出しスキップ
-   - → 最大30%削減
-
-2. **Rekognition Custom Labels検討**
-   - 物件特化のモデルを作成
-   - 精度向上とコスト削減の両立
-
-3. **S3 Intelligent-Tiering**
-   - アクセス頻度に応じた自動階層化
-   - → ストレージコスト30%削減
-
-4. **Lambda ARM64アーキテクチャ**
-   - Graviton2プロセッサ使用
-   - → Lambda コスト20%削減
-
-### リソース削除手順
+### 事前準備
 
 ```bash
-# Terraform経由で全削除
-terraform destroy -auto-approve
+# 1. GitHubリポジトリの準備（またはCodeCommit）
+# リポジトリ名: smartassist-chatbot
 
-# S3バケットが残る場合（中身がある場合）
-aws s3 rm s3://homematch-input-dev-xxxx --recursive
-aws s3 rm s3://homematch-approved-dev-xxxx --recursive
-aws s3 rm s3://homematch-review-dev-xxxx --recursive
-
-# 再度destroy
-terraform destroy -auto-approve
+# 2. サンプルアプリケーションの構造
+smartassist-chatbot/
+├── src/
+│   ├── app.py              # Flaskアプリケーション
+│   ├── chatbot/
+│   │   ├── __init__.py
+│   │   ├── engine.py       # チャットボットエンジン
+│   │   └── responses.py    # 応答生成
+│   └── tests/
+│       └── test_app.py
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── buildspec.yml           # CodeBuild設定
+├── appspec.yaml            # CodeDeploy設定
+└── taskdef.json            # ECSタスク定義
 ```
 
 ---
 
-## 学習のポイント
+## 6. アーキテクチャ図
 
-### 1. イベント駆動アーキテクチャの理解
-S3イベント → SQS → Lambda のパターンは、大量データ処理の基本形。SQSによるバッファリングで、Lambda同時実行数制限やスパイク対策ができる。
+### 全体構成
 
-### 2. Terraformのモジュール化
-再利用可能なモジュールに分割することで、複数環境への展開や保守性が向上する。outputを活用したモジュール間連携を習得する。
+```mermaid
+flowchart TB
+    subgraph Pipeline["CI/CD Pipeline - AWS CodePipeline"]
+        GitHub["GitHub<br/>(Source)"]
+        CodeBuild["CodeBuild<br/>(Build&Test)"]
+        ECR["ECR<br/>(Image)"]
+        CodeDeploy["CodeDeploy<br/>(Blue/Green)"]
+    end
 
-### 3. AI/MLサービスの組み合わせ
-単一サービスで全てを解決しようとせず、Rekognition（高速・低コスト）とBedrock（高精度・日本語）を使い分けることで、コストと品質のバランスを取る。
+    subgraph VPC["VPC"]
+        subgraph PublicSubnets["Public Subnets (Multi-AZ)"]
+            subgraph ALB["Application Load Balancer<br/>(HTTP:80 → HTTPS:443 redirect)"]
+                Listener443["Listener Port: 443<br/>(Production)"]
+                Listener8443["Listener Port: 8443<br/>(Test)"]
+            end
+        end
 
-### 4. デッドレターキュー（DLQ）の重要性
-処理失敗時のリカバリーパスを最初から設計に含める。DLQに溜まったメッセージは、原因調査後に再処理できる。
+        subgraph PrivateSubnets["Private Subnets"]
+            subgraph BlueGroup["Target Group (Blue - Active)"]
+                BlueECS["ECS Fargate Tasks"]
+                BlueTask1["Task v1"]
+                BlueTask2["Task v1"]
+            end
 
-### 5. Infrastructure as Codeの実践
-コンソールでの手作業ではなく、Terraformで全リソースを管理することで、環境の再現性・変更履歴の追跡・レビュープロセスが可能になる。
+            subgraph GreenGroup["Target Group (Green - Standby)"]
+                GreenECS["ECS Fargate Tasks"]
+                GreenTask1["Task v2"]
+                GreenTask2["Task v2"]
+            end
+
+            AutoScaling["Auto Scaling: Min 2, Max 10, Target CPU 70%"]
+        end
+    end
+
+    subgraph Support["Supporting Services"]
+        CloudWatch["CloudWatch Logs"]
+        Secrets["Secrets Manager"]
+        ParamStore["Parameter Store"]
+    end
+
+    GitHub --> CodeBuild
+    CodeBuild --> ECR
+    ECR --> CodeDeploy
+    CodeDeploy --> VPC
+
+    Listener443 --> BlueGroup
+    Listener8443 --> GreenGroup
+
+    VPC --> CloudWatch
+    VPC --> Secrets
+    VPC --> ParamStore
+```
+
+### デプロイフロー
+
+```mermaid
+flowchart TB
+    subgraph Step1["1. 開発者がGitHubにプッシュ"]
+        Push["Git Push"] --> Webhook["Webhookでパイプライン起動"]
+    end
+
+    subgraph Step2["2. CodeBuild実行"]
+        GetSource["ソースコード取得"]
+        UnitTest["ユニットテスト実行"]
+        DockerBuild["Dockerイメージビルド"]
+        ECRPush["ECRにプッシュ"]
+        Artifact["アーティファクト生成<br/>(imageDetail.json)"]
+        GetSource --> UnitTest --> DockerBuild --> ECRPush --> Artifact
+    end
+
+    subgraph Step3["3. CodeDeploy Blue/Green"]
+        CreateGreen["新タスクセット作成（Green）"]
+        TestTraffic["テストリスナーでトラフィック切り替え"]
+        HealthCheck["ヘルスチェック確認"]
+        ProdTraffic["本番リスナーでトラフィック切り替え"]
+        TerminateBlue["旧タスクセット（Blue）を終了"]
+        CreateGreen --> TestTraffic --> HealthCheck --> ProdTraffic --> TerminateBlue
+    end
+
+    subgraph Step4["4. 問題発生時"]
+        Rollback["ロールバック（Blueに戻す）"]
+    end
+
+    Step1 --> Step2
+    Step2 --> Step3
+    Step3 -.->|問題発生| Step4
+```
+
+---
+
+## 8. トラブルシューティングチャレンジ
+
+### Challenge 1: CodeBuildでDockerビルドが失敗する
+
+```
+問題:
+CodeBuildでDockerビルド時にエラーが発生する。
+
+エラーメッセージ:
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock.
+Is the docker daemon running?
+
+調査項目:
+1. CodeBuildプロジェクトの設定
+2. IAMロールの権限
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. CodeBuildプロジェクトでPrivileged modeが有効か確認
+aws codebuild batch-get-projects --names smartassist-build \
+    --query "projects[0].environment.privilegedMode"
+
+# 2. 無効の場合、有効化
+aws codebuild update-project \
+    --name smartassist-build \
+    --environment '{
+        "type": "LINUX_CONTAINER",
+        "image": "aws/codebuild/amazonlinux2-x86_64-standard:5.0",
+        "computeType": "BUILD_GENERAL1_SMALL",
+        "privilegedMode": true
+    }'
+
+# 3. または buildspec.yml で docker-in-docker を使用
+# install:
+#   commands:
+#     - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock &
+#     - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+```
+</details>
+
+### Challenge 2: Blue/Greenデプロイでヘルスチェックが失敗する
+
+```
+問題:
+新しいタスクセットがデプロイされたが、ヘルスチェックが失敗して
+デプロイがロールバックされる。
+
+エラー:
+The deployment timed out while waiting for the replacement task set
+to become healthy.
+
+調査項目:
+1. ターゲットグループのヘルスチェック設定
+2. コンテナの起動ログ
+3. セキュリティグループの設定
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. CloudWatchログで起動エラーを確認
+aws logs get-log-events \
+    --log-group-name /ecs/smartassist \
+    --log-stream-name chatbot/chatbot/xxxxx \
+    --limit 50
+
+# 2. ターゲットグループのヘルスチェック設定確認
+aws elbv2 describe-target-groups \
+    --names smartassist-blue-tg smartassist-green-tg \
+    --query "TargetGroups[*].{Name:TargetGroupName,Path:HealthCheckPath,Interval:HealthCheckIntervalSeconds,Timeout:HealthCheckTimeoutSeconds}"
+
+# 3. ヘルスチェックパスを修正
+aws elbv2 modify-target-group \
+    --target-group-arn arn:aws:elasticloadbalancing:...:targetgroup/smartassist-green-tg/... \
+    --health-check-path /health \
+    --health-check-interval-seconds 30 \
+    --healthy-threshold-count 2 \
+    --unhealthy-threshold-count 5
+
+# 4. コンテナのヘルスチェックコマンド確認
+# タスク定義のhealthCheckが正しく設定されているか
+# コンテナ内でcurlがインストールされているか
+
+# 5. セキュリティグループでALBからの通信が許可されているか
+aws ec2 describe-security-groups \
+    --group-ids sg-xxxxx \
+    --query "SecurityGroups[0].IpPermissions"
+```
+</details>
+
+### Challenge 3: デプロイ後にメモリ不足でタスクが再起動する
+
+```
+問題:
+デプロイ後しばらくするとタスクがOOMKilledで再起動する。
+
+CloudWatchメトリクス:
+- MemoryUtilization: 95%以上
+- タスク再起動頻度: 10分に1回
+
+調査項目:
+1. タスク定義のメモリ設定
+2. アプリケーションのメモリ使用パターン
+3. コンテナのリソース制限
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. 現在のメモリ使用状況を確認
+aws cloudwatch get-metric-statistics \
+    --namespace AWS/ECS \
+    --metric-name MemoryUtilization \
+    --dimensions Name=ClusterName,Value=smartassist-cluster Name=ServiceName,Value=smartassist-service \
+    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+    --period 300 \
+    --statistics Average Maximum
+
+# 2. タスク定義のメモリを増やす
+# taskdef.jsonで "memory": "1024" に変更
+
+# 3. アプリケーション側の最適化
+# gunicorn のワーカー数を調整
+# gunicorn --workers 2 --threads 2 ではなく
+# gunicorn --workers 1 --threads 4 に変更
+
+# 4. Pythonのメモリ使用を最適化
+# requirements.txt に memory-profiler を追加してプロファイリング
+
+# 5. Container Insightsで詳細分析
+# CloudWatch Container Insights ダッシュボードで
+# コンテナごとのメモリ使用パターンを確認
+```
+</details>
+
+---
+
+## 9. 設計考慮ポイント
+
+### デプロイ戦略の選択
+
+```yaml
+Blue/Green デプロイ（本課題で採用）:
+  メリット:
+    - ゼロダウンタイム
+    - 即時ロールバック可能
+    - テスト環境で事前検証可能
+  デメリット:
+    - 一時的にリソースが2倍必要
+    - 設定が複雑
+
+ローリングアップデート:
+  メリット:
+    - リソース効率が良い
+    - シンプルな設定
+  デメリット:
+    - ロールバックに時間がかかる
+    - 新旧バージョンが混在する期間がある
+
+カナリアデプロイ:
+  メリット:
+    - 段階的なリリースで影響範囲を限定
+    - A/Bテストに活用可能
+  デメリット:
+    - 設定がさらに複雑
+    - モニタリングが必須
+```
+
+### イメージタグ戦略
+
+```bash
+# 推奨: 不変タグ + セマンティックバージョニング
+
+# コミットハッシュ（CI/CDで自動付与）
+smartassist/chatbot:abc1234
+
+# 環境タグ
+smartassist/chatbot:prod-abc1234
+smartassist/chatbot:staging-abc1234
+
+# バージョンタグ（リリース時）
+smartassist/chatbot:v1.2.3
+smartassist/chatbot:v1.2.3-abc1234
+
+# 避けるべき: mutableタグの使用
+# smartassist/chatbot:latest を本番で使わない
+```
+
+### セキュリティ考慮事項
+
+```yaml
+コンテナセキュリティ:
+  - 非rootユーザーで実行
+  - イメージの脆弱性スキャン（ECR自動スキャン）
+  - 最小権限のIAMロール
+  - Secrets Managerで機密情報管理
+
+ネットワークセキュリティ:
+  - ECSタスクをプライベートサブネットに配置
+  - ALBのみがタスクにアクセス可能
+  - VPCエンドポイントでAWSサービスにアクセス
+
+CI/CDセキュリティ:
+  - 最小権限のビルドロール
+  - Secrets Manager でDockerHub認証情報管理
+  - ビルドログの機密情報マスキング
+```
+
+---
+
+## 10. 発展課題
+
+### 上級チャレンジ1: マルチステージパイプライン
+
+```yaml
+# 開発 → ステージング → 本番 の多段階パイプライン
+
+Stages:
+  - Source
+  - Build
+  - DeployToStaging:
+      - ECS Staging環境にデプロイ
+      - 自動テスト実行
+  - ManualApproval:
+      - 手動承認ステージ
+  - DeployToProduction:
+      - ECS Production環境にBlue/Greenデプロイ
+
+# 環境別設定の分離
+environments/
+├── staging/
+│   ├── taskdef.json
+│   └── appspec.yaml
+└── production/
+    ├── taskdef.json
+    └── appspec.yaml
+```
+
+### 上級チャレンジ2: カナリアデプロイ実装
+
+```yaml
+# appspec.yaml - カナリア設定
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION>
+        LoadBalancerInfo:
+          ContainerName: "chatbot"
+          ContainerPort: 8080
+
+Hooks:
+  - BeforeAllowTraffic: "arn:aws:lambda:...:function:ValidateCanary"
+  - AfterAllowTraffic: "arn:aws:lambda:...:function:MonitorCanary"
+
+# CodeDeploy設定でカナリア比率を指定
+# CodeDeployDefault.ECSCanary10Percent5Minutes
+# - 10%のトラフィックで5分間テスト
+# - 問題なければ残り90%に切り替え
+```
+
+### 上級チャレンジ3: GitOps実装
+
+```yaml
+# ArgoCD + EKS構成への発展
+# GitリポジトリがSingle Source of Truth
+
+argocd/
+├── applications/
+│   └── smartassist-chatbot.yaml
+└── manifests/
+    ├── deployment.yaml
+    ├── service.yaml
+    └── hpa.yaml
+
+# ArgoCD Application
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smartassist-chatbot
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/smartassist/chatbot
+    targetRevision: HEAD
+    path: argocd/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+---
+
+## 11. コスト見積もり
+
+### 月額コスト概算
+
+| サービス | スペック | 月額コスト |
+|----------|----------|------------|
+| ECS Fargate | 2タスク × 0.25vCPU × 0.5GB | $15 |
+| ALB | 1 ALB + LCU | $25 |
+| NAT Gateway | 1 AZ | $45 |
+| ECR | 10GB ストレージ | $1 |
+| CodePipeline | 1パイプライン | $1 |
+| CodeBuild | 100分/月 | $5 |
+| CloudWatch | ログ5GB + メトリクス | $10 |
+| **合計** | | **約 $102/月** |
+
+### スケール時の見積もり
+
+```
+ピーク時（10タスク）:
+- ECS Fargate: $75/月
+- ALB LCU増加: +$10/月
+- その他は同じ
+
+月間合計: 約 $170/月
+
+1日10回のデプロイ:
+- CodeBuild: 300分/月 → $15/月
+- 合計: 約 $180/月
+```
+
+### コスト最適化ポイント
+
+```
+1. Fargate Spot活用:
+   - 開発・ステージング環境でSpot使用
+   - 最大70%削減
+
+2. Auto Scaling最適化:
+   - 夜間・週末の最小タスク数を1に
+   - CPU/メモリの適切なサイジング
+
+3. NAT Gateway最適化:
+   - VPCエンドポイント使用でNAT通信削減
+   - 1AZのみNAT Gateway（可用性とのトレードオフ）
+```
+
+---
+
+## 12. 学習のポイント
+
+### 今回学んだこと
+
+```
+1. ECRによるコンテナ管理
+   □ プライベートリポジトリの作成
+   □ ライフサイクルポリシーでコスト最適化
+   □ 脆弱性スキャンの有効化
+
+2. CodePipelineによるCI/CD
+   □ GitHub連携（CodeStar Connections）
+   □ CodeBuildでのテスト・ビルド自動化
+   □ アーティファクト管理
+
+3. ECS Fargateによるコンテナ運用
+   □ タスク定義とサービス設定
+   □ Blue/Greenデプロイメント
+   □ Auto Scalingの構成
+
+4. 運用のベストプラクティス
+   □ ヘルスチェックの重要性
+   □ ログ集約とモニタリング
+   □ ロールバック手順の確立
+```
+
+### GCPとの比較まとめ
+
+| 観点 | AWS (ECS + CodePipeline) | GCP (Cloud Run + Cloud Build) |
+|------|--------------------------|-------------------------------|
+| サーバーレスコンテナ | ECS Fargate | Cloud Run |
+| ビルド | CodeBuild | Cloud Build |
+| デプロイ | CodeDeploy | Cloud Deploy |
+| 設定の複雑さ | 中〜高 | 低〜中 |
+| カスタマイズ性 | 高 | 中 |
+| Blue/Green | CodeDeploy統合 | Traffic splitting |
+
+### 次のステップ
+
+```
+1. 発展学習:
+   - EKS (Kubernetes) への移行
+   - Argo CDによるGitOps
+   - カナリアデプロイの自動化
+
+2. 運用改善:
+   - 本番監視ダッシュボードの構築
+   - アラート自動化（PagerDuty/Slack連携）
+   - カオスエンジニアリングの導入
+
+3. 認定資格:
+   - AWS Certified DevOps Engineer - Professional
+   - AWS Certified Solutions Architect - Associate
+```

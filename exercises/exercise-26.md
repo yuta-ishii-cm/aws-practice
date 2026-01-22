@@ -1,4 +1,4 @@
-# 課題26: 広告テック企業のマイクロサービスCI/CD
+# 課題26: モバイルアプリのリアルタイム分析基盤構築
 
 **難易度: 🟡 中級**
 
@@ -9,257 +9,771 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | IaC・DevOps |
-| 処理タイプ | 非同期 |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-7時間 |
+| カテゴリ | データ基盤 |
+| 処理タイプ | ストリーミング |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 5-6時間 |
 
 ---
 
 ## 2. シナリオ
 
-### 企業プロフィール
-**〇〇株式会社**は、プログラマティック広告配信プラットフォームを提供するアドテック企業です。10個のマイクロサービスで構成されるシステムを運用しており、毎秒数万リクエストを処理しています。
+### 企業プロファイル
+
+| 項目 | 内容 |
+|------|------|
+| **企業名** | ConnectNow株式会社 |
+| **業種** | ソーシャルアプリ（位置情報共有SNS） |
+| **従業員数** | 120名（エンジニア40名） |
+| **DAU** | 50万人 |
+| **月間イベント数** | 10億イベント |
+| **ピーク時スループット** | 10,000イベント/秒 |
 
 ### 現状の課題
-マイクロサービス化は完了したものの、デプロイとテストの運用が追いついていません：
 
-1. **デプロイの複雑化**：10サービスの依存関係管理が困難
-2. **統合テストの不足**：サービス間連携のテストが手動
-3. **環境の再現性**：開発環境と本番環境の差異で障害発生
-4. **リリースサイクルの遅延**：全サービスの足並みを揃えるのに時間がかかる
+```
+ConnectNow株式会社は急成長する位置情報共有SNSを運営しています。
+リアルタイムデータ分析において以下の課題を抱えています：
 
-### 数値で見る問題
-- サービスあたりのデプロイ時間：**45分**
-- 統合テスト実行時間：**3時間**（手動）
-- 環境差異による障害：月 **5件**
-- リリースサイクル：**2週間**（目標：毎日）
+1. 分析の遅延
+   - バッチ処理で翌日にならないとデータが見られない
+   - 異常検知が手遅れになることがある
+   - キャンペーン効果をリアルタイムで把握できない
 
-### 成功指標（KPI）
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 個別サービスデプロイ時間 | 45分 | 10分 |
-| 統合テスト実行時間 | 3時間 | 30分（自動） |
-| 環境差異障害 | 5件/月 | 0件/月 |
-| リリース頻度 | 2週間 | 毎日可能 |
+2. ユーザー体験の最適化困難
+   - アプリクラッシュの検知が遅い
+   - ユーザー離脱ポイントが特定できない
+   - A/Bテストの結果確認に時間がかかる
+
+3. 運用負荷
+   - ログ検索に時間がかかる
+   - 障害時の原因特定が困難
+   - カスタムダッシュボード作成に工数がかかる
+
+4. スケーラビリティの限界
+   - ピーク時にログ取りこぼしが発生
+   - イベント種類の追加が困難
+   - ストレージコストが増大
+```
+
+### ビジネス目標
+
+| KPI | 現状 | 目標 |
+|-----|------|------|
+| データ反映遅延 | 24時間 | 1分以内 |
+| 異常検知時間 | 数時間後 | 1分以内 |
+| ログ検索時間 | 10分以上 | 10秒以内 |
+| ピーク対応 | 5,000イベント/秒 | 50,000イベント/秒 |
+| 運用工数 | 月40時間 | 月10時間 |
 
 ---
 
-## 3. 達成目標
+## 3. 達成目標（ゴール）
 
 ### 主要な学習成果
-1. マイクロサービスごとの独立したCI/CDパイプラインの構築
-2. サービス間依存関係を考慮した統合テストの自動化
-3. ECRを使ったコンテナイメージ管理とタグ戦略
-4. GitOpsパターンの基礎理解
 
-### 習得するスキル
-- CodePipeline + CodeBuildによるマルチサービスCI/CD
-- ECRイメージスキャンとセキュリティ対策
-- サービスメッシュ（App Mesh）でのトラフィック制御
-- Contract Testing（Pact等）の概念
+```
+この課題を完了すると、以下ができるようになります：
+
+1. Amazon Kinesisによるストリーム処理
+   - Kinesis Data Streamsでのリアルタイムデータ取り込み
+   - Kinesis Data Firehoseでのデータ配信
+   - シャード管理とスケーリング
+
+2. AWS Lambdaによるストリーム処理
+   - Kinesisトリガーでのリアルタイム処理
+   - データ変換と集計
+   - エラーハンドリングとリトライ
+
+3. Amazon OpenSearch Serviceによる検索・可視化
+   - リアルタイムダッシュボード構築
+   - ログ検索とフィルタリング
+   - アラート設定
+
+4. リアルタイム分析パイプライン
+   - イベント駆動アーキテクチャ
+   - 異常検知の自動化
+   - メトリクス集計
+```
+
+### 合格基準
+
+| 項目 | 基準 |
+|------|------|
+| データ取り込み | Kinesisで1万イベント/秒を処理できること |
+| リアルタイム性 | イベント発生から1分以内にダッシュボードに反映 |
+| 検索 | OpenSearchで10秒以内にログ検索できること |
+| アラート | 異常パターン検知時に自動通知されること |
+| 可視化 | リアルタイムダッシュボードが動作すること |
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### コアサービス
-| サービス | 用途 | 重要度 |
-|----------|------|--------|
-| CodePipeline | CI/CDパイプライン | 高 |
-| CodeBuild | ビルド・テスト実行 | 高 |
-| ECR | コンテナイメージ保存 | 高 |
-| ECS Fargate | マイクロサービス実行 | 高 |
-| App Mesh | サービスメッシュ | 中 |
-| ALB | API Gateway / ロードバランサー | 高 |
+### コア技術スタック
 
-### 補助サービス
-| サービス | 用途 |
-|----------|------|
-| CloudWatch | ログ・メトリクス |
-| X-Ray | 分散トレーシング |
-| Secrets Manager | シークレット管理 |
-| SNS | 通知 |
-| S3 | アーティファクト保存 |
-| DynamoDB | サービス設定管理 |
+```yaml
+データ取り込み:
+  - Amazon Kinesis Data Streams: リアルタイムストリーミング
+  - Amazon Kinesis Data Firehose: S3/OpenSearchへの配信
+  - Amazon Kinesis Data Analytics: ストリームSQL処理
+
+処理・変換:
+  - AWS Lambda: イベント駆動処理
+  - Amazon EventBridge: イベントルーティング
+
+検索・可視化:
+  - Amazon OpenSearch Service: ログ検索・ダッシュボード
+  - Amazon CloudWatch: メトリクス・アラーム
+
+ストレージ:
+  - Amazon S3: 長期保存
+  - Amazon DynamoDB: リアルタイム集計結果
+
+通知:
+  - Amazon SNS: アラート通知
+  - AWS Chatbot: Slack連携
+```
+
+### GCPとの比較
+
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| ストリーミング取り込み | Kinesis Data Streams | Pub/Sub |
+| ストリーム処理 | Kinesis Data Analytics | Dataflow |
+| 配信 | Kinesis Firehose | Pub/Sub → BigQuery |
+| ログ検索 | OpenSearch | Cloud Logging |
+| ダッシュボード | OpenSearch Dashboards | Looker Studio |
 
 ---
 
 ## 5. 前提条件
 
-### 必要な知識
-- マイクロサービスアーキテクチャの基本概念
-- Dockerの基本操作
-- CI/CDの基本概念
-- RESTful APIの設計
+### 技術要件
+
+```bash
+# 必要なCLIツール
+aws --version          # 2.x
+python --version       # 3.9+
+jq --version           # 1.6+
+
+# AWS設定
+aws configure
+export AWS_REGION=ap-northeast-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+```
 
 ### 事前準備
-1. AWSアカウント
-2. GitHubアカウントとCodeStar Connection設定済み
-3. AWS CLI v2
-4. Docker Desktop
-5. Terraform CLI
 
-### 環境要件
 ```bash
-terraform --version  # 1.5以上
-docker --version
-aws --version
+# イベントスキーマ定義
+# ConnectNowアプリから送信されるイベント
+
+{
+  "event_id": "uuid",
+  "event_type": "page_view | button_click | location_share | message_send | ...",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "user_id": "user_xxx",
+  "session_id": "session_xxx",
+  "device": {
+    "type": "ios | android",
+    "os_version": "17.0",
+    "app_version": "3.2.1",
+    "device_model": "iPhone 15"
+  },
+  "location": {
+    "latitude": 35.6812,
+    "longitude": 139.7671,
+    "accuracy": 10.5
+  },
+  "properties": {
+    "page_name": "home",
+    "button_id": "share_location",
+    ...
+  }
+}
 ```
 
 ---
 
-## 6. トラブルシューティング課題
+## 6. アーキテクチャ図
 
-### Challenge 1: パイプラインの連鎖失敗
-**状況**: ad-serverのデプロイが失敗し、依存するreportingサービスのパイプラインも停止
+### 全体構成
 
-**調査ポイント**:
-1. 各パイプラインのステージ状態を確認
-2. サービス依存関係マトリクスを確認
-3. ロールバック対象の特定
+```mermaid
+architecture-beta
+    group clients(cloud)[Mobile Apps / Web]
+    group aws(cloud)[AWS Cloud]
+    group streaming(server)[Streaming Layer] in aws
+    group processing(server)[Processing Layer] in aws
+    group storage(database)[Storage Layer] in aws
+    group monitoring(server)[Monitoring] in aws
 
-**解決コマンド**:
+    service ios(internet)[iOS App] in clients
+    service android(internet)[Android App] in clients
+    service web(internet)[Web App] in clients
+
+    service apigw(server)[API Gateway POST /events] in aws
+    service kinesis(server)[Kinesis Data Streams 4 shards] in streaming
+
+    service lambda_rt(server)[Lambda Real-time Processing] in processing
+    service kda(server)[Kinesis Data Analytics] in processing
+    service firehose_s3(server)[Firehose S3 Archive] in processing
+
+    service firehose_os(server)[Firehose OpenSearch] in storage
+    service dynamodb(database)[DynamoDB Real-time KPIs] in storage
+    service s3(disk)[S3 Data Lake] in storage
+    service opensearch(database)[OpenSearch Service] in storage
+
+    service cloudwatch(server)[CloudWatch Alarms] in monitoring
+    service sns(server)[SNS Notifications] in monitoring
+
+    ios:B --> T:apigw
+    android:B --> T:apigw
+    web:B --> T:apigw
+    apigw:B --> T:kinesis
+    kinesis:B --> T:lambda_rt
+    kinesis:B --> T:kda
+    kinesis:B --> T:firehose_s3
+    lambda_rt:B --> T:firehose_os
+    kda:B --> T:dynamodb
+    firehose_s3:B --> T:s3
+    firehose_os:B --> T:opensearch
+    opensearch:R --> L:cloudwatch
+    opensearch:R --> L:sns
+```
+
+**Kinesis Data Streams 設定:**
+- Stream: connectnow-events-stream (4 shards)
+- Partition Key: user_id (均等分散)
+- Retention: 24 hours
+
+**OpenSearch Service 設定:**
+- Domain: connectnow-analytics
+- Nodes: 3 × r6g.large.search (Multi-AZ)
+- Index Lifecycle: 7日後にdelete
+
+**OpenSearch Dashboards:**
+- Real-time Metrics Dashboard
+- User Journey Analysis
+- Error Tracking Dashboard
+
+### データフロー
+
+```
+1. イベント送信（ミリ秒）
+   Mobile App → API Gateway → Lambda → Kinesis Data Streams
+
+2. リアルタイム処理（秒単位）
+   Kinesis → Lambda → OpenSearch/DynamoDB
+   - イベント変換・エンリッチメント
+   - リアルタイムカウンター更新
+   - 異常検知
+
+3. 集計処理（分単位）
+   Kinesis → Kinesis Data Analytics
+   - 1分間のウィンドウ集計
+   - DAU/MAU計算
+   - ファネル分析
+
+4. アーカイブ（5分単位）
+   Kinesis → Firehose → S3
+   - Parquet形式で保存
+   - パーティショニング
+   - 長期保存
+```
+
+---
+
+## 8. トラブルシューティングチャレンジ
+
+### Challenge 1: Kinesisのスループット制限エラー
+
+```
+問題:
+ピーク時にProvisionedThroughputExceededExceptionが頻発。
+イベントの取りこぼしが発生している。
+
+エラーログ:
+ProvisionedThroughputExceededException: Rate exceeded for shard shardId-000000000001
+
+メトリクス:
+- WriteProvisionedThroughputExceeded: 100+/分
+- IncomingRecords: 15,000/秒
+- シャード数: 4
+
+調査項目:
+1. シャードあたりのスループット
+2. パーティションキーの分散
+3. スケーリング設定
+```
+
+<details>
+<summary>解決のヒント</summary>
+
 ```bash
-# 全パイプラインの状態を確認
-for pipeline in ad-bidder ad-server user-service reporting; do
-  echo "=== $pipeline ==="
-  aws codepipeline get-pipeline-state --name adoptimizer-$pipeline \
-    --query 'stageStates[*].[stageName,latestExecution.status]' \
-    --output table
-done
+# 1. シャードあたりの制限確認
+# 書き込み: 1MB/秒 または 1,000レコード/秒
+# 読み取り: 2MB/秒 または 5回/秒
+
+# 2. パーティションキーの分散状況確認
+aws kinesis describe-stream --stream-name connectnow-events \
+    --query "StreamDescription.Shards[*].HashKeyRange"
+
+# 3. シャード数を増やす（Provisionedモードの場合）
+aws kinesis update-shard-count \
+    --stream-name connectnow-events \
+    --target-shard-count 8 \
+    --scaling-type UNIFORM_SCALING
+
+# 4. On-Demandモードに変更（推奨）
+aws kinesis update-stream-mode \
+    --stream-arn arn:aws:kinesis:ap-northeast-1:xxx:stream/connectnow-events \
+    --stream-mode-details StreamMode=ON_DEMAND
+
+# 5. プロデューサー側でリトライ実装
+# Exponential backoff + jitterを使用
+
+# 6. パーティションキーの改善
+# user_idだけでなく、ランダムサフィックスを追加
+partition_key = f"{user_id}-{random.randint(0, 9)}"
 ```
+</details>
 
-### Challenge 2: イメージスキャンでCritical脆弱性検出
-**状況**: ECRのイメージスキャンでCritical脆弱性が見つかり、デプロイがブロック
-
-**調査ポイント**:
-1. 脆弱性の詳細を確認
-2. 影響を受けるベースイメージを特定
-3. 一時的な除外か、即座の修正が必要か判断
-
-### Challenge 3: 統合テストのフレーキーテスト
-**状況**: 統合テストが時々失敗し、パイプラインが不安定
-
-**調査ポイント**:
-1. テストログで失敗パターンを分析
-2. 競合状態やタイムアウトの有無を確認
-3. テストデータの分離状況を確認
-
----
-
-## 7. 設計考慮ポイント
-
-### ディスカッション1: モノレポ vs マルチレポ
-**テーマ**: マイクロサービスのリポジトリ戦略
-
-| 戦略 | メリット | デメリット |
-|------|----------|------------|
-| モノレポ | 依存関係管理が容易、アトミックな変更 | ビルド時間増加、権限管理が複雑 |
-| マルチレポ | チーム独立性高い、ビルド高速 | 依存関係の同期が困難 |
-| ハイブリッド | バランスが取れる | 複雑性増加 |
-
-### ディスカッション2: テスト戦略
-**テーマ**: テストピラミッドのバランス
+### Challenge 2: OpenSearchへの配信遅延
 
 ```
-        /\
-       /  \  E2E Tests (少量・遅い)
-      /----\
-     /      \  Integration Tests
-    /--------\
-   /          \  Unit Tests (大量・高速)
-  --------------
+問題:
+Firehoseからの配信が遅延し、ダッシュボードに5分以上遅れてデータが反映される。
+
+CloudWatch メトリクス:
+- DeliveryToOpenSearch.Success: 低下
+- DeliveryToOpenSearch.DataFreshness: 300秒以上
+
+OpenSearchログ:
+- BulkRejected エラー多発
+
+調査項目:
+1. OpenSearchのインデックス設定
+2. Firehoseのバッファ設定
+3. OpenSearchのリソース状況
 ```
 
-### ディスカッション3: サービス間通信
-**テーマ**: 同期 vs 非同期通信
+<details>
+<summary>解決のヒント</summary>
 
-| パターン | ユースケース | 考慮点 |
-|----------|------------|--------|
-| REST/gRPC | 即座の応答が必要 | タイムアウト、サーキットブレーカー |
-| イベント駆動 | 疎結合、耐障害性 | 結果整合性、デバッグの複雑さ |
+```bash
+# 1. OpenSearchクラスターのメトリクス確認
+aws cloudwatch get-metric-data \
+    --metric-data-queries '[
+        {"Id":"cpu","MetricStat":{"Metric":{"Namespace":"AWS/ES","MetricName":"CPUUtilization","Dimensions":[{"Name":"DomainName","Value":"connectnow-analytics"}]},"Period":300,"Stat":"Average"}},
+        {"Id":"jvm","MetricStat":{"Metric":{"Namespace":"AWS/ES","MetricName":"JVMMemoryPressure","Dimensions":[{"Name":"DomainName","Value":"connectnow-analytics"}]},"Period":300,"Stat":"Average"}}
+    ]' \
+    --start-time $(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# 2. インデックス設定の最適化
+curl -XPUT "https://${OPENSEARCH_ENDPOINT}/events-*/_settings" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "index": {
+            "refresh_interval": "30s",
+            "number_of_replicas": 0
+        }
+    }'
+
+# 3. Firehoseバッファ設定の調整
+aws firehose update-destination \
+    --delivery-stream-name connectnow-to-opensearch \
+    --current-delivery-stream-version-id xxx \
+    --destination-id xxx \
+    --amazon-opensearch-destination-update '{
+        "BufferingHints": {
+            "IntervalInSeconds": 60,
+            "SizeInMBs": 5
+        }
+    }'
+
+# 4. OpenSearchのスケールアップ
+aws opensearch update-domain-config \
+    --domain-name connectnow-analytics \
+    --cluster-config '{
+        "InstanceType": "r6g.xlarge.search",
+        "InstanceCount": 5
+    }'
+```
+</details>
+
+### Challenge 3: Lambda関数のコンカレンシー制限
+
+```
+問題:
+Kinesisからのイベント処理Lambdaがスロットリングされている。
+IteratorAgeが増加し続けている。
+
+CloudWatch メトリクス:
+- Throttles: 1000+/分
+- ConcurrentExecutions: 1000（アカウント制限）
+- IteratorAgeMilliseconds: 増加中
+
+調査項目:
+1. Lambda関数の実行時間
+2. コンカレンシー設定
+3. バッチサイズ
+```
+
+<details>
+<summary>解決のヒント</summary>
+
+```bash
+# 1. 現在のコンカレンシー状況確認
+aws lambda get-account-settings
+
+# 2. 予約済みコンカレンシーを設定
+aws lambda put-function-concurrency \
+    --function-name connectnow-stream-processor \
+    --reserved-concurrent-executions 500
+
+# 3. イベントソースマッピングの最適化
+aws lambda update-event-source-mapping \
+    --uuid xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+    --batch-size 500 \
+    --parallelization-factor 10 \
+    --maximum-batching-window-in-seconds 5
+
+# 4. Lambda関数の最適化
+# - メモリ増加で実行時間短縮
+aws lambda update-function-configuration \
+    --function-name connectnow-stream-processor \
+    --memory-size 1024 \
+    --timeout 300
+
+# 5. コンカレンシー上限緩和申請
+# AWS サポートに上限緩和リクエスト
+
+# 6. 複数のコンシューマーに分散
+# Kinesis Enhanced Fan-Out を使用
+aws kinesis register-stream-consumer \
+    --stream-arn arn:aws:kinesis:...:stream/connectnow-events \
+    --consumer-name processor-1
+```
+</details>
 
 ---
 
-## 8. 発展課題
+## 9. 設計考慮ポイント
 
-### Advanced 1: GitOpsの導入
-**課題**: ArgoCD または Flux を使って、Git をソースオブトゥルースとした宣言的デプロイを実装
+### ストリーミングアーキテクチャの選択
 
-### Advanced 2: カオスエンジニアリング
-**課題**: AWS Fault Injection Simulator を使って、サービス障害時の振る舞いをテスト
+```yaml
+Kinesis Data Streams:
+  特徴:
+    - リアルタイム（ミリ秒レイテンシ）
+    - 順序保証（シャード内）
+    - 複数コンシューマー対応
+  ユースケース:
+    - リアルタイム処理
+    - 複雑なルーティング
+    - カスタム処理ロジック
 
-### Advanced 3: 動的環境（Preview Environment）
-**課題**: PRごとに一時的な環境を自動作成し、レビュー後に削除
+Kinesis Data Firehose:
+  特徴:
+    - フルマネージド配信
+    - バッファリングで最適化
+    - 変換処理統合
+  ユースケース:
+    - S3/OpenSearch/Redshiftへの配信
+    - シンプルなETL
+    - 運用負荷軽減優先
+
+Amazon MSK (Kafka):
+  特徴:
+    - オープンソース互換
+    - より高いスループット
+    - 柔軟なパーティショニング
+  ユースケース:
+    - 既存Kafkaからの移行
+    - 複雑なイベント処理
+    - マルチリージョン
+
+選択指針:
+- 小〜中規模、AWS統合重視 → Kinesis
+- 大規模、Kafka経験あり → MSK
+- 配信のみ、運用軽減 → Firehose直接
+```
+
+### スケーリング戦略
+
+```
+Kinesis Data Streams:
+┌─────────────────────────────────────────────────────┐
+│ Provisioned Mode:                                   │
+│   - シャード数を手動管理                           │
+│   - 1シャード = 1MB/s書込, 2MB/s読込              │
+│   - コスト予測が容易                               │
+│                                                     │
+│ On-Demand Mode:                                     │
+│   - 自動スケーリング（4MB/sまで対応）             │
+│   - 使用量ベース課金                               │
+│   - 予測困難なワークロードに最適                   │
+└─────────────────────────────────────────────────────┘
+
+Lambda コンシューマー:
+┌─────────────────────────────────────────────────────┐
+│ パラメータチューニング:                            │
+│   - BatchSize: 100-10000（大きいほど効率的）       │
+│   - ParallelizationFactor: 1-10（シャードあたり）  │
+│   - MaximumBatchingWindowInSeconds: 0-300秒        │
+│                                                     │
+│ Enhanced Fan-Out:                                   │
+│   - 専用スループット（2MB/s/コンシューマー）       │
+│   - Push型配信（低レイテンシ）                     │
+│   - コンシューマー数に依存しないスケール           │
+└─────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 9. コスト見積もり
+## 10. 発展課題
 
-### 月額コスト概算（10サービス × 3環境）
+### 上級チャレンジ1: リアルタイム異常検知 ML
 
-| 環境 | サービス | 構成 | 月額コスト |
-|------|----------|------|------------|
-| **Dev** | ECS Fargate | 0.25 vCPU / 0.5GB × 10サービス × 1タスク | $90 |
-| | ALB | 1 | $16 |
-| | NAT Gateway | 1 | $32 |
-| | **小計** | | **$138** |
-| **Stg** | ECS Fargate | 0.25 vCPU / 0.5GB × 10サービス × 2タスク | $180 |
-| | ALB | 1 | $16 |
-| | NAT Gateway | 1 | $32 |
-| | **小計** | | **$228** |
-| **Prod** | ECS Fargate | 0.5 vCPU / 1GB × 10サービス × 4タスク | $720 |
-| | ALB | 1 | $16 |
-| | NAT Gateway | 2 | $65 |
-| | App Mesh | 10 Virtual Nodes | $50 |
-| | **小計** | | **$851** |
-| **CI/CD** | CodePipeline | 10 pipelines | $10 |
-| | CodeBuild | 月1000分想定 | $50 |
-| | ECR | 10GB | $1 |
-| | S3 (Artifacts) | 50GB | $1 |
-| | **小計** | | **$62** |
+```python
+# Amazon Kinesis Data Analytics + Random Cut Forest
+# 異常検知のためのSQL
 
-**合計**: 約 **$1,279/月**（約192,000円）
+-- 入力ストリームの集計
+CREATE OR REPLACE STREAM "AGGREGATED_STREAM" (
+    "timestamp" TIMESTAMP,
+    "event_count" INTEGER,
+    "error_count" INTEGER,
+    "unique_users" INTEGER
+);
 
-### コスト削減のヒント
+CREATE OR REPLACE PUMP "AGGREGATE_PUMP" AS
+    INSERT INTO "AGGREGATED_STREAM"
+    SELECT STREAM
+        FLOOR(ROWTIME TO MINUTE),
+        COUNT(*),
+        SUM(CASE WHEN "event_type" = 'error' THEN 1 ELSE 0 END),
+        COUNT(DISTINCT "user_id")
+    FROM "SOURCE_SQL_STREAM"
+    GROUP BY FLOOR(ROWTIME TO MINUTE);
 
-1. **開発環境の自動停止**: 夜間・休日はタスク数を0に
-2. **スポットインスタンス**: CodeBuildでスポット利用
-3. **ビルドキャッシュ**: Docker layer cacheで時間短縮
+-- Random Cut Forest による異常検知
+CREATE OR REPLACE STREAM "ANOMALY_STREAM" (
+    "timestamp" TIMESTAMP,
+    "event_count" INTEGER,
+    "error_count" INTEGER,
+    "anomaly_score" DOUBLE
+);
+
+CREATE OR REPLACE PUMP "ANOMALY_PUMP" AS
+    INSERT INTO "ANOMALY_STREAM"
+    SELECT STREAM
+        "timestamp",
+        "event_count",
+        "error_count",
+        ANOMALY_SCORE
+    FROM TABLE(
+        RANDOM_CUT_FOREST(
+            CURSOR(SELECT STREAM * FROM "AGGREGATED_STREAM"),
+            100,  -- numberOfTrees
+            256,  -- subSampleSize
+            100000,  -- timeDecay
+            1  -- shingleSize
+        )
+    )
+    WHERE ANOMALY_SCORE > 2.0;  -- 異常スコアしきい値
+```
+
+### 上級チャレンジ2: リアルタイムレコメンデーション
+
+```python
+# Lambda + DynamoDB でリアルタイムレコメンデーション
+
+import boto3
+from collections import Counter
+
+dynamodb = boto3.resource('dynamodb')
+user_events_table = dynamodb.Table('user-recent-events')
+recommendations_table = dynamodb.Table('user-recommendations')
+
+def process_event_for_recommendation(event_data):
+    """イベントに基づいてリアルタイムレコメンデーションを更新"""
+    user_id = event_data['user_id']
+    event_type = event_data['event_type']
+
+    if event_type == 'content_view':
+        content_id = event_data['properties']['content_id']
+        content_category = event_data['properties']['category']
+
+        # 最近のビュー履歴を更新
+        user_events_table.update_item(
+            Key={'user_id': user_id},
+            UpdateExpression='SET recent_views = list_append(if_not_exists(recent_views, :empty), :content)',
+            ExpressionAttributeValues={
+                ':content': [{'content_id': content_id, 'category': content_category}],
+                ':empty': []
+            }
+        )
+
+        # カテゴリ別興味スコアを更新
+        user_events_table.update_item(
+            Key={'user_id': user_id},
+            UpdateExpression='ADD category_scores.#cat :inc',
+            ExpressionAttributeNames={'#cat': content_category},
+            ExpressionAttributeValues={':inc': 1}
+        )
+
+        # リアルタイムレコメンデーション生成
+        generate_recommendations(user_id)
+
+
+def generate_recommendations(user_id):
+    """ユーザーの行動履歴に基づいてレコメンデーションを生成"""
+    # ユーザーの興味カテゴリを取得
+    response = user_events_table.get_item(Key={'user_id': user_id})
+    user_data = response.get('Item', {})
+    category_scores = user_data.get('category_scores', {})
+
+    if not category_scores:
+        return
+
+    # 上位カテゴリを特定
+    top_categories = sorted(category_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    # 各カテゴリの人気コンテンツを取得（別テーブルから）
+    recommendations = []
+    for category, score in top_categories:
+        popular_content = get_popular_content(category)
+        recommendations.extend(popular_content[:5])
+
+    # レコメンデーションを保存
+    recommendations_table.put_item(
+        Item={
+            'user_id': user_id,
+            'recommendations': recommendations[:10],
+            'updated_at': datetime.utcnow().isoformat()
+        }
+    )
+```
+
+### 上級チャレンジ3: マルチリージョンストリーミング
+
+```yaml
+# グローバル配信アーキテクチャ
+
+Region: ap-northeast-1 (Tokyo)
+  Kinesis Stream: connectnow-events-tokyo
+  Consumers:
+    - OpenSearch (Tokyo)
+    - S3 Archive
+    - Cross-Region Replication → us-east-1
+
+Region: us-east-1 (Virginia)
+  Kinesis Stream: connectnow-events-virginia
+  Consumers:
+    - OpenSearch (Virginia)
+    - Aggregated Stream → Tokyo (メトリクス統合)
+
+# Lambda クロスリージョンレプリケーション
+def replicate_to_region(event, target_region, target_stream):
+    kinesis = boto3.client('kinesis', region_name=target_region)
+
+    records = []
+    for record in event['Records']:
+        records.append({
+            'Data': base64.b64decode(record['kinesis']['data']),
+            'PartitionKey': record['kinesis']['partitionKey']
+        })
+
+    kinesis.put_records(StreamName=target_stream, Records=records)
+```
 
 ---
 
-## 10. 学習のポイント
+## 11. コスト見積もり
 
-### 重要な概念の整理
+### 月額コスト概算
 
-1. **独立デプロイ可能性**
-   - 各サービスが独立してデプロイ可能
-   - 後方互換性のあるAPI設計が重要
-   - Contract Testingで依存関係を検証
+| サービス | スペック | 月額コスト |
+|----------|----------|------------|
+| Kinesis Data Streams | On-Demand 10M records/day | $35 |
+| Kinesis Firehose | 1TB配信/月 | $35 |
+| Lambda | 100M invocations | $20 |
+| OpenSearch | 3 × r6g.large + 100GB | $450 |
+| DynamoDB | 10M writes/month | $15 |
+| CloudWatch | ログ10GB + メトリクス | $30 |
+| S3 | 500GB アーカイブ | $12 |
+| **合計** | | **約 $597/月** |
 
-2. **パイプラインの独立性**
-   - サービスごとに独立したパイプライン
-   - 共通モジュールは別途管理
-   - 環境ごとのゲート（承認）
+### スケール時の見積もり
 
-3. **イメージタグ戦略**
-   - Semantic Versioning（v1.2.3）
-   - Git Commit Hash（abc1234）
-   - 環境タグ（dev-latest, prod-latest）
+```
+DAU 500万人（10倍）の場合:
 
-### GCPとの比較
+- Kinesis: 約 $350/月（On-Demand自動スケール）
+- Lambda: 約 $200/月
+- OpenSearch: 約 $1,200/月（スケールアップ必要）
+- DynamoDB: 約 $150/月
+- その他: 約 $100/月
 
-| 概念 | AWS | GCP |
-|------|-----|-----|
-| CI/CD | CodePipeline + CodeBuild | Cloud Build |
-| コンテナレジストリ | ECR | Artifact Registry |
-| コンテナ実行 | ECS Fargate | Cloud Run / GKE |
-| サービスメッシュ | App Mesh | Anthos Service Mesh |
-| 分散トレーシング | X-Ray | Cloud Trace |
+合計: 約 $2,000/月
+```
+
+---
+
+## 12. 学習のポイント
+
+### 今回学んだこと
+
+```
+1. Kinesisストリーミング
+   □ Data Streamsでのリアルタイムデータ取り込み
+   □ シャード管理とスケーリング
+   □ Firehoseでの自動配信
+
+2. Lambda ストリーム処理
+   □ Kinesisトリガーの設定
+   □ バッチ処理とエラーハンドリング
+   □ DynamoDBとの連携
+
+3. OpenSearch Service
+   □ インデックス設計とマッピング
+   □ ダッシュボード作成
+   □ アラート設定
+
+4. リアルタイム分析パターン
+   □ ウィンドウ集計
+   □ 異常検知
+   □ イベント駆動アーキテクチャ
+```
+
+### GCPとの比較まとめ
+
+| 観点 | AWS (Kinesis + OpenSearch) | GCP (Pub/Sub + BigQuery) |
+|------|---------------------------|--------------------------|
+| リアルタイム性 | ミリ秒〜秒 | 秒〜分 |
+| クエリ | OpenSearch (Elasticsearch) | BigQuery SQL |
+| 可視化 | OpenSearch Dashboards | Looker Studio |
+| 運用複雑さ | 中〜高 | 低〜中 |
+| コスト | 使用量ベース | ストレージ+クエリ |
 
 ### 次のステップ
-1. Feature Flags（AWS AppConfig）の導入
-2. サービスメッシュでの高度なトラフィック制御
-3. Observabilityプラットフォームの統合
+
+```
+1. 発展学習:
+   - Amazon MSK でのKafka運用
+   - Amazon Managed Grafana での可視化
+   - AWS Glue Streaming ETL
+
+2. 実務応用:
+   - A/Bテスト分析基盤
+   - カスタマージャーニー分析
+   - 不正検知システム
+
+3. 認定資格:
+   - AWS Certified Data Analytics - Specialty
+   - AWS Certified Solutions Architect - Professional
+```

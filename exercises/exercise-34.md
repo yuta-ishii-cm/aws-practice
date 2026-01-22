@@ -1,4 +1,4 @@
-# 課題34: SaaS企業のマルチテナント基盤構築
+# 課題34: マーケティングSaaSのAWSコスト最適化
 
 **難易度: 🟡 中級**
 
@@ -9,941 +9,932 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 中級 |
-| カテゴリ | コンテナ |
-| 処理タイプ | リアルタイム |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-8時間 |
+| カテゴリ | コスト管理・最適化 |
+| 処理タイプ | バッチ |
+| 使用IaC | CloudFormation |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
-## 2. シナリオ
+## 2. ビジネスシナリオ
 
 ### 企業プロファイル
-
-| 項目 | 内容 |
-|------|------|
-| **企業名** | TaskFlow株式会社 |
-| **業種** | プロジェクト管理SaaS |
-| **従業員数** | 80名（エンジニア35名） |
-| **テナント数** | 500社（月額利用料ベースで収益化） |
-| **月間リクエスト** | 5000万リクエスト |
-| **データ量** | テナント平均5GB、合計2.5TB |
+- **企業名**: AdMetrics株式会社
+- **業種**: マーケティングSaaS（広告効果測定・分析）
+- **規模**: 従業員80名、エンジニア20名
+- **顧客数**: 500社、月間データ処理量50TB
+- **現状インフラ**: AWS（月額コスト300万円）
 
 ### 現状の課題
+AdMetrics株式会社は急成長に伴いAWSコストが急増しています。
+CFO から「コストを30%削減しつつ、パフォーマンスを維持せよ」という指示が出ました。
 
+1. **コスト可視性の欠如**
+   - 部門・プロジェクト別のコストが把握できていない
+   - 無駄なリソースの特定ができない
+   - 予算超過の早期検知ができない
+
+2. **リソースの非効率な利用**
+   - EC2インスタンスの平均CPU使用率が15%
+   - 開発環境が24時間稼働
+   - 未使用のEBSボリューム・EIPが多数存在
+
+3. **購入オプションの未活用**
+   - すべてオンデマンド課金
+   - Reserved Instances/Savings Plans 未導入
+   - Spot インスタンス未活用
+
+### 現状のAWSコスト内訳
 ```
-TaskFlow株式会社は急成長するプロジェクト管理SaaSを提供しています。
-現在は全テナントが同一のEC2インスタンス群で稼働していますが、
-以下の課題が顕在化しています：
+月額コスト: 300万円（$20,000相当）
 
-1. テナント間のリソース競合
-   - 大規模テナントが他テナントの性能に影響
-   - ピーク時に応答時間が5秒以上に悪化
-
-2. セキュリティ懸念
-   - テナント間のデータ分離が不十分
-   - コンプライアンス要件（ISO27001）対応の必要性
-
-3. 運用効率の低下
-   - テナントごとのカスタマイズ要求への対応困難
-   - スケーリングが粗粒度で非効率
-
-4. データベース接続管理
-   - コネクションプール枯渇が頻発
-   - フェイルオーバー時の接続切れ
+┌────────────────────────────────────────┐
+│           コスト内訳                    │
+├────────────────────────────────────────┤
+│ EC2 (コンピュート)      : 120万円 (40%) │
+│ RDS (データベース)      :  60万円 (20%) │
+│ S3 (ストレージ)         :  45万円 (15%) │
+│ Data Transfer           :  30万円 (10%) │
+│ ElastiCache             :  15万円  (5%) │
+│ その他                  :  30万円 (10%) │
+└────────────────────────────────────────┘
 ```
 
-### ビジネス目標
+### ビジネス要件
+```
+機能要件:
+- コストの部門・プロジェクト別可視化
+- 異常コストの自動検知・通知
+- 最適化推奨の自動生成
+- 月次コストレポートの自動化
 
-| KPI | 現状 | 目標 |
-|-----|------|------|
-| P99レイテンシ | 5秒 | 500ms以下 |
-| テナント分離レベル | なし | Namespace + ネットワークポリシー |
-| DB接続効率 | 直接接続（コネクション枯渇） | RDS Proxy経由（プーリング） |
-| デプロイ頻度 | 週1回 | 1日複数回（テナント単位） |
-| リソース効率 | 平均CPU使用率30% | 平均60%以上 |
+非機能要件:
+- コスト30%削減（300万円 → 210万円）
+- パフォーマンス維持（レイテンシ悪化なし）
+- 可用性維持（99.9%）
+- 実装期間：3ヶ月
+```
+
+### 成功指標（KPI）
+| 指標 | 現状 | 目標 |
+|------|------|------|
+| 月額AWSコスト | 300万円 | 210万円（30%削減） |
+| EC2 CPU使用率 | 15% | 50-70% |
+| Reserved/Savings カバレッジ | 0% | 60% |
+| コスト可視性（タグ付け率） | 30% | 95% |
+| 無駄リソース数 | 50+ | 0 |
 
 ---
 
-## 3. 達成目標（ゴール）
+## 3. 学習目標
 
-### 主要な学習成果
+### 本課題で習得するスキル
 
 ```
-この課題を完了すると、以下ができるようになります：
+1. コスト可視化（理解度：詳細）
+   - AWS Cost Explorer の活用
+   - コスト配分タグの設計・実装
+   - Cost and Usage Report (CUR) の分析
 
-1. EKS基盤の構築とマルチテナント設計
-   - Namespaceによるテナント分離
-   - ResourceQuotaとLimitRangeの適用
-   - NetworkPolicyによるネットワーク分離
+2. コスト最適化（理解度：実装）
+   - Compute Optimizer によるサイジング
+   - Reserved Instances / Savings Plans
+   - Spot インスタンスの活用
 
-2. Istioによるサービスメッシュの実装
-   - トラフィック管理とルーティング
-   - 相互TLS（mTLS）による通信暗号化
-   - テナントごとのレート制限
-
-3. RDS Proxyによるデータベース接続最適化
-   - コネクションプーリング
-   - IAM認証の統合
-   - フェイルオーバー時の接続維持
-
-4. 可観測性の確立
-   - テナント別のメトリクス収集
-   - 分散トレーシング（Jaeger）
-   - Kialiによるサービスメッシュ可視化
+3. コストガバナンス（理解度：実装）
+   - AWS Budgets によるアラート
+   - Trusted Advisor の活用
+   - 自動停止・削除の実装
 ```
 
-### 合格基準
+### GCPエンジニア向け補足
+```
+GCP → AWS マッピング:
+- Billing Reports → Cost Explorer
+- Committed Use Discounts → Reserved Instances / Savings Plans
+- Preemptible VMs → Spot Instances
+- Recommender → Compute Optimizer / Trusted Advisor
+- Budget Alerts → AWS Budgets
 
-| 項目 | 基準 |
-|------|------|
-| テナント分離 | NetworkPolicyでテナント間通信がブロックされること |
-| mTLS | すべてのサービス間通信がmTLS化されること |
-| DB接続 | RDS Proxy経由で接続プーリングが機能すること |
-| レート制限 | テナントごとのAPI制限が正しく適用されること |
-| 監視 | テナント別のダッシュボードが作成されること |
+主な違い:
+1. AWS は購入オプションが豊富
+   - Reserved Instances（1年/3年、全額/一部前払い）
+   - Savings Plans（Compute/EC2/SageMaker）
+   - Spot Instances（中断あり、最大90%割引）
+
+2. タグベースのコスト配分が詳細
+   - Cost Allocation Tags で部門別管理
+   - Cost Categories でグルーピング
+
+3. Cost and Usage Report (CUR) で詳細分析
+   - S3 + Athena で SQL クエリ可能
+   - QuickSight で可視化
+```
 
 ---
 
 ## 4. 使用するAWSサービス
 
-### コア技術スタック
+### メインサービス
+| サービス | 役割 | 使用機能 |
+|----------|------|----------|
+| **AWS Cost Explorer** | コスト分析 | 可視化、予測、推奨 |
+| **AWS Compute Optimizer** | リソース最適化 | EC2/Lambda/EBS推奨 |
+| **AWS Trusted Advisor** | ベストプラクティス | コスト最適化チェック |
+| **AWS Budgets** | 予算管理 | アラート、アクション |
 
-```yaml
-Kubernetes基盤:
-  - Amazon EKS: Kubernetes クラスター
-  - Amazon ECR: コンテナイメージレジストリ
-  - AWS Load Balancer Controller: ALB/NLB 統合
+### サポートサービス
+| サービス | 用途 |
+|----------|------|
+| **Cost and Usage Report** | 詳細コストデータ |
+| **AWS Organizations** | 一括請求、SCP |
+| **Amazon S3** | CUR保存 |
+| **Amazon Athena** | CUR分析 |
+| **Amazon QuickSight** | ダッシュボード |
+| **AWS Lambda** | 自動化処理 |
+| **Amazon EventBridge** | スケジュール実行 |
 
-サービスメッシュ:
-  - Istio: サービスメッシュ制御
-  - Envoy: データプレーン
-  - Kiali: サービスメッシュ可視化
-  - Jaeger: 分散トレーシング
-
-データベース:
-  - Amazon RDS (PostgreSQL): マルチテナントDB
-  - Amazon RDS Proxy: 接続プーリング
-  - AWS Secrets Manager: 認証情報管理
-
-セキュリティ:
-  - AWS IAM: 認証・認可
-  - Amazon VPC: ネットワーク分離
-  - AWS WAF: Webアプリケーション保護
-  - AWS Certificate Manager: TLS証明書
-
-監視・運用:
-  - Amazon CloudWatch: ログ・メトリクス
-  - Container Insights: コンテナ監視
-  - Prometheus: メトリクス収集
-  - Grafana: ダッシュボード
-```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| Kubernetesマネージド | EKS | GKE |
-| サービスメッシュ | Istio on EKS / App Mesh | Anthos Service Mesh |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| コンテナレジストリ | ECR | Artifact Registry |
-| ロードバランサ統合 | ALB Ingress Controller | GKE Ingress |
-
----
-
-## 5. 前提条件
-
-### 技術要件
-
-```bash
-# 必要なCLIツール
-aws --version          # 2.x
-kubectl version        # 1.28+
-eksctl version         # 0.160+
-istioctl version       # 1.20+
-helm version           # 3.12+
-
-# AWS設定
-aws configure
-export AWS_REGION=ap-northeast-1
-export CLUSTER_NAME=taskflow-eks
-```
-
-### 事前準備
-
-```bash
-# 1. VPC CIDR設計
-# - VPC: 10.0.0.0/16
-# - Public Subnets: 10.0.0.0/20, 10.0.16.0/20, 10.0.32.0/20
-# - Private Subnets: 10.0.128.0/20, 10.0.144.0/20, 10.0.160.0/20
-# - DB Subnets: 10.0.200.0/24, 10.0.201.0/24, 10.0.202.0/24
-
-# 2. ECRリポジトリ作成
-aws ecr create-repository --repository-name taskflow/api-gateway
-aws ecr create-repository --repository-name taskflow/project-service
-aws ecr create-repository --repository-name taskflow/user-service
-aws ecr create-repository --repository-name taskflow/task-service
-```
-
----
-
-## 6. アーキテクチャ図
-
-### 全体構成
+### アーキテクチャ図
 
 ```mermaid
 architecture-beta
-    group internet(cloud)[Internet]
-    group edge(server)[Edge Layer]
-    group eks(cloud)[EKS Cluster]
-    group mesh(server)[Istio Service Mesh mTLS] in eks
-    group tenant_a(server)[Namespace: tenant-enterprise-a] in mesh
-    group tenant_b(server)[Namespace: tenant-standard-b] in mesh
-    group shared(server)[Namespace: shared-services] in mesh
-    group monitoring(server)[Namespace: monitoring] in eks
-    group data(database)[Data Layer]
+    group cost_platform(cloud)[AdMetrics コスト最適化基盤]
 
-    service user(internet)[User] in internet
-    service waf(server)[AWS WAF Rate Limiting] in edge
-    service alb(server)[Application Load Balancer] in edge
+    group visibility(server)[コスト可視化層] in cost_platform
+    group optimization(server)[コスト最適化層] in cost_platform
+    group governance(server)[ガバナンス・自動化層] in cost_platform
 
-    service istio_ingress(server)[Istio Ingress Gateway] in eks
+    service cost_explorer(server)[Cost Explorer 分析・予測・RI推奨] in visibility
+    service cur(database)[CUR S3/Athena 詳細データ] in visibility
+    service quicksight(server)[QuickSight Dashboard] in visibility
 
-    service project_a(server)[Project Service Envoy] in tenant_a
-    service task_a(server)[Task Service Envoy] in tenant_a
-    service user_a(server)[User Service Envoy] in tenant_a
+    service compute_opt(server)[Compute Optimizer EC2・Lambda・EBS] in optimization
+    service trusted_adv(server)[Trusted Advisor 未使用リソース検出] in optimization
+    service savings_plans(server)[Savings Plans Compute/EC2 SP] in optimization
 
-    service project_b(server)[Project Service] in tenant_b
-    service task_b(server)[Task Service] in tenant_b
-    service user_b(server)[User Service] in tenant_b
+    service budgets(server)[AWS Budgets 予算・アラート] in governance
+    service eventbridge(server)[EventBridge Scheduler] in governance
+    service lambda(server)[Lambda Functions 自動停止・削除] in governance
+    service sns(server)[SNS 通知配信] in governance
+    service slack(internet)[Slack] in governance
+    service email(internet)[Email] in governance
+    service pagerduty(internet)[PagerDuty] in governance
 
-    service auth_svc(server)[Auth Service] in shared
-    service billing_svc(server)[Billing Service] in shared
-    service notif_svc(server)[Notification Service] in shared
-
-    service prometheus(server)[Prometheus] in monitoring
-    service grafana(server)[Grafana] in monitoring
-    service kiali(server)[Kiali] in monitoring
-    service jaeger(server)[Jaeger] in monitoring
-
-    service rds_proxy(database)[RDS Proxy Connection Pool] in data
-    service rds(database)[RDS PostgreSQL Multi-AZ] in data
-
-    user:B --> T:waf
-    waf:B --> T:alb
-    alb:B --> T:istio_ingress
-    istio_ingress:B --> T:project_a
-    istio_ingress:B --> T:project_b
-    project_a:B --> T:rds_proxy
-    project_b:B --> T:rds_proxy
-    rds_proxy:B --> T:rds
-```
-
-**Tenant Isolation:**
-- Namespace: 論理的分離
-- NetworkPolicy: deny-all + allow-same-tenant
-- ResourceQuota: Enterprise (CPU 4, Memory 8Gi), Standard (CPU 2, Memory 4Gi)
-- mTLS: 通信暗号化
-- PostgreSQL Schema: tenant_a, tenant_b, shared (Row Level Security)
-
-### データフロー
-
-```
-1. リクエストフロー
-   Internet → WAF → ALB → Istio Ingress Gateway
-   → VirtualService (ルーティング) → Tenant Namespace
-   → Envoy Sidecar (mTLS) → Application Pod
-
-2. データベースアクセス
-   Application Pod → RDS Proxy (IAM認証)
-   → コネクションプール → PostgreSQL
-   → テナント別スキーマ (Row Level Security)
-
-3. テナント間分離
-   - Namespace: 論理的分離
-   - NetworkPolicy: ネットワーク分離
-   - ResourceQuota: リソース分離
-   - mTLS: 通信暗号化
-   - RLS: データ分離
+    budgets:B --> T:sns
+    eventbridge:B --> T:sns
+    lambda:B --> T:sns
+    sns:B --> T:slack
+    sns:B --> T:email
+    sns:B --> T:pagerduty
 ```
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 5. 前提条件と事前準備
 
-### Challenge 1: テナント間通信が発生している
-
-```
-問題:
-あるテナントのPodから別テナントのサービスにリクエストが到達している。
-NetworkPolicyが正しく機能していないようだ。
-
-ログ:
-kubectl logs -n tenant-acme-corp deploy/project-service
-[ERROR] Unexpected response from tenant-small-biz namespace
-
-調査項目:
-1. NetworkPolicyの適用状態
-2. Istio Sidecarの状態
-3. DNS解決の挙動
-```
-
-<details>
-<summary>解決のヒント</summary>
-
+### 必要な環境
 ```bash
-# 1. NetworkPolicy確認
-kubectl get networkpolicy -n tenant-acme-corp
-kubectl describe networkpolicy default-deny-all -n tenant-acme-corp
+# AWS CLI v2
+aws --version  # 2.x以上
 
-# 2. ポリシー適用テスト
-kubectl run test-pod --image=busybox -n tenant-acme-corp --rm -it -- \
-  wget -qO- http://task-service.tenant-small-biz.svc.cluster.local/health
+# Python 3.9以上
+python3 --version
 
-# 3. Istio設定確認
-istioctl analyze -n tenant-acme-corp
-kubectl get peerauthentication -A
+# jq（JSON処理）
+jq --version
 
-# 4. 根本原因: NetworkPolicyはIstioのmTLSをバイパスする可能性
-# 解決: AuthorizationPolicyを追加
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-other-tenants
-  namespace: tenant-acme-corp
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            notNamespaces:
-              - tenant-acme-corp
-              - istio-system
-              - shared-services
+# Excel/スプレッドシート（レポート確認用）
+```
+
+### AWSアカウント要件
+```
+- Cost Explorer が有効化されていること
+- Cost and Usage Report が設定済み（推奨）
+- IAM 権限：Billing管理、Cost Explorer、Compute Optimizer
+- Trusted Advisor：Business または Enterprise Support プラン（推奨）
+```
+
+### 事前準備スクリプト
+```bash
+#!/bin/bash
+# setup-cost-optimization.sh
+
+# ディレクトリ構造の作成
+mkdir -p admetrics-cost/{analysis,automation,reports,dashboards}
+cd admetrics-cost
+
+# Cost Explorer の有効化確認
+echo "=== Checking Cost Explorer Status ==="
+aws ce get-cost-and-usage \
+    --time-period Start=2024-01-01,End=2024-01-02 \
+    --granularity MONTHLY \
+    --metrics "BlendedCost" \
+    2>/dev/null && echo "Cost Explorer is enabled" || echo "Enable Cost Explorer in Billing Console"
+
+# Compute Optimizer の有効化
+echo "=== Enabling Compute Optimizer ==="
+aws compute-optimizer update-enrollment-status \
+    --status Active \
+    --include-member-accounts
+
+# Trusted Advisor の確認
+echo "=== Checking Trusted Advisor ==="
+aws support describe-trusted-advisor-checks \
+    --language en \
+    --query 'checks[?category==`cost_optimizing`].name' \
+    --output table 2>/dev/null || echo "Trusted Advisor requires Business/Enterprise Support"
+
+# Cost Allocation Tags の確認
+echo "=== Checking Cost Allocation Tags ==="
+aws ce list-cost-allocation-tags \
+    --query 'CostAllocationTags[*].[TagKey,Status]' \
+    --output table
+```
+
+---
+
+## 6. アーキテクチャ設計
+
+### コスト配分タグ設計
+```yaml
+# cost-allocation-tags.yaml
+cost_allocation_tags:
+  # 必須タグ（全リソース）
+  required:
+    - key: Environment
+      values: [production, staging, development, test]
+      description: "環境識別"
+
+    - key: Project
+      values: [analytics, api, data-pipeline, infrastructure]
+      description: "プロジェクト識別"
+
+    - key: Team
+      values: [platform, backend, data, frontend]
+      description: "担当チーム"
+
+    - key: CostCenter
+      values: [engineering, marketing, sales, operations]
+      description: "コストセンター"
+
+  # 推奨タグ（追加情報）
+  recommended:
+    - key: Owner
+      description: "リソース所有者（メールアドレス）"
+
+    - key: Application
+      description: "アプリケーション名"
+
+    - key: AutoStop
+      values: ["true", "false"]
+      description: "自動停止対象"
+
+# タグ付けポリシー（Organizations Tag Policy）
+tag_policy:
+  enforce_required_tags: true
+  allowed_values_only: true
+  non_compliant_action: report  # report | deny
+```
+
+### コスト最適化戦略
+```yaml
+# cost-optimization-strategy.yaml
+optimization_targets:
+  # Phase 1: Quick Wins（即効性のある最適化）
+  quick_wins:
+    target_savings: 15%  # 45万円/月
+    timeline: 1週間
+    actions:
+      - type: unused_resources
+        items:
+          - Unattached EBS volumes
+          - Unused Elastic IPs
+          - Idle load balancers
+          - Old snapshots (>90 days)
+        estimated_savings: 10万円/月
+
+      - type: development_scheduling
+        items:
+          - Stop dev/test EC2 at night (19:00-08:00)
+          - Stop dev/test RDS at night
+          - Weekend shutdown
+        estimated_savings: 20万円/月
+
+      - type: s3_optimization
+        items:
+          - Enable Intelligent-Tiering
+          - Delete incomplete multipart uploads
+          - Lifecycle policies for old data
+        estimated_savings: 15万円/月
+
+  # Phase 2: Right-sizing（適正サイジング）
+  right_sizing:
+    target_savings: 10%  # 30万円/月
+    timeline: 1ヶ月
+    actions:
+      - type: ec2_right_sizing
+        criteria:
+          - CPU utilization < 40% for 14 days
+          - Memory utilization < 40%
+        approach: downsize_one_generation
+
+      - type: rds_right_sizing
+        criteria:
+          - CPU utilization < 30% for 14 days
+          - Connection count < 50% of max
+        approach: consider_aurora_serverless
+
+      - type: ebs_optimization
+        criteria:
+          - IOPS utilization < 50%
+          - Throughput utilization < 50%
+        approach: gp3_migration
+
+  # Phase 3: Commitment（コミットメント購入）
+  commitment:
+    target_savings: 5%  # 15万円/月
+    timeline: 3ヶ月
+    actions:
+      - type: savings_plans
+        coverage_target: 60%
+        type: Compute Savings Plans
+        term: 1_year
+        payment: no_upfront
+
+      - type: reserved_instances
+        coverage_target: 40%
+        term: 1_year
+        payment: partial_upfront
+        targets:
+          - RDS (stable workloads)
+          - ElastiCache (stable workloads)
+```
+
+---
+
+## 8. トラブルシューティング課題
+
+### 課題1: Cost Explorer のデータが表示されない
+
+**症状**:
+```
+Cost Explorer を開いたが、コストデータが表示されない。
+「Data is not available」というメッセージが表示される。
+```
+
+**調査コマンド**:
+```bash
+# Cost Explorer の有効化状態確認
+aws ce get-cost-and-usage \
+    --time-period Start=2024-01-01,End=2024-01-31 \
+    --granularity MONTHLY \
+    --metrics "BlendedCost"
+
+# IAM 権限の確認
+aws iam get-user
+aws iam list-attached-user-policies --user-name YOUR_USER_NAME
+```
+
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
+
+**原因**: 複数の原因が考えられる
+
+**パターン1: Cost Explorer が有効化されていない**
+```bash
+# Cost Explorer は Billing コンソールで有効化が必要
+# AWS マネジメントコンソール → Billing → Cost Explorer → Enable Cost Explorer
+
+# 有効化後、データが表示されるまで24時間かかる場合がある
+```
+
+**パターン2: IAM 権限不足**
+```bash
+# 必要な権限
+# - ce:GetCostAndUsage
+# - ce:GetCostForecast
+# - ce:GetReservationPurchaseRecommendation
+
+# IAM ポリシーの例
+aws iam attach-user-policy \
+    --user-name YOUR_USER_NAME \
+    --policy-arn arn:aws:iam::aws:policy/AWSBillingReadOnlyAccess
+```
+
+**パターン3: 組織アカウントでのアクセス制限**
+```bash
+# Organizations を使用している場合、
+# 管理アカウントで以下を有効化する必要がある：
+# - IAM User and Role Access to Billing Information
+
+# AWS Organizations → Policies → Service Control Policies
+# Billing へのアクセスを許可する SCP が必要
+```
+
+**パターン4: リージョン設定**
+```bash
+# Cost Explorer は us-east-1 リージョンで API を呼び出す
+aws ce get-cost-and-usage \
+    --region us-east-1 \
+    --time-period Start=2024-01-01,End=2024-01-31 \
+    --granularity MONTHLY \
+    --metrics "BlendedCost"
 ```
 </details>
 
-### Challenge 2: RDS Proxy接続エラー
+### 課題2: Compute Optimizer の推奨が表示されない
 
+**症状**:
 ```
-問題:
-アプリケーションからRDS Proxyへの接続が断続的に失敗する。
-IAM認証を使用しているが、認証エラーが発生。
-
-エラーログ:
-FATAL: PAM authentication failed for user "project_service"
-Connection timed out after 30000ms
-
-環境:
-- EKS 1.28
-- RDS Proxy (PostgreSQL)
-- IRSA設定済み
+Compute Optimizer を有効化したが、EC2 インスタンスの推奨が
+「推奨なし」と表示される。
 ```
 
-<details>
-<summary>解決のヒント</summary>
-
+**調査コマンド**:
 ```bash
-# 1. ServiceAccountのIAMロール確認
-kubectl describe sa project-service-sa -n tenant-acme-corp
-# Annotationsにeks.amazonaws.com/role-arnがあるか
+# Compute Optimizer の状態確認
+aws compute-optimizer get-enrollment-status
 
-# 2. Pod内でIAM認証テスト
-kubectl exec -it deploy/project-service -n tenant-acme-corp -- bash
-aws sts get-caller-identity
-# 期待するロールが返されるか確認
+# EC2 インスタンスの推奨取得
+aws compute-optimizer get-ec2-instance-recommendations \
+    --query 'instanceRecommendations[*].[instanceArn,finding,findingReasonCodes]' \
+    --output table
+```
 
-# 3. RDS Proxy IAMポリシー確認
-aws rds describe-db-proxy --db-proxy-name taskflow-proxy
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
 
-# 4. 接続トークン生成テスト
-aws rds generate-db-auth-token \
-  --hostname taskflow-proxy.proxy-xxx.ap-northeast-1.rds.amazonaws.com \
-  --port 5432 \
-  --username project_service
+**原因**: データ収集期間が不足している
 
-# 5. 根本原因の可能性
-# - OIDC Providerの信頼関係設定ミス
-# - rds-db:connect権限のリソースARN形式が不正
-# - Proxyユーザー名とDBユーザー名の不一致
+**解決手順**:
+```bash
+# 1. Compute Optimizer は最低14日間のデータが必要
+# 新規インスタンスの場合は14日待つ必要がある
 
-# 修正例: IAMポリシーのリソースARN
-{
-  "Effect": "Allow",
-  "Action": "rds-db:connect",
-  "Resource": "arn:aws:rds-db:ap-northeast-1:ACCOUNT:dbuser:PROXY_RESOURCE_ID/project_service"
-}
-# PROXY_RESOURCE_IDはaws rds describe-db-proxiesで確認
+# 2. CloudWatch Agent がインストールされているか確認
+# メモリメトリクスの収集には Agent が必要
+aws ssm describe-instance-information \
+    --query 'InstanceInformationList[*].[InstanceId,PingStatus]' \
+    --output table
+
+# 3. 詳細モニタリングの有効化（オプション）
+aws ec2 monitor-instances --instance-ids i-1234567890abcdef0
+
+# 4. インスタンスの状態確認
+# 停止中のインスタンスは分析対象外
+aws ec2 describe-instances \
+    --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' \
+    --output table
+
+# 5. Finding Reason Codes の確認
+aws compute-optimizer get-ec2-instance-recommendations \
+    --query 'instanceRecommendations[?finding==`NotOptimized`].[instanceArn,findingReasonCodes]'
+
+# 主な Reason Codes:
+# - CPUOverprovisioned: CPU が過剰プロビジョニング
+# - MemoryOverprovisioned: メモリが過剰（Agent 必要）
+# - EBSThroughputOverprovisioned: EBS スループットが過剰
 ```
 </details>
 
-### Challenge 3: Istio Ingress Gatewayのレイテンシ増加
+### 課題3: Budget アラートが送信されない
 
+**症状**:
 ```
-問題:
-特定の時間帯にIstio Ingress Gatewayのレイテンシが急増。
-P99が2秒を超えることがある。
-
-メトリクス:
-- Envoy upstream_rq_time: 50ms (正常)
-- Istio gateway total_time: 2000ms+ (異常)
-- Pod CPU/Memory: 正常範囲
-
-影響:
-- 全テナントで応答遅延
-- タイムアウトエラー発生
+AWS Budget で予算を設定し、閾値を超えたはずだが、
+通知メールが届かない。
 ```
 
-<details>
-<summary>解決のヒント</summary>
-
+**調査コマンド**:
 ```bash
-# 1. Ingress Gateway Pod状態確認
-kubectl get pods -n istio-system -l istio=ingressgateway
-kubectl top pods -n istio-system
+# Budget の設定確認
+aws budgets describe-budget \
+    --account-id $(aws sts get-caller-identity --query Account --output text) \
+    --budget-name "Monthly-Total-Cost"
 
-# 2. Envoyスタッツ確認
-kubectl exec -it deploy/istio-ingressgateway -n istio-system -- \
-  curl localhost:15000/stats | grep -E "(cx_active|rq_pending)"
+# 通知設定の確認
+aws budgets describe-notifications-for-budget \
+    --account-id $(aws sts get-caller-identity --query Account --output text) \
+    --budget-name "Monthly-Total-Cost"
+```
 
-# 3. HPA状態確認
-kubectl get hpa -n istio-system
+**原因と解決**:
+<details>
+<summary>解答を見る</summary>
 
-# 4. コネクションプール設定確認
-istioctl proxy-config cluster deploy/istio-ingressgateway -n istio-system
+**原因**: 複数の原因が考えられる
 
-# 5. 根本原因: Connection Pool枯渇
-# 解決: DestinationRuleでコネクションプール調整
+**パターン1: メールアドレスの確認が未完了**
+```bash
+# SNS サブスクリプションの場合、確認メールのリンクをクリックする必要がある
+aws sns list-subscriptions-by-topic \
+    --topic-arn arn:aws:sns:REGION:ACCOUNT_ID:cost-alerts
+```
 
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: gateway-pool-settings
-  namespace: istio-system
-spec:
-  host: "*.svc.cluster.local"
-  trafficPolicy:
-    connectionPool:
-      tcp:
-        maxConnections: 1000
-        connectTimeout: 10s
-      http:
-        http1MaxPendingRequests: 500
-        http2MaxRequests: 2000
-        maxRequestsPerConnection: 100
-        maxRetries: 3
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 10s
-      baseEjectionTime: 30s
+**パターン2: 閾値の設定ミス**
+```bash
+# FORECASTED vs ACTUAL の違い
+# - FORECASTED: 予測値が閾値を超えた場合
+# - ACTUAL: 実際のコストが閾値を超えた場合
 
-# 6. HPAのスケール設定強化
-kubectl patch hpa istio-ingressgateway -n istio-system --type='merge' -p '
-{
-  "spec": {
-    "minReplicas": 3,
-    "maxReplicas": 15,
-    "metrics": [
-      {
-        "type": "Resource",
-        "resource": {
-          "name": "cpu",
-          "target": {
-            "type": "Utilization",
-            "averageUtilization": 60
-          }
-        }
-      }
-    ]
-  }
-}'
+# 確認
+aws budgets describe-notifications-for-budget \
+    --account-id $(aws sts get-caller-identity --query Account --output text) \
+    --budget-name "Monthly-Total-Cost" \
+    --query 'Notifications[*].[NotificationType,Threshold,ThresholdType]'
+```
+
+**パターン3: SNS トピックの権限**
+```bash
+# Budget から SNS へのパブリッシュ権限を確認
+aws sns get-topic-attributes \
+    --topic-arn arn:aws:sns:REGION:ACCOUNT_ID:cost-alerts \
+    --query 'Attributes.Policy'
+
+# 必要な権限を付与
+aws sns set-topic-attributes \
+    --topic-arn arn:aws:sns:REGION:ACCOUNT_ID:cost-alerts \
+    --attribute-name Policy \
+    --attribute-value '{
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": "budgets.amazonaws.com"},
+            "Action": "SNS:Publish",
+            "Resource": "arn:aws:sns:REGION:ACCOUNT_ID:cost-alerts"
+        }]
+    }'
+```
+
+**パターン4: Budget アラートの遅延**
+```bash
+# Budget アラートは最大24時間の遅延がある場合がある
+# Cost Explorer のデータ更新タイミングに依存
+
+# テスト用に低い閾値で Budget を作成
+aws budgets create-budget \
+    --account-id $(aws sts get-caller-identity --query Account --output text) \
+    --budget '{
+        "BudgetName": "Test-Alert",
+        "BudgetLimit": {"Amount": "1", "Unit": "USD"},
+        "BudgetType": "COST",
+        "TimeUnit": "MONTHLY"
+    }' \
+    --notifications-with-subscribers '[{
+        "Notification": {
+            "NotificationType": "ACTUAL",
+            "ComparisonOperator": "GREATER_THAN",
+            "Threshold": 1,
+            "ThresholdType": "ABSOLUTE_VALUE"
+        },
+        "Subscribers": [{
+            "SubscriptionType": "EMAIL",
+            "Address": "your-email@example.com"
+        }]
+    }]'
 ```
 </details>
 
 ---
 
-## 9. 設計考慮ポイント
+## 9. 設計課題
 
-### マルチテナント分離戦略
+### 設計課題: エンタープライズ規模のコストガバナンス体制
+
+**シナリオ**:
+AdMetrics社は急成長に伴い、AWS アカウントが10個に増加しました。
+全社的なコストガバナンス体制を設計してください。
+
+**現状**:
+```
+- 10 AWS アカウント（本番、開発、テスト、各チーム用など）
+- 月額総コスト：1,500万円
+- コスト可視性：各アカウント個別管理
+- 購入オプション：未活用
+```
+
+**要件**:
+```
+1. ガバナンス要件
+   - 全アカウントのコスト一元管理
+   - 部門・プロジェクト別のコスト配分
+   - 予算超過の自動検知・対応
+   - 月次レポートの自動生成
+
+2. 最適化要件
+   - 全アカウント合計で20%コスト削減
+   - Savings Plans の組織レベル活用
+   - 未使用リソースの自動検出・削除
+
+3. セキュリティ要件
+   - コスト情報へのアクセス制御
+   - 高額リソース作成の承認フロー
+   - 監査ログの保持
+```
+
+**設計すべき項目**:
+```
+1. Organizations 設計（OU 構造）
+2. コスト配分タグ戦略
+3. Budget・アラート設計
+4. 自動化・レポート設計
+```
+
+<details>
+<summary>設計例を見る</summary>
+
+### エンタープライズコストガバナンスアーキテクチャ
+
+```mermaid
+flowchart TB
+    subgraph org[AWS Organizations 構造]
+        subgraph mgmt[Management Account - Root]
+            billing[Consolidated Billing]
+            scp[Organization Policies - SCP]
+            explorer[Cost Explorer - Central]
+        end
+
+        subgraph securityOU[Security OU]
+            secAccount[Security Account]
+            secAccount --> trail[CloudTrail Organization Trail]
+            secAccount --> config[Config Aggregator]
+            secAccount --> cur[Cost and Usage Report]
+        end
+
+        subgraph workloadsOU[Workloads OU]
+            prod[Production Account<br/>No Budget Limit]
+            staging[Staging Account<br/>Budget Tracked]
+        end
+
+        subgraph sandboxOU[Sandbox OU]
+            dev[Development Account<br/>Budget Limited]
+            test[Test Account<br/>Budget Limited]
+        end
+
+        subgraph teamOU[Team Accounts OU]
+            platform[Platform Team<br/>Budget: 200万円]
+            backend[Backend Team<br/>Budget: 300万円]
+            data[Data Team<br/>Budget: 400万円]
+            frontend[Frontend Team<br/>Budget: 150万円]
+            ml[ML Team<br/>Budget: 250万円]
+        end
+    end
+
+    mgmt --> securityOU
+    mgmt --> workloadsOU
+    mgmt --> sandboxOU
+    mgmt --> teamOU
+```
+
+### コスト配分タグ戦略
 
 ```yaml
-分離レベルの選択肢:
+tagging_strategy:
+  # 必須タグ（SCP で強制）
+  mandatory_tags:
+    - key: Environment
+      allowed_values: [production, staging, development, test, sandbox]
+      enforcement: deny_if_missing
 
-1. Namespace分離（本課題で採用）:
-   メリット:
-     - 論理的分離でコスト効率が良い
-     - Kubernetes標準機能で実現可能
-     - テナント追加が容易
-   デメリット:
-     - 完全な分離ではない
-     - ノイジーネイバー問題のリスク
+    - key: CostCenter
+      allowed_values: [platform, backend, data, frontend, ml, shared]
+      enforcement: deny_if_missing
 
-   適用ケース:
-     - 信頼できるテナント（B2B SaaS）
-     - コスト重視の中小規模テナント
+    - key: Project
+      description: プロジェクトコード（自由入力）
+      enforcement: report_if_missing
 
-2. Cluster分離:
-   メリット:
-     - 完全なリソース分離
-     - コンプライアンス要件に対応
-   デメリット:
-     - 運用コスト高
-     - クラスター間連携が複雑
+    - key: Owner
+      description: リソース所有者のメールアドレス
+      enforcement: report_if_missing
 
-   適用ケース:
-     - 金融・医療などの規制業種
-     - 大規模エンタープライズテナント
+  # 自動タグ付け
+  auto_tagging:
+    - source: IAM User/Role
+      target_tag: CreatedBy
+    - source: AWS Service Catalog
+      target_tag: ProvisionedProduct
 
-3. ハイブリッド分離:
-   メリット:
-     - テナントTierに応じた柔軟な対応
-     - コストとセキュリティのバランス
-   デメリット:
-     - 設計・運用の複雑さ
+  # コストカテゴリ（Cost Categories）
+  cost_categories:
+    - name: BusinessUnit
+      rules:
+        - value: Engineering
+          match: CostCenter IN [platform, backend, data, frontend, ml]
+        - value: Operations
+          match: CostCenter = shared
 
-   適用ケース:
-     - 多様なテナント要件（本課題）
+    - name: Environment
+      rules:
+        - value: Production
+          match: Environment = production
+        - value: Non-Production
+          match: Environment IN [staging, development, test]
+        - value: Sandbox
+          match: Environment = sandbox
 ```
 
-### データベース分離パターン
+### Budget 階層設計
 
+```yaml
+budget_hierarchy:
+  # 組織全体予算
+  organization_level:
+    - name: Total-Monthly-Cost
+      amount: 10000000  # 1,000万円
+      alerts:
+        - threshold: 80%
+          type: forecasted
+          action: notify_cfo
+        - threshold: 100%
+          type: actual
+          action: [notify_all_managers, create_incident]
+
+  # OU レベル予算
+  ou_level:
+    workloads:
+      amount: 7000000  # 700万円
+      alerts:
+        - threshold: 90%
+          action: notify_platform_manager
+
+    sandbox:
+      amount: 1500000  # 150万円
+      alerts:
+        - threshold: 100%
+          action: auto_stop_non_essential
+
+  # アカウントレベル予算
+  account_level:
+    per_team_account:
+      amount: varies_by_team
+      alerts:
+        - threshold: 80%
+          action: notify_team_lead
+        - threshold: 100%
+          action: [notify_team_lead, restrict_ec2_launch]
+
+  # 自動アクション
+  budget_actions:
+    - trigger: sandbox_over_budget
+      action:
+        type: lambda
+        function: stop_non_production_resources
+
+    - trigger: team_over_budget
+      action:
+        type: scp_attach
+        policy: DenyEC2Launch
 ```
-1. スキーマ分離（本課題で採用）:
-   ┌─────────────────────────────────────┐
-   │         PostgreSQL Instance         │
-   │  ┌─────────┐ ┌─────────┐ ┌───────┐ │
-   │  │tenant_a │ │tenant_b │ │shared │ │
-   │  │ schema  │ │ schema  │ │schema │ │
-   │  └─────────┘ └─────────┘ └───────┘ │
-   └─────────────────────────────────────┘
 
-   利点: コスト効率、運用シンプル
-   欠点: 同一インスタンスのリソース共有
+### 推定コスト削減効果
 
-2. データベース分離:
-   ┌─────────────┐ ┌─────────────┐
-   │ tenant_a_db │ │ tenant_b_db │
-   │  Instance   │ │  Instance   │
-   └─────────────┘ └─────────────┘
+| 最適化施策 | 対象 | 削減見込み |
+|-----------|------|-----------|
+| Savings Plans (組織レベル) | EC2/Fargate | 150万円 (20%) |
+| 開発環境スケジューリング | Dev/Test | 50万円 |
+| ライトサイジング | 全アカウント | 50万円 |
+| 未使用リソース削除 | 全アカウント | 30万円 |
+| データ転送最適化 | 全アカウント | 20万円 |
+| **合計** | | **300万円 (20%)** |
 
-   利点: リソース分離、パフォーマンス保証
-   欠点: コスト高、運用複雑
-
-3. Row Level Security (RLS):
-   すべてのテーブルにtenant_idカラム
-   ポリシーでアクセス制御
-
-   利点: 既存アプリからの移行容易
-   欠点: クエリパフォーマンス影響
-```
-
-### RDS Proxyの設計考慮
-
-```
-接続管理戦略:
-
-1. コネクションプールサイジング:
-   max_connections = (テナント数 × サービス数 × レプリカ数) × 0.5
-
-   例: 500テナント × 3サービス × 2レプリカ = 3000
-   → RDS Proxyのmax_connections: 1500程度
-
-2. IAM認証 vs パスワード認証:
-   IAM認証:
-     - セキュリティ高（Secrets不要）
-     - 15分のトークン有効期限
-     - 接続確立時のオーバーヘッド
-
-   パスワード認証:
-     - 実装シンプル
-     - Secrets管理必要
-     - 接続確立が高速
-
-3. フェイルオーバー考慮:
-   - RDS Proxyは自動的に新Primaryを検出
-   - アプリ側での再接続処理は不要
-   - ただし進行中のトランザクションは失敗
-```
+</details>
 
 ---
 
 ## 10. 発展課題
 
-### 上級チャレンジ1: カナリアデプロイメント
+### 発展課題1: FinOps プラクティスの導入（難易度：上級）
 
-```yaml
-# canary-deployment.yaml
-# テナントごとにカナリアリリースを実装
+**課題内容**:
+FinOps Foundation のフレームワークに基づき、組織的なクラウドコスト管理プラクティスを導入してください。
 
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: project-service-canary
-  namespace: tenant-acme-corp
-spec:
-  hosts:
-    - project-service
-  http:
-    - match:
-        - headers:
-            x-canary:
-              exact: "true"
-      route:
-        - destination:
-            host: project-service
-            subset: canary
-    - route:
-        - destination:
-            host: project-service
-            subset: stable
-          weight: 90
-        - destination:
-            host: project-service
-            subset: canary
-          weight: 10
+**要件**:
+- Inform（情報提供）: リアルタイムコスト可視化
+- Optimize（最適化）: 継続的な最適化サイクル
+- Operate（運用）: コスト責任の分散
+
+### 発展課題2: 機械学習によるコスト予測（難易度：上級）
+
+**課題内容**:
+Amazon Forecast を使用して、より精度の高いコスト予測モデルを構築してください。
+
+**要件**:
+- CUR データを使用した予測モデル
+- 季節性・イベント要因の考慮
+- 異常検知の実装
+
+### 発展課題3: マルチクラウドコスト管理（難易度：中級）
+
+**課題内容**:
+AWS + GCP のマルチクラウド環境でのコスト統合管理ダッシュボードを構築してください。
+
+**要件**:
+- 両クラウドのコストデータ統合
+- 統一されたタグ体系
+- 比較分析ダッシュボード
+
 ---
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: project-service-versions
-  namespace: tenant-acme-corp
-spec:
-  host: project-service
-  subsets:
-    - name: stable
-      labels:
-        version: v1
-    - name: canary
-      labels:
-        version: v2
 
-# Flagger（Canary自動化）
-apiVersion: flagger.app/v1beta1
-kind: Canary
-metadata:
-  name: project-service
-  namespace: tenant-acme-corp
-spec:
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: project-service
-  service:
-    port: 80
-  analysis:
-    interval: 1m
-    threshold: 5
-    maxWeight: 50
-    stepWeight: 10
-    metrics:
-      - name: request-success-rate
-        thresholdRange:
-          min: 99
-        interval: 1m
-      - name: request-duration
-        thresholdRange:
-          max: 500
-        interval: 1m
+## 11. 振り返りと次のステップ
+
+### 学習のまとめ
+
+```
+本課題で学んだこと:
+□ Cost Explorer によるコスト分析と予測
+□ Compute Optimizer によるライトサイジング
+□ Trusted Advisor による未使用リソース検出
+□ AWS Budgets によるコスト管理とアラート
+□ コスト配分タグの設計と実装
+□ 自動化によるコスト最適化
+
+GCP との主な違い:
+- AWS は購入オプションが豊富（RI, SP, Spot）
+- タグベースのコスト配分がより詳細
+- CUR による詳細なコストデータ分析が可能
+- Trusted Advisor は Business Support 以上で本領発揮
 ```
 
-### 上級チャレンジ2: テナントオンボーディング自動化
+### GCP経験者向けポイント
 
-```python
-# tenant_provisioner.py
-import boto3
-import kubernetes
-from kubernetes import client, config
+| 観点 | GCP | AWS | 移行時の注意 |
+|------|-----|-----|-------------|
+| コスト分析 | Billing Reports | Cost Explorer | UIとクエリ方法が異なる |
+| コミットメント | CUD | RI / Savings Plans | AWSはより柔軟なオプション |
+| スポット | Preemptible/Spot VM | Spot Instances | 中断通知の仕組みが異なる |
+| 推奨 | Recommender | Compute Optimizer | カバー範囲が異なる |
+| 予算管理 | Budget Alerts | AWS Budgets | アクション機能がAWSは豊富 |
 
-class TenantProvisioner:
-    def __init__(self):
-        config.load_incluster_config()
-        self.k8s_core = client.CoreV1Api()
-        self.k8s_custom = client.CustomObjectsApi()
-        self.rds = boto3.client('rds')
-        self.secretsmanager = boto3.client('secretsmanager')
+### 推奨される次のステップ
 
-    def provision_tenant(self, tenant_id: str, tier: str, config: dict):
-        """新規テナントのプロビジョニング"""
-
-        # 1. Namespace作成
-        self._create_namespace(tenant_id, tier)
-
-        # 2. ResourceQuota/LimitRange設定
-        self._apply_resource_limits(tenant_id, tier)
-
-        # 3. NetworkPolicy設定
-        self._apply_network_policies(tenant_id)
-
-        # 4. DBスキーマ作成
-        self._create_db_schema(tenant_id)
-
-        # 5. IAMロール作成
-        self._create_iam_role(tenant_id)
-
-        # 6. Istio設定
-        self._configure_istio(tenant_id, tier)
-
-        # 7. 初期アプリケーションデプロイ
-        self._deploy_services(tenant_id, tier)
-
-        # 8. 監視設定
-        self._setup_monitoring(tenant_id)
-
-        return {
-            "tenant_id": tenant_id,
-            "namespace": f"tenant-{tenant_id}",
-            "status": "provisioned",
-            "endpoints": self._get_endpoints(tenant_id)
-        }
-
-    def _create_namespace(self, tenant_id: str, tier: str):
-        namespace = client.V1Namespace(
-            metadata=client.V1ObjectMeta(
-                name=f"tenant-{tenant_id}",
-                labels={
-                    "istio-injection": "enabled",
-                    "tenant-id": tenant_id,
-                    "tier": tier
-                }
-            )
-        )
-        self.k8s_core.create_namespace(namespace)
-
-    def _apply_resource_limits(self, tenant_id: str, tier: str):
-        quotas = {
-            "enterprise": {"cpu": "16", "memory": "32Gi", "pods": "100"},
-            "standard": {"cpu": "4", "memory": "8Gi", "pods": "25"},
-            "starter": {"cpu": "1", "memory": "2Gi", "pods": "10"}
-        }
-
-        quota = client.V1ResourceQuota(
-            metadata=client.V1ObjectMeta(name="tenant-quota"),
-            spec=client.V1ResourceQuotaSpec(
-                hard={
-                    "requests.cpu": quotas[tier]["cpu"],
-                    "requests.memory": quotas[tier]["memory"],
-                    "pods": quotas[tier]["pods"]
-                }
-            )
-        )
-        self.k8s_core.create_namespaced_resource_quota(
-            f"tenant-{tenant_id}", quota
-        )
-
-    def _create_db_schema(self, tenant_id: str):
-        # RDS接続してスキーマ作成
-        import psycopg2
-
-        conn = psycopg2.connect(
-            host="taskflow-proxy.proxy-xxx.rds.amazonaws.com",
-            database="taskflow",
-            user="admin",
-            password=self._get_db_password()
-        )
-
-        with conn.cursor() as cur:
-            schema_name = f"tenant_{tenant_id.replace('-', '_')}"
-            cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
-
-            # テナント用ユーザー作成
-            cur.execute(f"""
-                CREATE USER {schema_name}_user WITH PASSWORD %s;
-                GRANT USAGE ON SCHEMA {schema_name} TO {schema_name}_user;
-                GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA {schema_name}
-                    TO {schema_name}_user;
-                ALTER DEFAULT PRIVILEGES IN SCHEMA {schema_name}
-                    GRANT ALL ON TABLES TO {schema_name}_user;
-            """, (self._generate_password(),))
-
-            conn.commit()
-
-# Lambda関数としてデプロイ
-def lambda_handler(event, context):
-    provisioner = TenantProvisioner()
-
-    action = event.get('action')
-    tenant_id = event.get('tenant_id')
-    tier = event.get('tier', 'standard')
-    config = event.get('config', {})
-
-    if action == 'provision':
-        return provisioner.provision_tenant(tenant_id, tier, config)
-    elif action == 'deprovision':
-        return provisioner.deprovision_tenant(tenant_id)
-    else:
-        return {"error": "Unknown action"}
 ```
+1. AWS Certified Cloud Practitioner の学習
+   - コスト管理の基礎を体系的に理解
 
-### 上級チャレンジ3: マルチリージョン展開
+2. FinOps Foundation 認定の取得
+   - クラウドコスト管理のベストプラクティス
 
-```yaml
-# グローバルサービスメッシュ構成
+3. 実環境での最適化実施
+   - 本課題の手法を実際の環境に適用
+   - 効果測定と継続的改善
 
-# 東京リージョン
-Region: ap-northeast-1
-  EKS Cluster: taskflow-eks-tokyo
-  RDS: Primary (Multi-AZ)
-  Route53: Failover Primary
-
-# バージニアリージョン
-Region: us-east-1
-  EKS Cluster: taskflow-eks-virginia
-  RDS: Read Replica (Cross-Region)
-  Route53: Failover Secondary
-
-# Istioマルチクラスター設定
-apiVersion: install.istio.io/v1alpha1
-kind: IstioOperator
-spec:
-  values:
-    global:
-      meshID: taskflow-mesh
-      multiCluster:
-        clusterName: tokyo
-      network: network-tokyo
-
-  meshConfig:
-    defaultConfig:
-      proxyMetadata:
-        ISTIO_META_DNS_CAPTURE: "true"
-        ISTIO_META_DNS_AUTO_ALLOCATE: "true"
-
-# クロスクラスタサービスディスカバリ
----
-apiVersion: networking.istio.io/v1beta1
-kind: ServiceEntry
-metadata:
-  name: project-service-virginia
-spec:
-  hosts:
-    - project-service.tenant-acme-corp.global
-  location: MESH_INTERNAL
-  ports:
-    - number: 80
-      name: http
-      protocol: HTTP
-  resolution: DNS
-  endpoints:
-    - address: project-service.tenant-acme-corp.svc.cluster.local
-      locality: us-east-1/us-east-1a
-      labels:
-        cluster: virginia
+4. 関連課題への挑戦
+   - 課題28: オブザーバビリティ（コストとパフォーマンスの相関）
+   - 課題30: 統合課題（コスト効率の良いアーキテクチャ設計）
 ```
 
 ---
 
-## 11. コスト見積もり
+## 12. 推定コストと注意事項
 
-### 月額コスト概算（500テナント規模）
+### 本課題の推定コスト
 
-| サービス | スペック | 月額コスト |
-|----------|----------|------------|
-| EKS クラスター | 1クラスター | $73 |
-| EC2 (System Nodes) | m6i.large × 2 | $200 |
-| EC2 (Enterprise Nodes) | m6i.xlarge × 5 | $750 |
-| EC2 (Standard Nodes) | m6i.large × 10 | $1,000 |
-| RDS PostgreSQL | db.r6g.large Multi-AZ | $400 |
-| RDS Proxy | 2 vCPU | $73 |
-| ALB | 1 ALB + LCU | $50 |
-| NAT Gateway | 3 AZ × データ転送 | $150 |
-| CloudWatch | ログ・メトリクス | $200 |
-| ECR | イメージストレージ | $30 |
-| Secrets Manager | 50シークレット | $20 |
-| **合計** | | **約 $2,946/月** |
+| サービス | 使用量 | 推定コスト（演習時） |
+|----------|--------|---------------------|
+| Cost Explorer | 分析 | 無料 |
+| Compute Optimizer | 分析 | 無料 |
+| Trusted Advisor | 基本 | 無料（Business以上は別途） |
+| AWS Budgets | 予算設定 | 無料（最初の2つ） |
+| Lambda | 自動化 | < $1 |
+| S3 (CUR) | 保存 | < $1 |
+| **合計** | | **< $5** |
 
-### テナント単価
+### コスト最適化の ROI 計算
 
 ```
-月額コスト: $2,946
-テナント数: 500
-1テナントあたり: 約 $5.89/月
+本課題での学習投資:
+- 所要時間: 4-5時間
+- AWSコスト: ~$5
+- 合計コスト: 約 $50（時間コスト含む）
 
-料金プラン例:
-- Starter:  $29/月 （粗利: 80%+）
-- Standard: $99/月 （粗利: 90%+）
-- Enterprise: $499/月 （粗利: 95%+）
+期待される効果（AdMetrics のケース）:
+- 月額削減額: 90万円（30%削減）
+- 年間削減額: 1,080万円
+- ROI: 21,600倍
 ```
 
-### コスト最適化ポイント
+### 注意事項
 
 ```
-1. Spot Instances活用:
-   - Standard Nodeグループの50%をSpotに
-   - 想定削減: $300/月
+⚠️ Reserved Instances / Savings Plans 購入
+- 1年/3年のコミットメントが必要
+- 購入前に十分な使用量分析を実施
+- 返金不可のため慎重に判断
 
-2. Reserved Instances:
-   - System/Enterprise Nodesを1年RI
-   - 想定削減: $400/月
+⚠️ 自動停止・削除の実装
+- 本番環境への適用は慎重に
+- DRY_RUN モードでの十分なテスト
+- 保護タグ（DoNotDelete）の活用
 
-3. Cluster Autoscaler最適化:
-   - 夜間/週末のスケールダウン
-   - 想定削減: $200/月
-
-4. 監視コスト最適化:
-   - メトリクス保持期間短縮
-   - 低頻度テナントのサンプリング
-   - 想定削減: $50/月
-
-最適化後合計: 約 $1,996/月 (32%削減)
+⚠️ Trusted Advisor の制限
+- 基本サポートでは一部チェックのみ
+- 全機能利用には Business Support 以上が必要
 ```
 
 ---
 
-## 12. 学習のポイント
-
-### 今回学んだこと
-
-```
-1. EKSマルチテナント設計
-   □ Namespaceによる論理分離
-   □ ResourceQuota/LimitRangeでのリソース制御
-   □ NetworkPolicyでのネットワーク分離
-   □ ノードグループによるワークロード分離
-
-2. Istioサービスメッシュ
-   □ VirtualService/DestinationRuleによるトラフィック制御
-   □ mTLSによる通信暗号化
-   □ AuthorizationPolicyによるアクセス制御
-   □ EnvoyFilterによるカスタムレート制限
-
-3. RDS Proxy活用
-   □ コネクションプーリングの効果
-   □ IAM認証の統合
-   □ フェイルオーバー時の接続維持
-   □ マルチテナントでの接続効率化
-
-4. 可観測性
-   □ テナント別メトリクス収集
-   □ 分散トレーシング（Jaeger）
-   □ サービスメッシュ可視化（Kiali）
-   □ テナント別アラート設定
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (EKS + Istio) | GCP (GKE + ASM) |
-|------|-------------------|-----------------|
-| マネージドサービスメッシュ | 自己管理Istio | Anthos Service Mesh（マネージド） |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| 設定複雑さ | 高（自由度も高い） | 中（統合度高い） |
-| コスト | 若干安い | 若干高い |
-| 学習曲線 | 急 | 緩やか |
-
-### 次のステップ
-
-```
-1. 本番運用に向けて:
-   - DR構成（マルチリージョン）
-   - バックアップ・リストア自動化
-   - コスト配分タグによる請求分離
-
-2. 発展学習:
-   - Crossplane によるマルチクラウド管理
-   - OPA/Gatekeeper によるポリシー管理
-   - ArgoCD によるGitOps導入
-
-3. 認定資格:
-   - AWS Certified Solutions Architect - Professional
-   - CKA (Certified Kubernetes Administrator)
-   - CKS (Certified Kubernetes Security Specialist)
-```
+**課題作成日**: 2024年1月
+**最終更新日**: 2024年1月
+**作成者**: AWS学習プログラム

@@ -1,6 +1,6 @@
-# 課題2: ヘルスケアアプリのマイクロサービス化
+# 課題2: 旅行予約サイトのサーバーレスAPI基盤
 
-**難易度: 🟡 中級**
+**難易度: 🟢 初級**
 
 ---
 
@@ -8,288 +8,305 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 初級 |
 | カテゴリ | マイクロサービス・API |
 | 処理タイプ | 非同期 |
-| 使用IaC | Terraform |
-| 想定所要時間 | 6-7時間 |
+| 使用IaC | SAM |
+| 想定所要時間 | 4-5時間 |
 
 ---
 
 ## 2. シナリオ
 
 ### 企業プロフィール
-**〇〇株式会社**は、健康管理アプリを提供するヘルスケアスタートアップです。ユーザー数は20万人を超え、日々の活動量、食事記録、睡眠データを管理するサービスを展開しています。
+**TravelHub株式会社**は、ホテルと航空券を組み合わせたパッケージ旅行の予約サービスを提供しています。日次約10万リクエストを処理し、ゴールデンウィークや年末年始にはピーク時5倍のトラフィックが発生します。
 
 ### 現状の課題
-サービス開始から3年が経過し、モノリシックなアーキテクチャの限界に直面しています：
+既存のモノリシックなAPIサーバーでは、ピーク時の対応に問題が発生しています：
 
-1. **デプロイの複雑化**：全機能が1つのアプリケーションに集約され、小さな変更でも全体のデプロイが必要
-2. **スケーリングの非効率**：特定機能（活動量記録）に負荷が集中しても、全体をスケール
-3. **技術的負債の蓄積**：PHP製のモノリスに新機能追加が困難
-4. **チーム間の競合**：5チームが1つのコードベースを共有し、マージコンフリクトが多発
+1. **スケーリングの遅延**：EC2のオートスケーリングに5-10分かかる
+2. **コスト非効率**：通常時もピーク対応用のキャパシティを維持
+3. **検索のレイテンシ**：複数の外部APIを順次呼び出しており、応答が遅い
+4. **キャッシュ効率の悪さ**：同一検索が繰り返されているが、毎回外部APIを叩いている
 
 ### 数値で見る問題
-- デプロイ頻度：月 **2回**（リスクが高く慎重になる）
-- デプロイ所要時間：**4時間**
-- インシデント発生率：デプロイごとに **30%**
-- 機能追加のリードタイム：**3ヶ月**
+- 通常時リクエスト数：**10万件/日**（平均 1.2 req/sec）
+- ピーク時リクエスト数：**50万件/日**（平均 6 req/sec、瞬間最大 50 req/sec）
+- 検索API応答時間：**平均 3秒**（外部API呼び出し含む）
+- インフラコスト：**月額 $3,000**（常時稼働EC2）
+- ピーク時のエラー率：**5%**
 
 ### 成功指標（KPI）
 | 指標 | 現状 | 目標 |
 |------|------|------|
-| デプロイ頻度 | 2回/月 | 週1回以上/サービス |
-| デプロイ時間 | 4時間 | 30分/サービス |
-| インシデント発生率 | 30%/デプロイ | 5%以下 |
-| 機能追加リードタイム | 3ヶ月 | 2週間 |
+| 検索API応答時間 | 3秒 | 1秒以内 |
+| ピーク時エラー率 | 5% | 0.1%以下 |
+| インフラコスト | $3,000/月 | $1,000/月 |
+| スケーリング時間 | 5-10分 | 即時 |
 
 ---
 
-## 3. 達成目標
+## 3. 学習目標
 
 ### 主要な学習成果
-1. モノリスからマイクロサービスへの段階的移行手法
-2. ECS Fargateによるコンテナ基盤の構築
-3. ALBを使ったパスベースルーティング
-4. サービス間通信パターンの理解
+1. API GatewayとLambdaによるサーバーレスAPI構築
+2. DynamoDBを使った高速な検索結果キャッシュ
+3. 非同期処理による外部API呼び出しの並列化
+4. SAMを使ったサーバーレスアプリケーションのIaC
 
 ### 習得するスキル
-- Strangler Fig パターンによる移行
-- Docker マルチステージビルド
-- ECS サービスディスカバリ
-- ALB ターゲットグループの管理
+- API Gateway REST APIの設計とセットアップ
+- Lambda関数の最適化（コールドスタート対策、メモリ設定）
+- DynamoDB の設計パターン（GSI、TTL）
+- SAM テンプレートの記述方法
 
 ---
 
-## 4. 学習するAWSサービス
+## 4. 使用するAWSサービス
 
 ### コアサービス
 | サービス | 用途 | 重要度 |
 |----------|------|--------|
-| ECS Fargate | マイクロサービス実行 | 高 |
-| ALB | ルーティング・ロードバランシング | 高 |
-| RDS (Aurora) | データベース | 高 |
-| ElastiCache (Redis) | キャッシュ・セッション | 中 |
+| API Gateway | REST API エンドポイント | 高 |
+| Lambda | ビジネスロジック実行 | 高 |
+| DynamoDB | 検索結果キャッシュ、予約データ | 高 |
+| ElastiCache (Redis) | セッション管理 | 中 |
 
 ### 補助サービス
 | サービス | 用途 |
 |----------|------|
-| ECR | コンテナイメージ保存 |
-| Cloud Map | サービスディスカバリ |
-| Secrets Manager | 認証情報管理 |
 | CloudWatch | ログ・メトリクス |
 | X-Ray | 分散トレーシング |
+| Secrets Manager | API キー管理 |
+| WAF | API 保護 |
+| CloudFront | API キャッシング |
 
 ---
 
-## 5. 最終構成図
-
-### 現状（モノリス）
-```mermaid
-flowchart TB
-    subgraph EC2["EC2 (Monolith)"]
-        subgraph PHP["PHP Application"]
-            User["User Module"]
-            Activity["Activity Module"]
-            Meal["Meal Module"]
-            Sleep["Sleep Module"]
-        end
-        DB[("Shared Database<br/>(MySQL)")]
-    end
-
-    User --> DB
-    Activity --> DB
-    Meal --> DB
-    Sleep --> DB
-```
-
-### 目標（マイクロサービス）
-```mermaid
-flowchart TB
-    subgraph ALB["Application Load Balancer"]
-        route1["/users/*"]
-        route2["/activities/*"]
-        route3["/meals/*"]
-        route4["/sleep/*"]
-    end
-
-    subgraph ECS["ECS Cluster"]
-        UserSvc["User Service<br/>(Node.js)<br/>2 tasks"]
-        ActivitySvc["Activity Svc<br/>(Go)<br/>4 tasks"]
-        MealSvc["Meal Service<br/>(Python)<br/>2 tasks"]
-        SleepSvc["Sleep Service<br/>(Node.js)<br/>2 tasks"]
-    end
-
-    subgraph Data["Data Layer"]
-        AuroraUsers[("Aurora<br/>(Users)")]
-        AuroraActivities[("Aurora<br/>(Activities)")]
-        AuroraMeals[("Aurora<br/>(Meals)")]
-        AuroraSleep[("Aurora<br/>(Sleep)")]
-        Redis["ElastiCache (Redis)<br/>(Session & Cache - Shared)"]
-    end
-
-    route1 --> UserSvc
-    route2 --> ActivitySvc
-    route3 --> MealSvc
-    route4 --> SleepSvc
-
-    UserSvc --> AuroraUsers
-    ActivitySvc --> AuroraActivities
-    MealSvc --> AuroraMeals
-    SleepSvc --> AuroraSleep
-
-    UserSvc -.-> Redis
-    ActivitySvc -.-> Redis
-    MealSvc -.-> Redis
-    SleepSvc -.-> Redis
-```
-
-### 移行計画（5フェーズ）
-| フェーズ | 内容 | 期間目安 |
-|----------|------|----------|
-| 1 | インフラ基盤構築（VPC、ECS、ALB） | - |
-| 2 | User Service 抽出・移行 | - |
-| 3 | Activity Service 抽出・移行 | - |
-| 4 | Meal / Sleep Service 移行 | - |
-| 5 | モノリス廃止・最終検証 | - |
-
----
-
-## 6. 前提条件
+## 5. 前提条件
 
 ### 必要な知識
-- コンテナとDockerの基本
-- REST API設計の基礎
-- データベース設計の基礎
+- REST APIの基本概念
+- Python または Node.js の基礎
+- DynamoDBの基本操作
 
 ### 事前準備
 1. AWSアカウント
 2. AWS CLI v2
-3. Docker Desktop
-4. Terraform CLI
+3. AWS SAM CLI
+4. Python 3.11 または Node.js 18.x
+
+### 環境要件
+```bash
+# SAM CLIインストール
+pip install aws-sam-cli
+
+# バージョン確認
+sam --version  # 1.90.0以上
+```
 
 ---
 
-## 7. トラブルシューティング課題
+## 6. アーキテクチャ概要
 
-### Challenge 1: サービス間通信のタイムアウト
-**状況**: Activity Service から User Service への呼び出しがタイムアウト
+### システム構成図
 
-**調査ポイント**:
-1. Security Group のルールを確認
-2. Service Discovery の名前解決を確認
-3. ターゲットのヘルスチェック状態を確認
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+    group edge(server)[Edge Layer] in aws
+    group api(server)[API Layer] in aws
+    group data(database)[Data Layer] in aws
+    group async(server)[Async Processing] in aws
+    group external(cloud)[External APIs]
 
-### Challenge 2: データ整合性の問題
-**状況**: User Service でユーザーを削除したが、Activity Service に古いデータが残っている
+    service cloudfront(server)[CloudFront API Caching & WAF] in edge
+    service apigw(server)[API Gateway] in api
 
-**調査ポイント**:
-1. キャッシュの TTL を確認
-2. イベント駆動の同期を検討
-3. Saga パターンの導入を検討
+    service lambda_hotel(server)[Lambda HotelSearch] in api
+    service lambda_flight(server)[Lambda FlightSearch] in api
+    service lambda_booking(server)[Lambda CreateBooking] in api
+    service lambda_get(server)[Lambda GetBooking] in api
 
-### Challenge 3: デプロイ順序の依存関係
-**状況**: User Service の API 変更により、Activity Service が動作しなくなった
+    service dynamo_cache(database)[DynamoDB SearchCache TTL 5min] in data
+    service dynamo_booking(database)[DynamoDB Bookings] in data
 
-**調査ポイント**:
-1. API のバージョニング戦略を確認
-2. 後方互換性の維持
-3. Consumer-Driven Contract Testing の導入
+    service hotel_api(server)[Hotel API Partner] in external
+    service airline_api(server)[Airline API Partner] in external
+
+    service sqs(server)[SQS BookingConfirmation] in async
+    service lambda_confirm(server)[Lambda ProcessConfirmation] in async
+    service ses(server)[SES Email Send] in async
+
+    cloudfront:B --> T:apigw
+    apigw:B --> T:lambda_hotel
+    apigw:B --> T:lambda_flight
+    apigw:B --> T:lambda_booking
+    apigw:B --> T:lambda_get
+    lambda_hotel:B --> T:dynamo_cache
+    lambda_flight:B --> T:dynamo_cache
+    lambda_booking:B --> T:dynamo_booking
+    lambda_get:B --> T:dynamo_booking
+    dynamo_cache:R --> L:hotel_api
+    dynamo_cache:R --> L:airline_api
+    lambda_booking:R --> L:sqs
+    sqs:B --> T:lambda_confirm
+    lambda_confirm:B --> T:ses
+```
+
+### API エンドポイント設計
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | /hotels/search | ホテル検索 |
+| GET | /hotels/{hotelId} | ホテル詳細取得 |
+| GET | /flights/search | フライト検索 |
+| GET | /flights/{flightId} | フライト詳細取得 |
+| POST | /bookings | 予約作成 |
+| GET | /bookings/{bookingId} | 予約詳細取得 |
+| DELETE | /bookings/{bookingId} | 予約キャンセル |
 
 ---
 
-## 8. 設計の考察ポイント
+## 8. トラブルシューティング課題
 
-### ディスカッション1: データ分割戦略
-**テーマ**: 共有DBからサービス別DBへの移行
+### Challenge 1: Lambda コールドスタートが遅い
+**状況**: 初回リクエストで3秒以上のレイテンシが発生
+
+**調査ポイント**:
+1. CloudWatch Logs で Init Duration を確認
+2. Lambda のメモリサイズを確認
+3. 依存パッケージのサイズを確認
+
+**解決策**:
+```yaml
+# Provisioned Concurrency の設定
+HotelSearchFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    # ... 既存の設定 ...
+    ProvisionedConcurrencyConfig:
+      ProvisionedConcurrentExecutions: 5
+```
+
+### Challenge 2: DynamoDB の読み取り容量超過
+**状況**: ピーク時に `ProvisionedThroughputExceededException` が発生
+
+**調査ポイント**:
+1. CloudWatch で ConsumedReadCapacityUnits を確認
+2. ホットパーティションの有無を確認
+3. キャッシュヒット率を確認
+
+### Challenge 3: 外部API呼び出しタイムアウト
+**状況**: パートナーAPIの応答が遅く、Lambdaがタイムアウト
+
+**調査ポイント**:
+1. X-Ray でボトルネックを特定
+2. 各外部APIの応答時間を確認
+3. 並列呼び出しが正しく動作しているか確認
+
+---
+
+## 9. 設計考慮ポイント
+
+### ディスカッション1: キャッシュ戦略
+**テーマ**: TTL設定とキャッシュ無効化
 
 | パターン | メリット | デメリット |
 |----------|----------|------------|
-| Shared Database | シンプル、トランザクション | 結合度が高い |
-| Database per Service | 独立性高い | 分散トランザクション |
-| Shared Schema | 移行が容易 | 中途半端 |
+| 短いTTL（1-5分） | 鮮度が高い | キャッシュヒット率低下 |
+| 長いTTL（30分以上） | ヒット率向上 | 古いデータを返すリスク |
+| 明示的無効化 | 精度が高い | 実装が複雑 |
 
-### ディスカッション2: 同期 vs 非同期通信
-**テーマ**: サービス間通信パターンの選択
+### ディスカッション2: API Gateway vs ALB + Lambda
+**テーマ**: エントリーポイントの選択
 
-| パターン | ユースケース |
-|----------|-------------|
-| REST (同期) | 即座の応答が必要 |
-| gRPC (同期) | 高パフォーマンス要件 |
-| Event (非同期) | 疎結合、耐障害性重視 |
+| 観点 | API Gateway | ALB + Lambda |
+|------|-------------|--------------|
+| コスト（高トラフィック） | 高い | 安い |
+| 機能 | 豊富（認証、スロットリング等） | 基本的 |
+| WebSocket | 対応 | 非対応 |
 
-### ディスカッション3: Strangler Fig パターン
-**テーマ**: 段階的移行の進め方
+### ディスカッション3: 同期 vs 非同期処理
+**テーマ**: 予約確定処理のパターン
 
-**ステップ**:
-1. ファサードの導入（ALB ルーティング）
-2. 機能単位での切り出し
-3. データ移行
-4. 旧機能の廃止
-
----
-
-## 9. 発展課題
-
-### Advanced 1: サービスメッシュの導入
-**課題**: AWS App Mesh を導入し、サービス間通信の可観測性とトラフィック制御を向上
-
-### Advanced 2: イベント駆動アーキテクチャ
-**課題**: Amazon EventBridge を使って、サービス間をイベント駆動で疎結合に
-
-### Advanced 3: CQRS パターン
-**課題**: 読み取りと書き込みを分離し、読み取り専用のビューを作成
+**選択肢**:
+1. **完全同期**: 予約→決済→確認メールを1リクエストで
+2. **部分非同期**: 予約→決済は同期、確認メールは非同期
+3. **Saga パターン**: 全処理を非同期で、補償トランザクション
 
 ---
 
-## 10. 想定コストと削減方法
+## 10. 発展課題
+
+### Advanced 1: GraphQL API への移行
+**課題**: AppSync を使って GraphQL API を構築し、クライアントが必要なデータのみを取得
+
+### Advanced 2: リアルタイム価格更新
+**課題**: WebSocket API と DynamoDB Streams を使って、価格変動をリアルタイムにクライアントへプッシュ
+
+### Advanced 3: マルチリージョン対応
+**課題**: Route 53 ヘルスチェックと DynamoDB Global Tables を使った災害対策
+
+---
+
+## 11. コスト見積もり
 
 ### 月額コスト概算
 
-| サービス | 構成 | 月額コスト |
-|----------|------|------------|
-| ECS Fargate | 0.5vCPU / 1GB × 10タスク | $180 |
-| ALB | 1 | $16 |
-| Aurora Serverless v2 | 4 ACU | $345 |
-| ElastiCache | cache.t3.small | $24 |
-| NAT Gateway | 1 | $32 |
-| ECR | 10GB | $1 |
-| CloudWatch | ログ・メトリクス | $20 |
+| サービス | 使用量 | 月額コスト |
+|----------|--------|------------|
+| API Gateway | 300万リクエスト | $10.50 |
+| Lambda | 300万リクエスト × 500ms × 256MB | $6.25 |
+| DynamoDB (SearchCache) | 10GB + 300万WCU + 300万RCU | $50 |
+| DynamoDB (Bookings) | 5GB + 10万WCU + 50万RCU | $15 |
+| SQS | 50万メッセージ | $0.20 |
+| CloudWatch Logs | 10GB | $5 |
+| X-Ray | 100万トレース | $5 |
+| WAF | 1 WebACL + 300万リクエスト | $8 |
 
-**合計**: 約 **$618/月**（約93,000円）
+**合計**: 約 **$100/月**（約15,000円）
+
+**従来構成との比較**: $3,000 → $100（約97%削減）
+
+### コスト削減のヒント
+
+1. **Provisioned Concurrencyの最適化**: 本当に必要な時間帯のみ設定
+2. **DynamoDB On-demand**: 予測可能なトラフィックならProvisioned Mode
+3. **Lambda メモリ最適化**: Power Tuning で最適なメモリサイズを特定
 
 ---
 
-## 11. 学習のポイント
+## 12. 学習のポイント
 
 ### 重要な概念の整理
 
-1. **Strangler Fig パターン**
-   - 段階的にモノリスを置き換え
-   - リスクを最小化しながら移行
-   - ファサード（ALB）でルーティング制御
+1. **サーバーレスの特性**
+   - 自動スケーリング
+   - 従量課金
+   - コールドスタート
 
-2. **サービス境界の設計**
-   - ドメイン駆動設計（DDD）の境界付けられたコンテキスト
-   - データの所有権を明確に
-   - API契約の重要性
+2. **DynamoDBキャッシュパターン**
+   - TTLによる自動削除
+   - 一貫性のトレードオフ
+   - パーティションキー設計
 
-3. **分散システムの課題**
-   - ネットワーク障害への対応
-   - 結果整合性の受け入れ
-   - 分散トランザクションの回避
+3. **非同期処理のメリット**
+   - レスポンス時間の短縮
+   - 障害の分離
+   - リトライの容易さ
 
 ### GCPとの比較
 
 | 概念 | AWS | GCP |
 |------|-----|-----|
-| コンテナ実行 | ECS Fargate | Cloud Run |
-| ロードバランサー | ALB | Cloud Load Balancing |
-| サービスディスカバリ | Cloud Map | Service Directory |
-| マネージドDB | Aurora | Cloud SQL / AlloyDB |
-| キャッシュ | ElastiCache | Memorystore |
+| API Gateway | API Gateway | Cloud Endpoints / API Gateway |
+| サーバーレス関数 | Lambda | Cloud Functions |
+| NoSQL DB | DynamoDB | Firestore / Bigtable |
+| メッセージキュー | SQS | Cloud Tasks / Pub/Sub |
+| WAF | WAF | Cloud Armor |
 
 ### 次のステップ
-1. 残りのサービス（Meal, Sleep）の移行
-2. CI/CD パイプラインの構築
-3. 可観測性の強化（X-Ray, CloudWatch）
+1. 認証・認可の追加（Cognito）
+2. キャッシュ層の追加（CloudFront、ElastiCache）
+3. CI/CD パイプラインの構築

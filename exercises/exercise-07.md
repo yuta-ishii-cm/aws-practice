@@ -1,4 +1,4 @@
-# 課題7: 配車サービスの統合監視基盤構築
+# 課題7: TalentBridge株式会社のAIマッチング非同期処理システム構築
 
 **難易度: 🟢 初級〜中級**
 
@@ -9,1014 +9,419 @@
 | 項目 | 内容 |
 |------|------|
 | 難易度 | 初級〜中級 |
-| カテゴリ | オブザーバビリティ・監視 |
-| 処理タイプ | リアルタイム |
+| カテゴリ | バッチ処理 / AI / 人材サービス |
+| 処理タイプ | 非同期 / イベント駆動 |
 | 使用IaC | CloudFormation |
-| 想定所要時間 | 4-5時間 |
+| 所要時間 | 5〜6時間 |
 
 ---
 
-## 2. ビジネスシナリオ
+## シナリオ
 
-### 企業プロファイル
-- **企業名**: RideShare株式会社
-- **業種**: モビリティ・配車サービス
-- **規模**: 従業員200名、エンジニア40名
-- **サービス規模**: 月間配車100万件、15個のマイクロサービス
-- **現状インフラ**: AWS上でEKS + マイクロサービスアーキテクチャ
+### 企業プロフィール
+
+**TalentBridge株式会社**は、IT・Web業界に特化した人材紹介サービスを運営しています。
+
+| 項目 | 内容 |
+|------|------|
+| 業種 | 人材紹介（IT特化） |
+| 設立 | 2016年 |
+| 従業員数 | 100名（うちキャリアアドバイザー40名） |
+| 登録求職者数 | 2万人 |
+| 掲載求人数 | 5,000件 |
+| 月間マッチング件数 | 1万件 |
+| 成約数 | 月150件 |
+| 年間売上 | 20億円 |
+| 平均紹介手数料 | 年収の30%（約130万円） |
 
 ### 現状の課題
-RideShare株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
 
-1. **障害検知の遅延**
-   - ユーザーからの問い合わせで障害に気づくことが多い
-   - どのサービスが原因か特定に時間がかかる
-   - 夜間・休日の検知が特に遅い
+求職者と求人のマッチングを人手とルールベースで行っていますが、マッチング精度が低く、成約率が上がりません。また、日次1万件のマッチング処理がピーク時にシステム負荷を与え、レスポンス低下を招いています。
 
-2. **トラブルシュートの困難さ**
-   - 分散トレーシングがなく、リクエストの流れが追えない
-   - ログが各サービスに分散し、相関分析ができない
-   - パフォーマンス問題のボトルネック特定が困難
+### 数値で示された問題
 
-3. **監視の属人化**
-   - 各チームが独自の監視ツールを使用
-   - アラートルールが統一されていない
-   - SLI/SLO が定義されていない
+| 指標 | 現状 | 業界平均 |
+|------|------|----------|
+| マッチング精度 | 15%（推薦→応募） | 25% |
+| 日次マッチング処理 | 1万件 | - |
+| マッチング処理時間 | 4時間（夜間バッチ） | - |
+| 成約率 | 1.5% | 3% |
+| キャリアアドバイザー工数 | 30%がマッチング確認 | - |
+| システム負荷（ピーク時） | CPU 90%超 | - |
 
-### ビジネス要件
+### 現状のマッチングロジック
+
 ```
-機能要件:
-- 全マイクロサービスのメトリクス統合監視
-- 分散トレーシングによるリクエスト追跡
-- 統合ログ管理と検索
-- SLI/SLO ダッシュボードの構築
+ルールベースマッチング:
+1. 勤務地: 求職者希望 ∩ 求人勤務地
+2. 職種: 求職者経験職種 = 求人職種
+3. 年収: 求職者希望年収 ≤ 求人提示年収
+4. スキル: 求職者スキル ⊇ 求人必須スキル
 
-非機能要件:
-- 障害検知から通知まで1分以内
-- メトリクス保持期間：15ヶ月
-- ログ検索レスポンス：5秒以内
-- ダッシュボードリフレッシュ：10秒間隔
+問題点:
+- 単純なルールでは潜在的なマッチが見落とされる
+- スキルの類似性が考慮されない
+- 求職者の成長可能性が考慮されない
 ```
+
+### 解決したいこと
+
+1. AIによる高精度なマッチングスコア算出
+2. 日次マッチング処理の非同期・分散処理
+3. リアルタイムの新着求人マッチング通知
+4. マッチング理由の説明生成（キャリアアドバイザー支援）
+5. 処理のスケーラビリティ確保
 
 ### 成功指標（KPI）
-| 指標 | 現状 | 目標 |
-|------|------|------|
-| 平均検知時間（MTTD） | 30分 | 1分 |
-| 平均復旧時間（MTTR） | 2時間 | 15分 |
-| 障害原因特定時間 | 45分 | 5分 |
-| SLO 達成率 | 測定なし | 99.9% |
-| アラート精度（真陽性率） | 40% | 90% |
+
+| KPI | 現状 | 目標 | 達成期限 |
+|-----|------|------|----------|
+| マッチング精度 | 15% | 30%以上 | 3ヶ月後 |
+| 処理時間 | 4時間 | 30分以内 | 1ヶ月後 |
+| 成約率 | 1.5% | 3%以上 | 6ヶ月後 |
+| システム負荷 | ピーク90% | ピーク50%以下 | 1ヶ月後 |
+| CA工数削減 | - | 50%削減 | 3ヶ月後 |
 
 ---
 
-## 3. 学習目標
+## 達成目標
 
-### 本課題で習得するスキル
+この演習で習得できるスキル：
 
-```
-1. メトリクス監視（理解度：詳細）
-   - CloudWatch メトリクス・アラーム設定
-   - Amazon Managed Prometheus（AMP）
-   - カスタムメトリクスの設計
+### 技術的な学習ポイント
 
-2. 分散トレーシング（理解度：実装）
-   - AWS X-Ray によるトレース収集
-   - サービスマップの活用
-   - パフォーマンス分析
+1. **SQS + Lambdaによる非同期処理**
+   - メッセージキューイング
+   - 並列処理とスケーリング
+   - デッドレターキュー
 
-3. 統合ダッシュボード（理解度：実装）
-   - Amazon Managed Grafana（AMG）
-   - CloudWatch ダッシュボード
-   - SLI/SLO 可視化
+2. **Amazon Bedrockによるマッチングスコア算出**
+   - 埋め込みベクトル生成
+   - 類似度計算
+   - 説明生成
 
-4. ログ管理（理解度：基礎）
-   - CloudWatch Logs Insights
-   - ログの構造化と相関付け
-```
+3. **DynamoDBの設計パターン**
+   - 複合キー設計
+   - GSIの活用
+   - クエリパターンの最適化
 
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Cloud Monitoring → CloudWatch
-- Cloud Trace → X-Ray
-- Cloud Logging → CloudWatch Logs
-- Google Cloud Managed Prometheus → Amazon Managed Prometheus
-- (Grafana Cloud) → Amazon Managed Grafana
+4. **イベント駆動アーキテクチャ**
+   - 疎結合な設計
+   - イベントソーシング
 
-主な違い:
-1. CloudWatch: メトリクス・ログ・トレースの統合サービス
-   （GCPは3つの別サービス）
+### 実務で活かせる知識
 
-2. X-Ray: AWS サービスとの深い統合
-   （Lambda, API Gateway, ECS などの自動計装）
+- 大量データの非同期処理設計
+- AIを活用したマッチングシステム
+- スケーラブルなバッチ処理
 
-3. AMP/AMG: オープンソース互換のマネージドサービス
-   （既存の Prometheus/Grafana 資産を活用可能）
+### GCPとの比較
 
-4. Container Insights: EKS/ECS の包括的な監視
-   （GKE のモニタリングに相当）
-```
+| 機能 | AWS | GCP |
+|------|-----|-----|
+| メッセージキュー | SQS | Pub/Sub |
+| サーバーレス関数 | Lambda | Cloud Functions |
+| NoSQL | DynamoDB | Firestore / Bigtable |
+| 生成AI | Bedrock | Vertex AI |
 
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### メインサービス
-| サービス | 役割 | 使用機能 |
+
+| サービス | 役割 | 選定理由 |
 |----------|------|----------|
-| **Amazon CloudWatch** | メトリクス・ログ監視 | Metrics, Alarms, Logs Insights, Container Insights |
-| **AWS X-Ray** | 分散トレーシング | トレース収集、サービスマップ、分析 |
-| **Amazon Managed Grafana** | ダッシュボード | 可視化、アラート、データソース統合 |
-| **Amazon Managed Prometheus** | メトリクス収集 | Prometheus互換メトリクス |
+| Amazon SQS | マッチング処理キュー | 大量メッセージのバッファリング |
+| AWS Lambda | マッチング処理実行 | 並列スケーリング |
+| Amazon Bedrock | AIマッチングスコア算出 | 高精度な類似度計算 |
+| Amazon DynamoDB | 求職者・求人・マッチング結果保存 | 高速読み書き |
+| Amazon SNS | 通知配信 | プッシュ通知 |
 
-### サポートサービス
-| サービス | 用途 |
+### 補助サービス
+
+| サービス | 役割 |
 |----------|------|
-| **Amazon EKS** | マイクロサービス実行基盤 |
-| **AWS Distro for OpenTelemetry** | テレメトリ収集 |
-| **Amazon SNS** | アラート通知 |
-| **AWS Lambda** | アラートアクション |
-| **Amazon S3** | ログアーカイブ |
-
-### アーキテクチャ図
-```mermaid
-flowchart TB
-    subgraph RideShare["RideShare 統合監視基盤"]
-        subgraph EKS["Amazon EKS Cluster"]
-            subgraph Services["Microservices"]
-                Rider["Rider<br/>Service"]
-                Driver["Driver<br/>Service"]
-                Matching["Matching<br/>Service"]
-                Payment["Payment<br/>Service"]
-                Pricing["Pricing<br/>Service"]
-            end
-            subgraph ADOT["AWS Distro for OpenTelemetry"]
-                TracesCol["Traces<br/>Collector"]
-                MetricsCol["Metrics<br/>Collector"]
-                LogsCol["Logs<br/>Collector"]
-            end
-        end
-
-        subgraph Storage["データ保存層"]
-            subgraph XRay["AWS X-Ray"]
-                ServiceMap["Service Map"]
-                Traces["Traces"]
-            end
-            subgraph AMP["Amazon Managed<br/>Prometheus"]
-                TSDB["Time Series DB"]
-            end
-            subgraph CWLogs["CloudWatch Logs"]
-                LogsInsights["Logs Insights"]
-            end
-        end
-
-        subgraph Grafana["Amazon Managed Grafana"]
-            SLISLO["SLI/SLO<br/>Dashboard"]
-            ServiceHealth["Service<br/>Health"]
-            InfraDash["Infrastructure<br/>Dashboard"]
-            AlertRules["Alert Rules<br/>P99 Latency > 500ms → PagerDuty<br/>Error Rate > 1% → Slack"]
-        end
-
-        subgraph Notifications["Notifications"]
-            PagerDuty["PagerDuty"]
-            Slack["Slack"]
-            Email["Email"]
-        end
-    end
-
-    Services --> ADOT
-    TracesCol --> XRay
-    MetricsCol --> AMP
-    LogsCol --> CWLogs
-    XRay --> Grafana
-    AMP --> Grafana
-    CWLogs --> Grafana
-    Grafana --> Notifications
-```
+| Amazon S3 | レジュメファイル保存 |
+| Amazon EventBridge | 日次バッチトリガー |
+| Amazon CloudWatch | 監視・ログ |
 
 ---
 
-## 5. 前提条件と事前準備
+## 前提条件
 
-### 必要な環境
-```bash
-# AWS CLI v2
-aws --version  # 2.x以上
+### 必要な事前知識
 
-# kubectl
-kubectl version --client
+- AWSの基本操作（S3, Lambda, DynamoDB）
+- Pythonの基礎
+- メッセージキューの概念
 
-# Helm
-helm version  # 3.x以上
+### 準備するもの
 
-# eksctl
-eksctl version
+1. **AWSアカウント**
+   - Bedrock有効化（Claude 3 / Titan Embeddings）
+   - 適切なIAM権限
 
-# jq
-jq --version
-```
+2. **開発環境**
+   - AWS CLI v2
+   - Python 3.9以上
 
-### AWSアカウント要件
-```
-- EKS クラスターが作成済み、または作成可能
-- IAM 権限：EKS管理、CloudWatch管理、Prometheus管理、Grafana管理
-- SSO/IAM Identity Center（Grafana認証用、オプション）
-```
-
-### 事前準備スクリプト
-```bash
-#!/bin/bash
-# setup-observability-baseline.sh
-
-# 変数設定
-CLUSTER_NAME="rideshare-cluster"
-REGION="ap-northeast-1"
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-# ディレクトリ構造の作成
-mkdir -p rideshare-observability/{kubernetes,grafana,alerting,sample-app}
-cd rideshare-observability
-
-# EKS クラスターの確認（存在しない場合は作成）
-echo "=== Checking EKS Cluster ==="
-if ! eksctl get cluster --name $CLUSTER_NAME --region $REGION 2>/dev/null; then
-    echo "Creating EKS cluster..."
-    cat > cluster-config.yaml << EOF
-apiVersion: eksctl.io/v1alpha5
-kind: ClusterConfig
-
-metadata:
-  name: ${CLUSTER_NAME}
-  region: ${REGION}
-
-managedNodeGroups:
-  - name: ng-1
-    instanceType: t3.medium
-    desiredCapacity: 3
-    minSize: 2
-    maxSize: 5
-    iam:
-      withAddonPolicies:
-        cloudWatch: true
-        xRay: true
-
-cloudWatch:
-  clusterLogging:
-    enableTypes: ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-iam:
-  withOIDC: true
-EOF
-    eksctl create cluster -f cluster-config.yaml
-fi
-
-# kubeconfig の更新
-aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
-
-# 現在のコンテキスト確認
-kubectl config current-context
-kubectl get nodes
-```
+3. **テストデータ**
+   - サンプル求職者データ
+   - サンプル求人データ
 
 ---
 
-## 6. アーキテクチャ設計
+## アーキテクチャ概要
 
-### 監視設計（Three Pillars of Observability）
-```yaml
-# observability-design.yaml
-observability:
-  metrics:
-    sources:
-      - cloudwatch_container_insights  # インフラメトリクス
-      - prometheus_scraping            # アプリケーションメトリクス
-      - custom_metrics                 # ビジネスメトリクス
-    storage:
-      - amazon_managed_prometheus      # 長期保存（13ヶ月）
-      - cloudwatch_metrics             # AWS統合メトリクス
-    key_metrics:
-      # RED メトリクス（サービス）
-      - request_rate          # リクエストレート
-      - error_rate            # エラー率
-      - duration              # レイテンシ
-      # USE メトリクス（リソース）
-      - utilization           # CPU/Memory使用率
-      - saturation            # キュー長/スレッドプール
-      - errors                # リソースエラー
+### システム全体構成
 
-  traces:
-    collector: aws_xray
-    sampling:
-      default: 0.05           # 5% サンプリング
-      errors: 1.0             # エラーは100%収集
-      slow_requests: 1.0      # 遅いリクエストは100%収集
-    correlation:
-      - trace_id → logs
-      - trace_id → metrics
+```
+[日次バッチ]
+    ↓ EventBridge（毎日 AM 2:00）
+[Lambda: EnqueueMatchingJobs]
+    ↓ 全求職者をキューに投入
+[SQS: MatchingQueue]
+    ↓ バッチサイズ10
+[Lambda: ProcessMatching] × N並列
+    ├── DynamoDB: 求職者情報取得
+    ├── DynamoDB: 求人一覧取得
+    ├── Bedrock: マッチングスコア算出
+    └── DynamoDB: マッチング結果保存
+    ↓ 高スコアマッチング
+[SNS: MatchingNotification]
+    ↓
+[求職者/キャリアアドバイザーに通知]
 
-  logs:
-    collector: fluent_bit
-    storage: cloudwatch_logs
-    structure:
-      format: json
-      fields:
-        - timestamp
-        - level
-        - service
-        - trace_id
-        - span_id
-        - message
-        - metadata
-    retention:
-      hot: 7_days
-      warm: 30_days
-      cold: 365_days
+[新着求人イベント]
+    ↓
+[Lambda: NewJobMatching]
+    └── リアルタイムマッチング
 ```
 
-### SLI/SLO 定義
-```yaml
-# sli-slo-definitions.yaml
-services:
-  rider_service:
-    slis:
-      availability:
-        description: "サービスが正常にリクエストを処理できる割合"
-        metric: "sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
-        unit: percentage
-      latency:
-        description: "リクエストのP99レイテンシ"
-        metric: "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"
-        unit: seconds
-      error_rate:
-        description: "エラーリクエストの割合"
-        metric: "sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m]))"
-        unit: percentage
-    slos:
-      availability:
-        target: 99.9%
-        window: 30d
-        budget: 43.2min  # 月間ダウンタイム許容
-      latency_p99:
-        target: 500ms
-        window: 30d
-      error_rate:
-        target: 0.1%
-        window: 30d
+### データフロー
 
-  matching_service:
-    slis:
-      availability:
-        metric: "..."
-      latency:
-        metric: "..."
-      match_success_rate:
-        description: "配車マッチング成功率"
-        metric: "sum(rate(matching_success_total[5m])) / sum(rate(matching_attempts_total[5m]))"
-    slos:
-      availability:
-        target: 99.95%
-      latency_p99:
-        target: 200ms
-      match_success_rate:
-        target: 95%
-```
+1. **日次バッチ**: 全求職者に対してマッチング処理をキューイング
+2. **並列処理**: Lambdaが自動スケールして並列にマッチング実行
+3. **スコア算出**: Bedrockで求職者と求人の類似度を計算
+4. **結果保存**: マッチング結果をDynamoDBに保存
+5. **通知**: 高スコアマッチングをSNS経由で通知
 
 ---
 
-## 8. トラブルシューティング課題
+## トラブルシューティング課題
 
-### 課題1: Prometheus メトリクスが AMP に書き込まれない
+### 問題1: Lambdaがタイムアウト
 
-**症状**:
+**症状:**
 ```
-Grafana で AMP をデータソースとして設定したが、
-メトリクスが表示されない。Prometheus Pod のログには
-"remote_write" 関連のエラーが出ている。
-```
-
-**調査コマンド**:
-```bash
-# Prometheus Pod のログ確認
-kubectl logs -n prometheus deployment/prometheus-server | grep -i "remote"
-
-# Service Account の確認
-kubectl get sa prometheus-server -n prometheus -o yaml
-
-# IAM ロールの確認
-aws iam get-role --role-name amp-prometheus-role
+Task timed out after 120.00 seconds
+マッチング処理が完了しない
 ```
 
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
+**ヒント:**
+1. Bedrock呼び出し回数を確認
+2. 求人数が多すぎないか確認
+3. バッチサイズの調整
 
-**原因**: IRSA（IAM Roles for Service Accounts）の設定が正しくない
-
-**解決手順**:
-```bash
-# 1. OIDC プロバイダーの確認
-aws eks describe-cluster --name rideshare-cluster \
-    --query "cluster.identity.oidc.issuer" --output text
-
-# 2. OIDC プロバイダーが IAM に登録されているか確認
-aws iam list-open-id-connect-providers
-
-# 3. OIDC プロバイダーが未登録の場合、登録
-eksctl utils associate-iam-oidc-provider \
-    --cluster rideshare-cluster \
-    --approve
-
-# 4. Service Account のアノテーション確認
-kubectl get sa prometheus-server -n prometheus -o yaml | grep -A 5 annotations
-
-# 5. アノテーションが不足している場合、更新
-kubectl annotate sa prometheus-server -n prometheus \
-    eks.amazonaws.com/role-arn=arn:aws:iam::ACCOUNT_ID:role/amp-prometheus-role \
-    --overwrite
-
-# 6. Prometheus Pod を再起動
-kubectl rollout restart deployment prometheus-server -n prometheus
-
-# 7. Pod が新しい認証情報を取得したか確認
-kubectl exec -n prometheus deployment/prometheus-server -- \
-    cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token | cut -d '.' -f 2 | base64 -d
-```
-
-**追加確認事項**:
-- IAM ロールの信頼ポリシーで OIDC の subject が正しいか
-- AMP ワークスペースが正しいリージョンにあるか
-- remote_write の URL が正しいか
-</details>
-
-### 課題2: X-Ray トレースが表示されない
-
-**症状**:
-```
-アプリケーションで X-Ray SDK を使用しているが、
-X-Ray コンソールにトレースが表示されない。
-サービスマップも空のまま。
-```
-
-**調査コマンド**:
-```bash
-# X-Ray Daemon Pod の状態確認
-kubectl get pods -l app=xray-daemon
-
-# X-Ray Daemon のログ確認
-kubectl logs daemonset/xray-daemon
-
-# アプリケーション Pod からの接続確認
-kubectl exec -it deployment/rider-service -- \
-    nc -vz xray-service.default 2000
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: 複数の原因が考えられる
-
-**パターン1: X-Ray Daemon への接続失敗**
-```bash
-# アプリケーションの環境変数確認
-kubectl get deployment rider-service -o yaml | grep -A 5 AWS_XRAY
-
-# 環境変数が設定されていない場合
-kubectl set env deployment/rider-service \
-    AWS_XRAY_DAEMON_ADDRESS=xray-service.default:2000
-```
-
-**パターン2: IAM 権限不足**
-```bash
-# Service Account の IAM ロール確認
-kubectl get sa xray-daemon -o yaml
-
-# 必要な権限があるか確認
-aws iam simulate-principal-policy \
-    --policy-source-arn arn:aws:iam::ACCOUNT_ID:role/xray-daemon-role \
-    --action-names xray:PutTraceSegments xray:PutTelemetryRecords
-```
-
-**パターン3: サンプリングルールの問題**
-```bash
-# デフォルトサンプリングルールの確認
-aws xray get-sampling-rules
-
-# サンプリングレートが低すぎる場合、調整
-aws xray update-sampling-rule --sampling-rule-update '{
-    "RuleName": "Default",
-    "FixedRate": 0.1,
-    "ReservoirSize": 10
-}'
-```
-
-**パターン4: アプリケーションコードの問題**
+**解決方法:**
 ```python
-# X-Ray SDK の初期化を確認
-from aws_xray_sdk.core import xray_recorder
+# 求人数を制限
+jobs = jobs_response.get('Items', [])[:50]  # 上位50件のみ
 
-# 明示的にサービス名を設定
-xray_recorder.configure(
-    service='rider-service',
-    sampling=False,  # デバッグ時は全トレース収集
-    daemon_address='xray-service.default:2000'
+# 埋め込み生成をキャッシュ（DynamoDB/ElastiCache）
+def get_cached_embedding(key: str, text: str) -> list:
+    # キャッシュから取得、なければ生成してキャッシュ
+    pass
+```
+
+### 問題2: SQSメッセージが処理されない
+
+**症状:**
+```
+メッセージがDLQに溜まる
+Lambda呼び出しエラー
+```
+
+**ヒント:**
+1. Lambda実行ロールの権限を確認
+2. イベントソースマッピングの設定を確認
+3. VisibilityTimeoutとLambda Timeoutの関係
+
+**解決方法:**
+```bash
+# イベントソースマッピング確認
+aws lambda list-event-source-mappings --function-name talentbridge-process-matching-dev
+
+# VisibilityTimeoutはLambda Timeoutの6倍以上推奨
+aws sqs set-queue-attributes \
+  --queue-url <QUEUE_URL> \
+  --attributes '{"VisibilityTimeout": "720"}'
+```
+
+### 問題3: マッチングスコアが全体的に低い
+
+**症状:**
+```
+全てのマッチングスコアが閾値以下
+高スコアマッチングが出ない
+```
+
+**ヒント:**
+1. 埋め込み生成のテキストを確認
+2. スコアの重み付けを調整
+3. 閾値を下げて検証
+
+**解決方法:**
+```python
+# スコア計算の調整
+total_score = (
+    semantic_score * 0.5 +  # 意味的類似度を重視
+    skill_score * 0.35 +
+    salary_score * 0.15
 )
-```
-</details>
 
-### 課題3: Grafana アラートが発火しない
-
-**症状**:
-```
-SLO 違反が発生しているはずなのに、Grafana のアラートが
-発火しない。ダッシュボードではメトリクスが正常に表示されている。
+# 閾値を調整
+SCORE_THRESHOLD = 0.6  # 0.7から下げる
 ```
 
-**調査手順**:
+---
+
+## 設計の考察ポイント
+
+### 1. SQS + Lambda パターンの利点
+
+**考察ポイント:**
+- 疎結合による耐障害性
+- 自動スケーリング
+- リトライ・DLQによるエラー処理
+- コスト効率（アイドル時ゼロ）
+
+### 2. 埋め込みベクトルの活用
+
+**考察ポイント:**
+- ルールベース vs セマンティック検索
+- 埋め込みのキャッシング戦略
+- 次元数とコストのトレードオフ
+
+### 3. マッチングスコアの設計
+
+**考察ポイント:**
+- 複数指標の重み付け
+- ビジネス要件との整合性
+- 説明可能性の確保
+
+### 4. リアルタイム vs バッチ
+
+**考察ポイント:**
+- 新着求人の即時マッチング
+- 日次バッチの必要性
+- ハイブリッドアプローチ
+
+### 5. スケーラビリティ
+
+**考察ポイント:**
+- 求職者・求人数が10倍になった場合
+- Bedrockのレート制限
+- コストのスケール
+
+---
+
+## 発展課題（オプション）
+
+### 1. 埋め込みベクトルのキャッシング
+- DynamoDBに埋め込みを保存
+- 更新時のみ再計算
+- コスト削減と高速化
+
+### 2. ストリーミングマッチング
+- 新着求人投稿時の即時マッチング
+- DynamoDB Streamsの活用
+- リアルタイム通知
+
+### 3. フィードバックループ
+- 応募/不応募の結果収集
+- マッチングモデルの改善
+- A/Bテスト
+
+### 4. レコメンデーションUI
+- APIエンドポイント追加
+- マッチング結果の表示
+- フィルタリング・ソート
+
+### 5. 類似求職者検索
+- 企業向け機能
+- 条件に合う求職者のサジェスト
+
+---
+
+## 想定コストと削減方法
+
+### 月額概算コスト（日次1万件マッチング想定）
+
+| サービス | 内訳 | 月額コスト |
+|----------|------|------------|
+| Amazon Bedrock (Titan Embeddings) | 30万回 × $0.0001/1K tokens | $30 |
+| Amazon Bedrock (Claude Haiku) | 5万回 × $0.00025/1K tokens | $15 |
+| AWS Lambda | 30万回 × 60秒 × 512MB | $50 |
+| Amazon SQS | 60万メッセージ | $0.30 |
+| Amazon DynamoDB | オンデマンド | $20 |
+| Amazon SNS | 通知 | $1 |
+| CloudWatch | ログ | $5 |
+| **合計** | | **約$121（約18,000円）** |
+
+### コスト削減のポイント
+
+1. **埋め込みキャッシング**
+   - 求人の埋め込みを事前計算して保存
+   - → Bedrock呼び出し50%削減
+
+2. **バッチ処理の最適化**
+   - 変更のあった求職者のみ処理
+   - 増分マッチング
+
+3. **理由生成の選択的実行**
+   - 高スコアマッチングのみ理由生成
+   - → Claude呼び出し70%削減
+
+4. **Lambda ARM64**
+   - Graviton2プロセッサ使用
+   - → Lambda コスト20%削減
+
+### リソース削除手順
+
 ```bash
-# Grafana のアラート状態確認（API経由）
-curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
-    "https://your-grafana.grafana.net/api/v1/alerts"
-
-# アラートルールの確認
-curl -H "Authorization: Bearer $GRAFANA_API_KEY" \
-    "https://your-grafana.grafana.net/api/v1/provisioning/alert-rules"
-```
-
-**原因と解決**:
-<details>
-<summary>解答を見る</summary>
-
-**原因**: アラートルールの評価設定の問題
-
-**確認・解決手順**:
-
-1. **アラートルールの `for` 期間を確認**
-```yaml
-# for が長すぎる場合、アラートが発火しにくい
-for: 2m  # 2分間継続して条件を満たす必要がある
-```
-
-2. **データソースの設定確認**
-```yaml
-# データソース UID が正しいか確認
-datasourceUid: prometheus  # 実際のデータソース UID と一致しているか
-```
-
-3. **評価間隔の確認**
-```yaml
-# interval が長すぎるとアラートの遅延が発生
-interval: 1m  # 1分間隔で評価
-```
-
-4. **クエリの検証**
-```bash
-# Grafana の Explore で直接クエリを実行して結果を確認
-# アラート条件と同じクエリを実行
-sum(rate(http_requests_total{status!~'5..'}[5m])) / sum(rate(http_requests_total[5m])) * 100
-```
-
-5. **通知チャネルの確認**
-```yaml
-# Contact Point が正しく設定されているか
-# Slack/PagerDuty の Webhook URL が有効か
-```
-
-6. **Grafana Alerting のデバッグログ有効化**
-```bash
-# AMG ではログレベルの変更はサポートされていないため、
-# CloudWatch Logs で Grafana のログを確認
-aws logs filter-log-events \
-    --log-group-name "/aws/grafana/rideshare-dashboard" \
-    --filter-pattern "alert"
-```
-</details>
-
----
-
-## 9. 設計課題
-
-### 設計課題: 大規模マイクロサービスのオブザーバビリティ戦略
-
-**シナリオ**:
-RideShare社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
-以下の要件を満たすオブザーバビリティ戦略を設計してください。
-
-**要件**:
-```
-1. サービス規模
-   - マイクロサービス：50個
-   - 月間リクエスト：10億件
-   - 開発チーム：15チーム
-
-2. 機能要件
-   - 全サービスの統合監視
-   - チーム単位でのダッシュボード分離
-   - サービス間依存関係の可視化
-   - カスタムビジネスメトリクス対応
-
-3. 非機能要件
-   - メトリクス保持：13ヶ月（コンプライアンス要件）
-   - ログ検索：リアルタイム〜30日前
-   - アラート遅延：1分以内
-   - コスト効率：現状の2倍以内
-```
-
-**設計すべき項目**:
-```
-1. メトリクス収集・保存戦略
-2. トレーシング戦略（サンプリング設計）
-3. ログ管理戦略（保持・検索）
-4. ダッシュボード・アラート設計
-5. チーム間の責任分界
-```
-
-<details>
-<summary>設計例を見る</summary>
-
-### 大規模オブザーバビリティアーキテクチャ
-
-```mermaid
-architecture-beta
-    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
-
-    group collection(server)[データ収集層] in aws
-    service rider_team(server)[Rider Team Services 5 svcs] in collection
-    service driver_team(server)[Driver Team Services 4 svcs] in collection
-    service payment_team(server)[Payment Team Services 3 svcs] in collection
-    service other_teams(server)[Other Teams x15] in collection
-    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
-    service sampling(server)[Sampling Processor] in collection
-    service filtering(server)[Filtering Processor] in collection
-
-    group storage(database)[データ保存層] in aws
-    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
-    service amp(server)[AMP Metrics Retention 13 months] in storage
-    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
-
-    group visualization(server)[可視化・アラート層] in aws
-    service grafana(server)[Amazon Managed Grafana] in visualization
-    service platform_dash(server)[Platform Overview SRE] in visualization
-    service team_dash(server)[Team Dashboards 15 folders] in visualization
-    service business_dash(server)[Business Metrics Product] in visualization
-    service pagerduty(internet)[PagerDuty Critical/High] in visualization
-    service slack(internet)[Slack Alerts Warning/Info] in visualization
-
-    rider_team:B --> T:otel_collector
-    driver_team:B --> T:otel_collector
-    payment_team:B --> T:otel_collector
-    other_teams:B --> T:otel_collector
-    otel_collector:B --> T:xray
-    otel_collector:B --> T:amp
-    otel_collector:B --> T:cwlogs
-    xray:B --> T:grafana
-    amp:B --> T:grafana
-    cwlogs:B --> T:grafana
-    grafana:R --> L:pagerduty
-    grafana:R --> L:slack
-```
-
-### 1. メトリクス収集・保存戦略
-
-```yaml
-metrics_strategy:
-  collection:
-    method: pull  # Prometheus スタイル
-    interval: 15s
-    timeout: 10s
-
-  labeling_guidelines:
-    required_labels:
-      - service    # サービス名
-      - team       # 担当チーム
-      - env        # 環境
-    cardinality_control:
-      # 高カーディナリティラベルの制限
-      forbidden_labels:
-        - user_id
-        - request_id
-        - trace_id
-      max_label_values: 1000
-
-  storage:
-    primary: amazon_managed_prometheus
-    retention: 13_months
-    estimated_series: 80000  # 50サービス × 1600シリーズ/サービス
-
-  aggregation:
-    # 長期保存用に集約
-    raw_retention: 15_days
-    5m_aggregation: 90_days
-    1h_aggregation: 13_months
-```
-
-### 2. トレーシング戦略
-
-```yaml
-tracing_strategy:
-  sampling:
-    head_based:
-      default_rate: 0.05  # 5%
-      rules:
-        - service: payment-*
-          rate: 0.1  # 決済は10%
-        - service: matching-*
-          rate: 0.1  # マッチングは10%
-
-    tail_based:
-      enabled: true
-      policies:
-        - type: always_sample
-          conditions:
-            - status_code >= 500
-            - latency > 2s
-        - type: probabilistic
-          rate: 0.5
-          conditions:
-            - latency > 500ms
-
-  storage:
-    service: aws_xray
-    retention: 30_days
-    groups:
-      - name: errors
-        filter: "fault = true"
-      - name: slow_requests
-        filter: "responsetime > 1"
-
-  service_map:
-    refresh_interval: 1m
-    depth: 5  # 依存関係の深さ
-```
-
-### 3. ログ管理戦略
-
-```yaml
-log_strategy:
-  structure:
-    format: json
-    required_fields:
-      - timestamp
-      - level
-      - service
-      - team
-      - trace_id
-      - message
-    optional_fields:
-      - user_id  # マスキング必須
-      - request_path
-
-  storage:
-    primary: cloudwatch_logs
-    log_groups:
-      pattern: /rideshare/{team}/{service}
-    retention_policy:
-      hot: 7_days     # CloudWatch Logs
-      warm: 30_days   # CloudWatch Logs (Infrequent Access)
-      cold: 365_days  # S3 Glacier
-
-  export:
-    destination: s3
-    format: parquet  # Athena でクエリ可能
-    schedule: daily
-    bucket: rideshare-logs-archive
-
-  search:
-    tool: cloudwatch_logs_insights
-    max_scan_range: 30_days
-    query_timeout: 30s
-```
-
-### 4. チーム責任分界
-
-```yaml
-responsibility_matrix:
-  platform_sre:
-    owns:
-      - 全体 SLO ダッシュボード
-      - インフラメトリクス
-      - 共通アラートルール
-      - オンコールエスカレーション
-    maintains:
-      - AMP/AMG インフラ
-      - OpenTelemetry Collector
-      - 共通ライブラリ
-
-  application_teams:
-    owns:
-      - チームダッシュボード
-      - サービス固有アラート
-      - ビジネスメトリクス定義
-      - トラブルシューティング
-    maintains:
-      - アプリケーション計装
-      - ログ出力
-
-  access_control:
-    grafana:
-      - role: Viewer (全社員)
-      - role: Editor (チームメンバー) - チームフォルダのみ
-      - role: Admin (SRE)
-```
-
-### 推定コスト
-
-| サービス | 使用量 | 月額コスト |
-|----------|--------|-----------|
-| AMP | 80K series, 13M samples/month | $800 |
-| AMG | 1 workspace, 50 users | $250 |
-| CloudWatch Logs | 500GB/month | $250 |
-| CloudWatch Metrics | Container Insights | $150 |
-| X-Ray | 10M traces/month | $50 |
-| S3 (ログアーカイブ) | 1TB | $25 |
-| **合計** | | **$1,525/月** |
-
-</details>
-
----
-
-## 10. 発展課題
-
-### 発展課題1: OpenTelemetry への移行（難易度：中級）
-
-**課題内容**:
-現在の X-Ray SDK から OpenTelemetry に移行し、ベンダーロックインを回避しつつ
-同等以上のオブザーバビリティを実現してください。
-
-**要件**:
-- 既存の X-Ray トレースとの互換性維持
-- メトリクス・ログ・トレースの統合収集
-- Kubernetes 環境での自動計装
-
-```yaml
-# ヒント: AWS Distro for OpenTelemetry の設定
-apiVersion: opentelemetry.io/v1alpha1
-kind: OpenTelemetryCollector
-metadata:
-  name: adot-collector
-spec:
-  mode: deployment
-  config: |
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
-          http:
-            endpoint: 0.0.0.0:4318
-
-    processors:
-      batch:
-        timeout: 1s
-        send_batch_size: 50
-
-    exporters:
-      awsxray:
-        region: ap-northeast-1
-      awsprometheusremotewrite:
-        endpoint: https://aps-workspaces.ap-northeast-1.amazonaws.com/...
-      awscloudwatchlogs:
-        log_group_name: /rideshare/otel
-
-    service:
-      pipelines:
-        traces:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [awsxray]
-        metrics:
-          receivers: [otlp]
-          processors: [batch]
-          exporters: [awsprometheusremotewrite]
-```
-
-### 発展課題2: AIOps の導入（難易度：上級）
-
-**課題内容**:
-Amazon DevOps Guru を導入し、ML ベースの異常検知と
-インシデント予測を実現してください。
-
-**要件**:
-- CloudWatch メトリクスの異常検知
-- インシデントの自動分類と優先度付け
-- 推奨アクションの自動生成
-
-### 発展課題3: カオスエンジニアリング統合（難易度：上級）
-
-**課題内容**:
-AWS Fault Injection Simulator を使用して、
-オブザーバビリティ基盤の有効性を検証するカオス実験を設計・実行してください。
-
-**要件**:
-- サービス障害時の検知時間測定
-- アラート精度の検証
-- ダッシュボードの有用性評価
-
----
-
-## 11. 振り返りと次のステップ
-
-### 学習のまとめ
-
-```
-本課題で学んだこと:
-□ CloudWatch Container Insights による EKS 監視
-□ AWS X-Ray による分散トレーシング
-□ Amazon Managed Prometheus/Grafana の設定
-□ SLI/SLO の設計と可視化
-□ アラート設計のベストプラクティス
-□ 構造化ログと相関分析
-
-GCP との主な違い:
-- CloudWatch は統合サービス（メトリクス・ログ・トレース）
-- X-Ray は AWS サービスとの深い統合
-- AMP/AMG はオープンソース互換のマネージドサービス
-- Container Insights は EKS 専用の包括的監視
-```
-
-### GCP経験者向けポイント
-
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| メトリクス監視 | Cloud Monitoring | CloudWatch Metrics | メトリクス名・ラベル命名規則が異なる |
-| 分散トレーシング | Cloud Trace | X-Ray | トレースフォーマットが異なる（W3C vs X-Ray） |
-| ログ管理 | Cloud Logging | CloudWatch Logs | クエリ言語が異なる（LogQL vs Insights） |
-| Prometheus | Managed Prometheus | AMP | ほぼ同等、remote_write 設定のみ異なる |
-| Grafana | (Grafana Cloud) | AMG | データソース設定が異なる |
-
-### 推奨される次のステップ
-
-```
-1. AWS Certified DevOps Engineer の学習
-   - オブザーバビリティの深い理解
-   - CI/CD との統合
-
-2. OpenTelemetry の習得
-   - ベンダー中立なテレメトリ
-   - 将来性のある技術スタック
-
-3. SRE プラクティスの導入
-   - SLO ベースのアラート設計
-   - エラーバジェットの運用
-
-4. 関連課題への挑戦
-   - 課題27: セキュリティ監視
-   - 課題29: コスト最適化
+# CloudFormation削除
+aws cloudformation delete-stack --stack-name talentbridge-matching
+
+# DynamoDBテーブル（CloudFormation外で作成した場合）
+aws dynamodb delete-table --table-name talentbridge-candidates
+aws dynamodb delete-table --table-name talentbridge-jobs
+aws dynamodb delete-table --table-name talentbridge-matches
+
+# SQS（CloudFormation外）
+aws sqs delete-queue --queue-url <MATCHING_QUEUE_URL>
+aws sqs delete-queue --queue-url <DLQ_URL>
+
+# SNS（CloudFormation外）
+aws sns delete-topic --topic-arn <TOPIC_ARN>
 ```
 
 ---
 
-## 12. 推定コストと注意事項
+## 学習のポイント
 
-### 本課題の推定コスト
+### 1. SQS + Lambda の非同期処理パターン
+大量データを効率的に処理する基本パターン。キューによるバッファリング、自動スケーリング、DLQによるエラー処理を組み合わせる。
 
-| サービス | 使用量 | 推定コスト（演習時） |
-|----------|--------|---------------------|
-| EKS | 1クラスター、3ノード | $75 |
-| CloudWatch | Container Insights | $5-10 |
-| X-Ray | 10万トレース | $5 |
-| AMP | 1万シリーズ | $5-10 |
-| AMG | 1ワークスペース | $9 |
-| **合計** | | **$100-110** |
+### 2. 埋め込みベクトルを使ったセマンティック検索
+テキストの意味的類似度を計算する手法。ルールベースでは捕捉できない潜在的なマッチングを発見できる。
 
-### コスト最適化のヒント
+### 3. 複合スコアリング
+複数の指標を組み合わせて総合スコアを算出する設計。ビジネス要件に応じた重み付けが重要。
 
-```
-1. EKS のコスト削減
-   - Spot インスタンスの活用
-   - 演習後はクラスター削除
+### 4. イベント駆動アーキテクチャ
+EventBridge、SQS、SNSを組み合わせた疎結合なシステム設計。スケーラビリティと耐障害性を両立。
 
-2. CloudWatch のコスト削減
-   - 不要なメトリクスの除外
-   - ログ保持期間の短縮
-
-3. X-Ray のコスト削減
-   - サンプリングレートの調整
-   - 不要なサービスの除外
-
-4. AMP のコスト削減
-   - カーディナリティの管理
-   - 不要なメトリクスの除外
-```
-
-### 注意事項
-
-```
-⚠️ EKS クラスター
-- クラスターは課金が継続するため、演習後は削除を推奨
-- eksctl delete cluster コマンドで削除可能
-
-⚠️ マネージドサービス
-- AMP/AMG は有効化すると課金開始
-- 使用しない場合はワークスペースを削除
-
-⚠️ データ保持
-- 本番環境でのログ・メトリクス保持期間は要件に応じて設定
-- コンプライアンス要件がある場合は適切な保持期間を設定
-```
-
----
-
-**課題作成日**: 2024年1月
-**最終更新日**: 2024年1月
-**作成者**: AWS学習プログラム
+### 5. MLとビジネスロジックの統合
+AI/MLの出力をビジネスロジック（年収マッチ等）と組み合わせて、実用的なシステムを構築する方法。
