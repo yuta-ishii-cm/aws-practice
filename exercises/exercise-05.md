@@ -46,18 +46,18 @@
 architecture-beta
     group aws(cloud)[AWS Cloud]
 
-    group vpc(cloud)[VPC 10.0.0.0/16] in aws
+    group vpc(cloud)[VPC] in aws
     group public(server)[Public Subnets] in vpc
     group private(server)[Private Subnets] in vpc
-    group data(database)[Data Layer] in vpc
+    group data(server)[Data Layer] in vpc
 
-    service user(internet)[社員ユーザー]
-    service alb(server)[Application Load Balancer] in public
+    service user(internet)[User]
+    service alb(server)[ALB] in public
     service nat(server)[NAT Gateway] in public
-    service ecs(server)[ECS Fargate イベント管理アプリ] in private
-    service rds(database)[RDS PostgreSQL] in data
+    service ecs(logos:aws-ecs)[ECS Fargate] in private
+    service rds(logos:aws-rds)[RDS PostgreSQL] in data
     service secrets(server)[Secrets Manager] in aws
-    service ecr(disk)[ECR コンテナイメージ] in aws
+    service ecr(server)[ECR] in aws
 
     user:R --> L:alb
     alb:B --> T:ecs
@@ -66,6 +66,16 @@ architecture-beta
     ecs:B --> T:nat
     ecr:B --> T:ecs
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | 社員ユーザー |
+| **ALB** | Application Load Balancer（HTTPトラフィック分散） |
+| **NAT Gateway** | プライベートサブネットからの外部接続 |
+| **ECS Fargate** | イベント管理アプリのコンテナ実行環境 |
+| **RDS PostgreSQL** | イベントデータの永続化 |
+| **Secrets Manager** | DB認証情報の管理 |
+| **ECR** | コンテナイメージの保存 |
 
 ### ネットワーク構成
 

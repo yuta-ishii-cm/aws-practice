@@ -22,7 +22,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | TaskFlow株式会社 |
+| **企業名** | 〇〇株式会社 |
 | **業種** | プロジェクト管理SaaS |
 | **従業員数** | 80名（エンジニア35名） |
 | **テナント数** | 500社（月額利用料ベースで収益化） |
@@ -31,27 +31,15 @@
 
 ### 現状の課題
 
-```
-TaskFlow株式会社は急成長するプロジェクト管理SaaSを提供しています。
-現在は全テナントが同一のEC2インスタンス群で稼働していますが、
-以下の課題が顕在化しています：
+〇〇株式会社は急成長するプロジェクト管理SaaSを提供しています。
+現在は全テナントが同一のEC2インスタンス群で稼働していますが、以下の課題が顕在化しています：
 
-1. テナント間のリソース競合
-   - 大規模テナントが他テナントの性能に影響
-   - ピーク時に応答時間が5秒以上に悪化
-
-2. セキュリティ懸念
-   - テナント間のデータ分離が不十分
-   - コンプライアンス要件（ISO27001）対応の必要性
-
-3. 運用効率の低下
-   - テナントごとのカスタマイズ要求への対応困難
-   - スケーリングが粗粒度で非効率
-
-4. データベース接続管理
-   - コネクションプール枯渇が頻発
-   - フェイルオーバー時の接続切れ
-```
+| 課題カテゴリ | 問題点 |
+|-------------|--------|
+| **テナント間のリソース競合** | 大規模テナントが他テナントの性能に影響、ピーク時に応答時間が5秒以上に悪化 |
+| **セキュリティ懸念** | テナント間のデータ分離が不十分、コンプライアンス要件（ISO27001）対応の必要性 |
+| **運用効率の低下** | テナントごとのカスタマイズ要求への対応困難、スケーリングが粗粒度で非効率 |
+| **データベース接続管理** | コネクションプール枯渇が頻発、フェイルオーバー時の接続切れ |
 
 ### ビジネス目標
 
@@ -65,33 +53,35 @@ TaskFlow株式会社は急成長するプロジェクト管理SaaSを提供し�
 
 ---
 
-## 3. 達成目標（ゴール）
+## 3. 達成目標
 
-### 主要な学習成果
+### 技術的な学習ポイント
 
-```
-この課題を完了すると、以下ができるようになります：
-
-1. EKS基盤の構築とマルチテナント設計
+1. **EKS基盤の構築とマルチテナント設計**
    - Namespaceによるテナント分離
    - ResourceQuotaとLimitRangeの適用
    - NetworkPolicyによるネットワーク分離
 
-2. Istioによるサービスメッシュの実装
+2. **Istioによるサービスメッシュの実装**
    - トラフィック管理とルーティング
    - 相互TLS（mTLS）による通信暗号化
    - テナントごとのレート制限
 
-3. RDS Proxyによるデータベース接続最適化
+3. **RDS Proxyによるデータベース接続最適化**
    - コネクションプーリング
    - IAM認証の統合
    - フェイルオーバー時の接続維持
 
-4. 可観測性の確立
+4. **可観測性の確立**
    - テナント別のメトリクス収集
    - 分散トレーシング（Jaeger）
    - Kialiによるサービスメッシュ可視化
-```
+
+### 実務で活かせる知識
+
+- マルチテナントSaaSのインフラ設計パターン
+- サービスメッシュによるセキュリティ強化
+- コネクションプーリングによるDB負荷軽減
 
 ### 合格基準
 
@@ -105,49 +95,37 @@ TaskFlow株式会社は急成長するプロジェクト管理SaaSを提供し�
 
 ---
 
-## 4. 使用するAWSサービス
+## 4. 学習するAWSサービス
 
-### コア技術スタック
+### メインサービス
 
-```yaml
-Kubernetes基盤:
-  - Amazon EKS: Kubernetes クラスター
-  - Amazon ECR: コンテナイメージレジストリ
-  - AWS Load Balancer Controller: ALB/NLB 統合
+| サービス | 役割 | 学習ポイント |
+|----------|------|-------------|
+| **Amazon EKS** | Kubernetesクラスター | マルチテナント設計、Namespace分離 |
+| **Amazon RDS Proxy** | 接続プーリング | コネクション管理、IAM認証 |
+| **Amazon RDS (PostgreSQL)** | マルチテナントDB | スキーマ分離、RLS |
 
-サービスメッシュ:
-  - Istio: サービスメッシュ制御
-  - Envoy: データプレーン
-  - Kiali: サービスメッシュ可視化
-  - Jaeger: 分散トレーシング
+### 補助サービス
 
-データベース:
-  - Amazon RDS (PostgreSQL): マルチテナントDB
-  - Amazon RDS Proxy: 接続プーリング
-  - AWS Secrets Manager: 認証情報管理
+| サービス | 役割 |
+|----------|------|
+| **Amazon ECR** | コンテナイメージレジストリ |
+| **AWS Load Balancer Controller** | ALB/NLB統合 |
+| **AWS Secrets Manager** | 認証情報管理 |
+| **AWS WAF** | Webアプリケーション保護 |
+| **Amazon CloudWatch** | ログ・メトリクス |
+| **Container Insights** | コンテナ監視 |
 
-セキュリティ:
-  - AWS IAM: 認証・認可
-  - Amazon VPC: ネットワーク分離
-  - AWS WAF: Webアプリケーション保護
-  - AWS Certificate Manager: TLS証明書
+### サービスメッシュ（OSS）
 
-監視・運用:
-  - Amazon CloudWatch: ログ・メトリクス
-  - Container Insights: コンテナ監視
-  - Prometheus: メトリクス収集
-  - Grafana: ダッシュボード
-```
-
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| Kubernetesマネージド | EKS | GKE |
-| サービスメッシュ | Istio on EKS / App Mesh | Anthos Service Mesh |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| コンテナレジストリ | ECR | Artifact Registry |
-| ロードバランサ統合 | ALB Ingress Controller | GKE Ingress |
+| ツール | 役割 |
+|--------|------|
+| **Istio** | サービスメッシュ制御 |
+| **Envoy** | データプレーン |
+| **Kiali** | サービスメッシュ可視化 |
+| **Jaeger** | 分散トレーシング |
+| **Prometheus** | メトリクス収集 |
+| **Grafana** | ダッシュボード |
 
 ---
 
@@ -239,6 +217,21 @@ architecture-beta
     rds_proxy:B --> T:rds
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | エンドユーザー |
+| **AWS WAF** | レート制限・Web攻撃防御 |
+| **ALB** | アプリケーションロードバランサー |
+| **Istio Ingress Gateway** | サービスメッシュ入口・トラフィック制御 |
+| **tenant-enterprise-a** | エンタープライズテナントのNamespace |
+| **tenant-standard-b** | スタンダードテナントのNamespace |
+| **Project/Task/User Service** | マイクロサービス（Envoyサイドカー付き） |
+| **shared-services** | 共有サービス（認証・課金・通知） |
+| **Prometheus/Grafana** | メトリクス収集・可視化 |
+| **Kiali/Jaeger** | サービスメッシュ可視化・分散トレーシング |
+| **RDS Proxy** | コネクションプーリング |
+| **RDS PostgreSQL** | マルチテナントデータベース（Multi-AZ） |
+
 **Tenant Isolation:**
 - Namespace: 論理的分離
 - NetworkPolicy: deny-all + allow-same-tenant
@@ -269,7 +262,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 7. トラブルシューティングチャレンジ
 
 ### Challenge 1: テナント間通信が発生している
 
@@ -462,7 +455,7 @@ kubectl patch hpa istio-ingressgateway -n istio-system --type='merge' -p '
 
 ---
 
-## 9. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### マルチテナント分離戦略
 
@@ -507,35 +500,11 @@ kubectl patch hpa istio-ingressgateway -n istio-system --type='merge' -p '
 
 ### データベース分離パターン
 
-```
-1. スキーマ分離（本課題で採用）:
-   ┌─────────────────────────────────────┐
-   │         PostgreSQL Instance         │
-   │  ┌─────────┐ ┌─────────┐ ┌───────┐ │
-   │  │tenant_a │ │tenant_b │ │shared │ │
-   │  │ schema  │ │ schema  │ │schema │ │
-   │  └─────────┘ └─────────┘ └───────┘ │
-   └─────────────────────────────────────┘
-
-   利点: コスト効率、運用シンプル
-   欠点: 同一インスタンスのリソース共有
-
-2. データベース分離:
-   ┌─────────────┐ ┌─────────────┐
-   │ tenant_a_db │ │ tenant_b_db │
-   │  Instance   │ │  Instance   │
-   └─────────────┘ └─────────────┘
-
-   利点: リソース分離、パフォーマンス保証
-   欠点: コスト高、運用複雑
-
-3. Row Level Security (RLS):
-   すべてのテーブルにtenant_idカラム
-   ポリシーでアクセス制御
-
-   利点: 既存アプリからの移行容易
-   欠点: クエリパフォーマンス影響
-```
+| パターン | 説明 | 利点 | 欠点 |
+|----------|------|------|------|
+| **スキーマ分離**（本課題で採用） | 1インスタンス内でテナントごとにスキーマを分離 | コスト効率、運用シンプル | 同一インスタンスのリソース共有 |
+| **データベース分離** | テナントごとに別インスタンス | リソース分離、パフォーマンス保証 | コスト高、運用複雑 |
+| **Row Level Security (RLS)** | 全テーブルにtenant_idカラム、ポリシーでアクセス制御 | 既存アプリからの移行容易 | クエリパフォーマンス影響 |
 
 ### RDS Proxyの設計考慮
 
@@ -567,7 +536,7 @@ kubectl patch hpa istio-ingressgateway -n istio-system --type='merge' -p '
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### 上級チャレンジ1: カナリアデプロイメント
 
@@ -832,7 +801,7 @@ spec:
 
 ---
 
-## 11. コスト見積もり
+## 10. コスト見積もり
 
 ### 月額コスト概算（500テナント規模）
 
@@ -889,61 +858,42 @@ spec:
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 今回学んだこと
 
-```
-1. EKSマルチテナント設計
-   □ Namespaceによる論理分離
-   □ ResourceQuota/LimitRangeでのリソース制御
-   □ NetworkPolicyでのネットワーク分離
-   □ ノードグループによるワークロード分離
+1. **EKSマルチテナント設計**
+   - Namespaceによる論理分離
+   - ResourceQuota/LimitRangeでのリソース制御
+   - NetworkPolicyでのネットワーク分離
+   - ノードグループによるワークロード分離
 
-2. Istioサービスメッシュ
-   □ VirtualService/DestinationRuleによるトラフィック制御
-   □ mTLSによる通信暗号化
-   □ AuthorizationPolicyによるアクセス制御
-   □ EnvoyFilterによるカスタムレート制限
+2. **Istioサービスメッシュ**
+   - VirtualService/DestinationRuleによるトラフィック制御
+   - mTLSによる通信暗号化
+   - AuthorizationPolicyによるアクセス制御
+   - EnvoyFilterによるカスタムレート制限
 
-3. RDS Proxy活用
-   □ コネクションプーリングの効果
-   □ IAM認証の統合
-   □ フェイルオーバー時の接続維持
-   □ マルチテナントでの接続効率化
+3. **RDS Proxy活用**
+   - コネクションプーリングの効果
+   - IAM認証の統合
+   - フェイルオーバー時の接続維持
+   - マルチテナントでの接続効率化
 
-4. 可観測性
-   □ テナント別メトリクス収集
-   □ 分散トレーシング（Jaeger）
-   □ サービスメッシュ可視化（Kiali）
-   □ テナント別アラート設定
-```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (EKS + Istio) | GCP (GKE + ASM) |
-|------|-------------------|-----------------|
-| マネージドサービスメッシュ | 自己管理Istio | Anthos Service Mesh（マネージド） |
-| DBプロキシ | RDS Proxy | Cloud SQL Proxy |
-| 設定複雑さ | 高（自由度も高い） | 中（統合度高い） |
-| コスト | 若干安い | 若干高い |
-| 学習曲線 | 急 | 緩やか |
+4. **可観測性**
+   - テナント別メトリクス収集
+   - 分散トレーシング（Jaeger）
+   - サービスメッシュ可視化（Kiali）
+   - テナント別アラート設定
 
 ### 次のステップ
 
-```
-1. 本番運用に向けて:
+1. **本番運用に向けて**
    - DR構成（マルチリージョン）
    - バックアップ・リストア自動化
    - コスト配分タグによる請求分離
 
-2. 発展学習:
+2. **発展学習**
    - Crossplane によるマルチクラウド管理
    - OPA/Gatekeeper によるポリシー管理
    - ArgoCD によるGitOps導入
-
-3. 認定資格:
-   - AWS Certified Solutions Architect - Professional
-   - CKA (Certified Kubernetes Administrator)
-   - CKS (Certified Kubernetes Security Specialist)
-```

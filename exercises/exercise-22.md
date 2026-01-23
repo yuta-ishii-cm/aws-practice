@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | セキュリティ |
 | 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
@@ -135,16 +135,6 @@ DNS:
   - Amazon SNS: アラート通知
 ```
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| CDN | CloudFront | Cloud CDN |
-| DDoS保護 | Shield | Cloud Armor |
-| WAF | AWS WAF | Cloud Armor WAF |
-| DNS | Route 53 | Cloud DNS |
-| Anycast | Global Accelerator | Cloud Load Balancing |
-
 ---
 
 ## 5. 前提条件
@@ -175,7 +165,59 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ---
 
-## 6. トラブルシューティングチャレンジ
+## 6. アーキテクチャ図
+
+### 全体構成
+
+```mermaid
+architecture-beta
+    group internet(cloud)[Internet]
+    group edge(server)[Edge Security Layer]
+    group origins(server)[Origins]
+
+    service users(internet)[Global Users] in internet
+    service attackers(internet)[Attackers] in internet
+
+    service route53(server)[Route 53] in edge
+    service shield(server)[AWS Shield] in edge
+    service cloudfront(logos:aws-cloudfront)[CloudFront WAF] in edge
+    service waf(server)[WAF Rules] in edge
+
+    service alb(server)[ALB] in origins
+    service s3(logos:aws-s3)[S3 Static] in origins
+    service ecs(logos:aws-ecs)[ECS App] in origins
+
+    users:R --> L:route53
+    attackers:R --> L:shield
+    route53:B --> T:cloudfront
+    shield:B --> T:cloudfront
+    cloudfront:R --> L:waf
+    cloudfront:B --> T:alb
+    cloudfront:B --> T:s3
+    alb:B --> T:ecs
+```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Global Users** | 世界中のユーザー |
+| **Attackers** | DDoS攻撃者 |
+| **Route 53** | DNS（Shield Standard自動適用） |
+| **AWS Shield** | L3/L4 DDoS攻撃の自動緩和 |
+| **CloudFront WAF** | エッジキャッシュ + WAF（L7保護） |
+| **WAF Rules** | SQLi, XSS, Bot対策ルール |
+| **ALB** | Application Load Balancer |
+| **S3 Static** | 静的コンテンツ |
+| **ECS App** | アプリケーション |
+
+**保護レイヤー:**
+- Route 53: DNS DDoS保護（Shield Standard自動適用）
+- Shield: L3/L4 DDoS攻撃の自動緩和
+- CloudFront: エッジキャッシュ + オリジン保護
+- WAF: L7攻撃のブロック（SQLi, XSS, Bot）
+
+---
+
+## 7. トラブルシューティングチャレンジ
 
 ### Challenge 1: CloudFrontキャッシュがヒットしない
 
@@ -361,7 +403,7 @@ aws shield describe-subscription
 
 ---
 
-## 7. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### Shield Standard vs Advanced
 
@@ -401,26 +443,22 @@ Shield Advanced ($3,000/月 + WAF費用):
 
 ### グローバル配信戦略
 
-```
-エッジロケーション最適化:
+#### Price Class 選択
 
-┌─────────────────────────────────────────────────────────────┐
-│                    Price Class 選択                         │
-├─────────────────────────────────────────────────────────────┤
-│ PriceClass_All        : 全リージョン (最高パフォーマンス)    │
-│ PriceClass_200        : 北米、欧州、アジア、中東、アフリカ   │
-│ PriceClass_100        : 北米、欧州のみ (最低コスト)          │
-└─────────────────────────────────────────────────────────────┘
+| Price Class | カバーリージョン | 用途 |
+|-------------|------------------|------|
+| PriceClass_All | 全リージョン | 最高パフォーマンス |
+| PriceClass_200 | 北米、欧州、アジア、中東、アフリカ | バランス型 |
+| PriceClass_100 | 北米、欧州のみ | 最低コスト |
 
-推奨:
+**推奨:**
 - グローバルサービス → PriceClass_All
 - 日本中心 + 一部海外 → PriceClass_200
 - 開発環境 → PriceClass_100
-```
 
 ---
 
-## 8. 発展課題（オプション）
+## 9. 発展課題（オプション）
 
 ### 上級チャレンジ1: Global Acceleratorによる最適化
 
@@ -513,7 +551,7 @@ Layer 3: Application Cache (ElastiCache)
 
 ---
 
-## 9. コスト見積もり
+## 10. コスト見積もり
 
 ### 月額コスト概算
 
@@ -551,7 +589,7 @@ Shield Standard (無料) の場合:
 
 ---
 
-## 10. 学習のポイント
+## 11. 学習のポイント
 
 ### 今回学んだこと
 
@@ -576,15 +614,6 @@ Shield Standard (無料) の場合:
    - フェイルオーバー
    - GeoDNS
 ```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS | GCP |
-|------|-----|-----|
-| CDN | CloudFront (450+ PoPs) | Cloud CDN |
-| DDoS | Shield (Standard無料) | Cloud Armor |
-| 専門サポート | DRT (Shield Advanced) | なし（標準サポート内） |
-| 価格モデル | 月額固定 + 従量 | 従量課金のみ |
 
 ### 次のステップ
 

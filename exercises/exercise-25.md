@@ -1,4 +1,4 @@
-# 課題25: テックマニュファクチャリング株式会社の設備異常検知AIモデル運用基盤構築
+# 課題25: 設備異常検知AIモデル運用基盤構築
 
 **難易度: 🟡 中級**
 
@@ -20,7 +20,7 @@
 
 ### 企業プロフィール
 
-**テックマニュファクチャリング株式会社**は、精密機器部品を製造する中堅製造業企業です。
+**〇〇株式会社**は、精密機器部品を製造する中堅製造業企業です。
 
 | 項目 | 内容 |
 |------|------|
@@ -113,16 +113,6 @@
 - 予知保全システムの設計
 - MLOpsの実践的なワークフロー
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| ML プラットフォーム | SageMaker | Vertex AI |
-| IoT | IoT Core | Cloud IoT Core |
-| ストリーム処理 | Kinesis | Pub/Sub + Dataflow |
-| 時系列DB | Timestream | BigQuery + Cloud Monitoring |
-| MLパイプライン | SageMaker Pipelines | Vertex AI Pipelines |
-
 ---
 
 ## 4. 学習するAWSサービス
@@ -182,52 +172,63 @@
 ### システム全体構成
 
 ```mermaid
-flowchart TB
-    subgraph Realtime["リアルタイム処理"]
-        Sensor["設備センサー"]
-        IoT["IoT Core / API Gateway"]
-        Kinesis["Kinesis Data Streams"]
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
-        subgraph Processing["データ処理"]
-            LambdaPrep["Lambda: データ前処理"]
-            Timestream[("Timestream: 時系列保存")]
-        end
+    group realtime(server)[Realtime Processing] in aws
+    group batch(logos:aws-step-functions)[Batch Processing] in aws
+    group storage(database)[Data Storage] in aws
 
-        subgraph Inference["推論処理"]
-            LambdaInf["Lambda: リアルタイム推論"]
-            SageMaker["SageMaker Endpoint: 異常検知"]
-            DynamoDB[("DynamoDB: 結果保存")]
-            SNS["SNS: アラート通知"]
-        end
+    service sensor(internet)[Equipment Sensor]
+    service iot(server)[IoT Core] in realtime
+    service kinesis(logos:aws-kinesis)[Kinesis Streams] in realtime
+    service lambda_prep(logos:aws-lambda)[Lambda Preprocess] in realtime
+    service lambda_inf(logos:aws-lambda)[Lambda Inference] in realtime
+    service sagemaker_ep(server)[SageMaker Endpoint] in realtime
+    service sns(logos:aws-sns)[SNS Alert] in realtime
+    service staff(internet)[Maintenance Staff]
 
-        Staff["保全担当者/管理画面"]
-    end
+    service eventbridge(server)[EventBridge] in batch
+    service stepfn(logos:aws-step-functions)[Step Functions] in batch
+    service sm_train(server)[SageMaker Training] in batch
+    service sm_registry(server)[Model Registry] in batch
 
-    subgraph Batch["定期バッチ"]
-        EventBridge["EventBridge（週次）"]
-        subgraph StepFunctions["Step Functions: モデル再学習パイプライン"]
-            SMProcessing["SageMaker Processing: データ準備"]
-            SMTraining["SageMaker Training: モデル学習"]
-            SMRegistry["SageMaker Model Registry: 登録"]
-            SMDeploy["SageMaker Endpoint: デプロイ"]
-        end
-    end
+    service timestream(database)[Timestream] in storage
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in storage
+    service s3(logos:aws-s3)[S3] in storage
 
-    Sensor -->|MQTT/HTTP| IoT
-    IoT --> Kinesis
-    Kinesis --> LambdaPrep
-    LambdaPrep --> Timestream
-    Kinesis --> LambdaInf
-    LambdaInf --> SageMaker
-    SageMaker -->|異常スコア| DynamoDB
-    DynamoDB -->|閾値超過| SNS
-    SNS --> Staff
-
-    EventBridge --> SMProcessing
-    SMProcessing --> SMTraining
-    SMTraining --> SMRegistry
-    SMRegistry --> SMDeploy
+    sensor:R --> L:iot
+    iot:B --> T:kinesis
+    kinesis:R --> L:lambda_prep
+    lambda_prep:B --> T:timestream
+    kinesis:B --> T:lambda_inf
+    lambda_inf:R --> L:sagemaker_ep
+    sagemaker_ep:B --> T:dynamodb
+    dynamodb:R --> L:sns
+    sns:R --> L:staff
+    eventbridge:B --> T:stepfn
+    stepfn:B --> T:sm_train
+    sm_train:B --> T:sm_registry
+    timestream:R --> L:s3
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Equipment Sensor** | 設備センサー（振動・温度・電流等） |
+| **IoT Core** | センサーデータの受信 |
+| **Kinesis Streams** | リアルタイムデータストリーミング |
+| **Lambda Preprocess** | センサーデータの前処理 |
+| **Lambda Inference** | 異常検知推論リクエスト |
+| **SageMaker Endpoint** | 異常検知MLモデルエンドポイント |
+| **SNS Alert** | 異常検知時のアラート通知 |
+| **Maintenance Staff** | 保全担当者（アラート受信） |
+| **EventBridge** | 週次バッチ処理スケジュール |
+| **Step Functions** | MLパイプラインオーケストレーション |
+| **SageMaker Training** | モデル再学習ジョブ |
+| **Model Registry** | モデルバージョン管理 |
+| **Timestream** | 時系列センサーデータ保存 |
+| **DynamoDB** | 推論結果・アラート履歴 |
+| **S3** | 学習データ・モデル保存 |
 
 ### データフロー
 
@@ -238,7 +239,7 @@ flowchart TB
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### 問題1: SageMakerエンドポイントのレイテンシーが高い
 
@@ -330,7 +331,7 @@ def balance_training_data(df: pd.DataFrame, anomaly_ratio: float = 0.1) -> pd.Da
 
 ---
 
-## 9. 設計の考察ポイント
+## 8. 設計の考察ポイント
 
 ### 1. Random Cut Forest を選択した理由は？
 
@@ -370,7 +371,7 @@ def balance_training_data(df: pd.DataFrame, anomaly_ratio: float = 0.1) -> pd.Da
 
 ---
 
-## 10. 発展課題（オプション）
+## 9. 発展課題（オプション）
 
 ### 1. マルチモデル構成
 - 設備タイプ別のモデル
@@ -399,7 +400,7 @@ def balance_training_data(df: pd.DataFrame, anomaly_ratio: float = 0.1) -> pd.Da
 
 ---
 
-## 11. 想定コストと削減方法
+## 10. 想定コストと削減方法
 
 ### 月額概算コスト
 
@@ -439,33 +440,33 @@ def balance_training_data(df: pd.DataFrame, anomaly_ratio: float = 0.1) -> pd.Da
 
 ```bash
 # SageMaker
-aws sagemaker delete-endpoint --endpoint-name techmfg-endpoint-dev
-aws sagemaker delete-endpoint-config --endpoint-config-name techmfg-endpoint-config-dev
-aws sagemaker delete-model --model-name techmfg-anomaly-model-dev
+aws sagemaker delete-endpoint --endpoint-name factory-ai-endpoint-dev
+aws sagemaker delete-endpoint-config --endpoint-config-name factory-ai-endpoint-config-dev
+aws sagemaker delete-model --model-name factory-ai-anomaly-model-dev
 
 # Kinesis
-aws kinesis delete-stream --stream-name techmfg-sensor-data-dev
-aws firehose delete-delivery-stream --delivery-stream-name techmfg-sensor-backup-dev
+aws kinesis delete-stream --stream-name factory-ai-sensor-data-dev
+aws firehose delete-delivery-stream --delivery-stream-name factory-ai-sensor-backup-dev
 
 # Timestream
-aws timestream-write delete-table --database-name techmfg-sensor-db --table-name sensor_readings
-aws timestream-write delete-table --database-name techmfg-sensor-db --table-name anomaly_scores
-aws timestream-write delete-database --database-name techmfg-sensor-db
+aws timestream-write delete-table --database-name factory-ai-sensor-db --table-name sensor_readings
+aws timestream-write delete-table --database-name factory-ai-sensor-db --table-name anomaly_scores
+aws timestream-write delete-database --database-name factory-ai-sensor-db
 
 # DynamoDB
-aws dynamodb delete-table --table-name techmfg-alerts
+aws dynamodb delete-table --table-name factory-ai-alerts
 
 # Step Functions
 aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
 
 # Lambda
-aws lambda delete-function --function-name techmfg-inference
-aws lambda delete-function --function-name techmfg-export-training-data
-aws lambda delete-function --function-name techmfg-evaluate-model
+aws lambda delete-function --function-name factory-ai-inference
+aws lambda delete-function --function-name factory-ai-export-training-data
+aws lambda delete-function --function-name factory-ai-evaluate-model
 
 # S3
-aws s3 rm s3://techmfg-data-bucket --recursive
-aws s3 rb s3://techmfg-data-bucket
+aws s3 rm s3://factory-ai-data-bucket --recursive
+aws s3 rb s3://factory-ai-data-bucket
 
 # SNS
 aws sns delete-topic --topic-arn arn:aws:sns:...
@@ -476,7 +477,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 1. 時系列異常検知の基礎
 Random Cut Forest は教師なし学習で異常検知を行うアルゴリズム。ストリーミングデータに適しており、SageMaker の組み込みアルゴリズムとして利用可能。

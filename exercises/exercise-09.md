@@ -51,22 +51,22 @@ architecture-beta
 
     group ingest(server)[Ingestion Layer] in aws
     group realtime(server)[Realtime Processing] in aws
-    group datalake(disk)[Data Lake] in aws
+    group datalake(server)[Data Lake] in aws
     group analytics(server)[Analytics Layer] in aws
     group notification(server)[Notification] in aws
 
-    service ecsite(internet)[ECサイト]
-    service apigw(server)[API Gateway] in ingest
-    service firehose(server)[Kinesis Firehose] in ingest
-    service lambda_analyze(server)[Lambda 感情分析] in realtime
+    service ecsite(internet)[EC Site]
+    service apigw(logos:aws-api-gateway)[API Gateway] in ingest
+    service firehose(logos:aws-kinesis)[Kinesis Firehose] in ingest
+    service lambda_analyze(logos:aws-lambda)[Lambda Analyze] in realtime
     service comprehend(server)[Comprehend] in realtime
-    service dynamodb(database)[DynamoDB] in realtime
-    service s3(disk)[S3 Data Lake] in datalake
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in realtime
+    service s3(logos:aws-s3)[S3 Data Lake] in datalake
     service glue(server)[Glue Crawler] in datalake
     service athena(server)[Athena] in analytics
     service quicksight(server)[QuickSight] in analytics
     service bedrock(server)[Bedrock] in analytics
-    service sns(server)[SNS Alert] in notification
+    service sns(logos:aws-sns)[SNS Alert] in notification
     service slack(internet)[Slack]
 
     ecsite:R --> L:apigw
@@ -82,6 +82,22 @@ architecture-beta
     athena:B --> T:bedrock
     sns:R --> L:slack
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **EC Site** | レビューデータの送信元（ECサイト） |
+| **API Gateway** | レビューデータ受信エンドポイント |
+| **Kinesis Firehose** | ストリーミングデータ取り込み |
+| **Lambda Analyze** | リアルタイム感情分析処理 |
+| **Comprehend** | 自然言語処理（感情分析） |
+| **DynamoDB** | リアルタイムデータ保存 |
+| **S3 Data Lake** | 長期保存・分析用データレイク |
+| **Glue Crawler** | データカタログ作成 |
+| **Athena** | SQLによるアドホック分析 |
+| **QuickSight** | ダッシュボード・可視化 |
+| **Bedrock** | 週次インサイトレポート生成 |
+| **SNS Alert** | ネガティブレビュー検出時のアラート |
+| **Slack** | アラート通知先 |
 
 ### データフロー
 

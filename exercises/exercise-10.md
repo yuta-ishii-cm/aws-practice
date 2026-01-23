@@ -48,25 +48,25 @@
 architecture-beta
     group aws(cloud)[AWS Cloud]
 
-    group ingest(disk)[Ingestion Layer] in aws
+    group ingest(server)[Ingestion Layer] in aws
     group processing(server)[Processing Layer] in aws
     group ai(server)[AI Layer] in aws
-    group storage(disk)[Storage Layer] in aws
+    group storage(server)[Storage Layer] in aws
     group notification(server)[Notification] in aws
 
-    service partner(internet)[不動産会社]
-    service s3_input(disk)[S3 入力バケット] in ingest
-    service sqs(server)[SQS 処理キュー] in ingest
-    service dlq(server)[SQS DLQ] in ingest
-    service lambda(server)[Lambda 画像処理] in processing
+    service partner(internet)[Partner]
+    service s3_input(logos:aws-s3)[S3 Input] in ingest
+    service sqs(logos:aws-sqs)[SQS Queue] in ingest
+    service dlq(logos:aws-sqs)[SQS DLQ] in ingest
+    service lambda(logos:aws-lambda)[Lambda] in processing
     service rekognition(server)[Rekognition] in ai
-    service bedrock(server)[Bedrock Claude 3] in ai
-    service dynamodb(database)[DynamoDB メタデータ] in storage
-    service s3_approved(disk)[S3 承認済み] in storage
-    service s3_review(disk)[S3 要確認] in storage
-    service cloudfront(server)[CloudFront] in storage
-    service sns(server)[SNS] in notification
-    service staff(internet)[運営スタッフ]
+    service bedrock(server)[Bedrock] in ai
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in storage
+    service s3_approved(logos:aws-s3)[S3 Approved] in storage
+    service s3_review(logos:aws-s3)[S3 Review] in storage
+    service cloudfront(logos:aws-cloudfront)[CloudFront] in storage
+    service sns(logos:aws-sns)[SNS] in notification
+    service staff(internet)[Staff]
 
     partner:R --> L:s3_input
     s3_input:B --> T:sqs
@@ -81,6 +81,22 @@ architecture-beta
     lambda:B --> T:sns
     sns:R --> L:staff
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Partner** | 不動産会社（画像アップロード元） |
+| **S3 Input** | 入力バケット（画像受信） |
+| **SQS Queue** | 処理キュー |
+| **SQS DLQ** | デッドレターキュー（エラー処理） |
+| **Lambda** | 画像処理ロジック |
+| **Rekognition** | 画像品質・不適切コンテンツチェック |
+| **Bedrock** | 部屋タイプ・設備のタグ生成（Claude 3） |
+| **DynamoDB** | 画像メタデータ保存 |
+| **S3 Approved** | 承認済み画像の保存 |
+| **S3 Review** | 要確認画像の保存 |
+| **CloudFront** | 承認済み画像の配信 |
+| **SNS** | 通知配信 |
+| **Staff** | 運営スタッフ（通知受信） |
 
 ### 処理フロー
 

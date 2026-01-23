@@ -44,15 +44,15 @@ architecture-beta
     group aws(cloud)[AWS Cloud]
 
     group api(server)[API Layer] in aws
-    group data(database)[Data Layer] in aws
+    group data(server)[Data Layer] in aws
 
     service user(internet)[User / Slack Bot]
-    service apigw(server)[API Gateway] in api
-    service lambda_list(server)[Lambda ListRestaurants] in api
-    service lambda_create(server)[Lambda CreateRestaurant] in api
-    service lambda_gacha(server)[Lambda Gacha] in api
-    service lambda_delete(server)[Lambda DeleteRestaurant] in api
-    service dynamodb(database)[DynamoDB Restaurants] in data
+    service apigw(logos:aws-api-gateway)[API Gateway] in api
+    service lambda_list(logos:aws-lambda)[Lambda List] in api
+    service lambda_create(logos:aws-lambda)[Lambda Create] in api
+    service lambda_gacha(logos:aws-lambda)[Lambda Gacha] in api
+    service lambda_delete(logos:aws-lambda)[Lambda Delete] in api
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in data
 
     user:R --> L:apigw
     apigw:B --> T:lambda_list
@@ -64,6 +64,16 @@ architecture-beta
     lambda_gacha:R --> L:dynamodb
     lambda_delete:R --> L:dynamodb
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User / Slack Bot** | ユーザーまたはSlack Bot（APIを呼び出す） |
+| **API Gateway** | REST APIエンドポイント |
+| **Lambda List** | 登録済みのお店一覧を取得 |
+| **Lambda Create** | 新しいお店を登録 |
+| **Lambda Gacha** | ランダムで1店舗を返す 🎲 |
+| **Lambda Delete** | お店を削除 |
+| **DynamoDB** | お店データの永続化 |
 
 ### APIエンドポイント設計
 

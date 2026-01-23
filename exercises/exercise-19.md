@@ -1,6 +1,6 @@
 # 課題19: 配車サービスの統合監視基盤構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | オブザーバビリティ・監視 |
 | 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
@@ -19,14 +19,14 @@
 ## 2. ビジネスシナリオ
 
 ### 企業プロファイル
-- **企業名**: RideShare株式会社
+- **企業名**: 〇〇株式会社
 - **業種**: モビリティ・配車サービス
 - **規模**: 従業員200名、エンジニア40名
 - **サービス規模**: 月間配車100万件、15個のマイクロサービス
 - **現状インフラ**: AWS上でEKS + マイクロサービスアーキテクチャ
 
 ### 現状の課題
-RideShare株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
+〇〇株式会社は、急成長する配車サービスを15個のマイクロサービスで構成しています。しかし、システムの複雑化に伴い、以下の問題が深刻化しています：
 
 1. **障害検知の遅延**
    - ユーザーからの問い合わせで障害に気づくことが多い
@@ -141,7 +141,7 @@ GCP → AWS マッピング:
 ### アーキテクチャ図
 ```mermaid
 flowchart TB
-    subgraph RideShare["RideShare 統合監視基盤"]
+    subgraph 配車サービス["配車サービス 統合監視基盤"]
         subgraph EKS["Amazon EKS Cluster"]
             subgraph Services["Microservices"]
                 Rider["Rider<br/>Service"]
@@ -383,7 +383,7 @@ services:
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### 課題1: Prometheus メトリクスが AMP に書き込まれない
 
@@ -594,12 +594,12 @@ aws logs filter-log-events \
 
 ---
 
-## 9. 設計課題
+## 8. 設計課題
 
 ### 設計課題: 大規模マイクロサービスのオブザーバビリティ戦略
 
 **シナリオ**:
-RideShare社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
+配車サービス社は事業拡大に伴い、マイクロサービスが15個から50個に増加する計画です。
 以下の要件を満たすオブザーバビリティ戦略を設計してください。
 
 **要件**:
@@ -638,29 +638,29 @@ RideShare社は事業拡大に伴い、マイクロサービスが15個から50�
 
 ```mermaid
 architecture-beta
-    group aws(cloud)[RideShare 大規模オブザーバビリティ基盤]
+    group aws(cloud)[Observability Platform]
 
-    group collection(server)[データ収集層] in aws
-    service rider_team(server)[Rider Team Services 5 svcs] in collection
-    service driver_team(server)[Driver Team Services 4 svcs] in collection
-    service payment_team(server)[Payment Team Services 3 svcs] in collection
+    group collection(server)[Collection Layer] in aws
+    service rider_team(server)[Rider Team 5 svcs] in collection
+    service driver_team(server)[Driver Team 4 svcs] in collection
+    service payment_team(server)[Payment Team 3 svcs] in collection
     service other_teams(server)[Other Teams x15] in collection
-    service otel_collector(server)[OpenTelemetry Collector Gateway Pattern] in collection
-    service sampling(server)[Sampling Processor] in collection
-    service filtering(server)[Filtering Processor] in collection
+    service otel_collector(server)[OTel Collector] in collection
+    service sampling(server)[Sampling] in collection
+    service filtering(server)[Filtering] in collection
 
-    group storage(database)[データ保存層] in aws
-    service xray(server)[X-Ray Traces Head 5% Tail 100% errors] in storage
-    service amp(server)[AMP Metrics Retention 13 months] in storage
-    service cwlogs(server)[CloudWatch Logs Hot 7d Warm 30d Cold 365d] in storage
+    group storage(server)[Storage Layer] in aws
+    service xray(server)[X-Ray Traces] in storage
+    service amp(server)[AMP Metrics] in storage
+    service cwlogs(logos:aws-cloudwatch)[CloudWatch Logs] in storage
 
-    group visualization(server)[可視化・アラート層] in aws
-    service grafana(server)[Amazon Managed Grafana] in visualization
-    service platform_dash(server)[Platform Overview SRE] in visualization
-    service team_dash(server)[Team Dashboards 15 folders] in visualization
-    service business_dash(server)[Business Metrics Product] in visualization
-    service pagerduty(internet)[PagerDuty Critical/High] in visualization
-    service slack(internet)[Slack Alerts Warning/Info] in visualization
+    group visualization(server)[Visualization Layer] in aws
+    service grafana(server)[Managed Grafana] in visualization
+    service platform_dash(server)[Platform Dash] in visualization
+    service team_dash(server)[Team Dash] in visualization
+    service business_dash(server)[Business Dash] in visualization
+    service pagerduty(internet)[PagerDuty] in visualization
+    service slack(internet)[Slack] in visualization
 
     rider_team:B --> T:otel_collector
     driver_team:B --> T:otel_collector
@@ -675,6 +675,18 @@ architecture-beta
     grafana:R --> L:pagerduty
     grafana:R --> L:slack
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Rider/Driver/Payment Team** | マイクロサービス群 |
+| **OTel Collector** | OpenTelemetry Collector（Gateway Pattern） |
+| **Sampling/Filtering** | データの抽出・フィルタリング |
+| **X-Ray Traces** | 分散トレース（Head 5%, Tail 100%） |
+| **AMP Metrics** | Prometheus メトリクス（13ヶ月保持） |
+| **CloudWatch Logs** | ログ管理（Hot/Warm/Cold階層） |
+| **Managed Grafana** | 可視化・ダッシュボード |
+| **Platform/Team/Business Dash** | チーム別ダッシュボード |
+| **PagerDuty/Slack** | アラート通知先 |
 
 ### 1. メトリクス収集・保存戦略
 
@@ -835,7 +847,7 @@ responsibility_matrix:
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### 発展課題1: OpenTelemetry への移行（難易度：中級）
 
@@ -914,7 +926,7 @@ AWS Fault Injection Simulator を使用して、
 
 ---
 
-## 11. 振り返りと次のステップ
+## 10. 学習のポイント
 
 ### 学習のまとめ
 
@@ -966,7 +978,7 @@ GCP との主な違い:
 
 ---
 
-## 12. 推定コストと注意事項
+## 11. 想定コストと削減方法
 
 ### 本課題の推定コスト
 
@@ -1015,8 +1027,3 @@ GCP との主な違い:
 - コンプライアンス要件がある場合は適切な保持期間を設定
 ```
 
----
-
-**課題作成日**: 2024年1月
-**最終更新日**: 2024年1月
-**作成者**: AWS学習プログラム

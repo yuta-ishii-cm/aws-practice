@@ -44,23 +44,32 @@
 architecture-beta
     group aws(cloud)[AWS Cloud]
 
-    group storage(disk)[Storage Layer] in aws
+    group storage(server)[Storage Layer] in aws
     group compute(server)[Compute Layer] in aws
     group notification(server)[Notification] in aws
 
-    service user(internet)[EC運営担当者]
-    service s3_active(disk)[S3 商品画像 STANDARD] in storage
-    service s3_archive(disk)[S3 Glacier Instant Retrieval] in storage
-    service lambda(server)[Lambda 画像処理] in compute
-    service sns(server)[SNS 通知] in notification
-    service email(internet)[メール通知]
+    service user(internet)[EC Admin]
+    service s3_active(logos:aws-s3)[S3 STANDARD] in storage
+    service s3_archive(logos:aws-s3)[S3 Glacier] in storage
+    service lambda(logos:aws-lambda)[Lambda] in compute
+    service sns(logos:aws-sns)[SNS] in notification
+    service email(internet)[Email]
 
     user:R --> L:s3_active
     s3_active:B --> T:lambda
-    s3_active:R -- 90日後自動移行 --> L:s3_archive
+    s3_active:R -- Auto archive --> L:s3_archive
     lambda:R --> L:sns
     sns:R --> L:email
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **EC Admin** | EC運営担当者（商品画像をアップロード） |
+| **S3 STANDARD** | 商品画像の保存（標準ストレージ） |
+| **S3 Glacier** | 90日経過後の自動アーカイブ先 |
+| **Lambda** | 画像アップロード時の処理（メタデータ記録等） |
+| **SNS** | アーカイブ完了通知 |
+| **Email** | メール通知の受信先 |
 
 ### データフロー
 

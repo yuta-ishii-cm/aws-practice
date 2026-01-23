@@ -49,18 +49,18 @@ architecture-beta
 
     group scheduler(server)[Scheduler Layer] in aws
     group workflow(server)[Workflow Layer] in aws
-    group storage(disk)[Storage Layer] in aws
+    group storage(server)[Storage Layer] in aws
     group notification(server)[Notification] in aws
 
-    service eventbridge(server)[EventBridge Scheduler] in scheduler
-    service stepfunctions(server)[Step Functions] in workflow
-    service lambda_fetch(server)[Lambda FetchCompanies] in workflow
-    service lambda_generate(server)[Lambda GenerateReport] in workflow
-    service lambda_send(server)[Lambda SendEmails] in workflow
-    service dynamodb(database)[DynamoDB] in storage
-    service s3(disk)[S3 Reports] in storage
+    service eventbridge(server)[EventBridge] in scheduler
+    service stepfunctions(logos:aws-step-functions)[Step Functions] in workflow
+    service lambda_fetch(logos:aws-lambda)[Lambda Fetch] in workflow
+    service lambda_generate(logos:aws-lambda)[Lambda Generate] in workflow
+    service lambda_send(logos:aws-lambda)[Lambda Send] in workflow
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in storage
+    service s3(logos:aws-s3)[S3 Reports] in storage
     service ses(server)[SES] in notification
-    service sns(server)[SNS] in notification
+    service sns(logos:aws-sns)[SNS] in notification
 
     eventbridge:B --> T:stepfunctions
     stepfunctions:B --> T:lambda_fetch
@@ -71,6 +71,18 @@ architecture-beta
     lambda_send:R --> L:ses
     stepfunctions:R --> L:sns
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **EventBridge** | 毎月1日AM1時にワークフロー起動 |
+| **Step Functions** | レポート生成ワークフローのオーケストレーション |
+| **Lambda Fetch** | 処理対象企業一覧を取得 |
+| **Lambda Generate** | レポート（PDF/Excel）生成 |
+| **Lambda Send** | メール送信処理 |
+| **DynamoDB** | 企業マスタ・ジョブ状態管理 |
+| **S3 Reports** | 生成したレポートの保存 |
+| **SES** | メール配信 |
+| **SNS** | 処理完了通知 |
 
 ### 処理フロー
 

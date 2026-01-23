@@ -19,7 +19,7 @@
 ## 2. シナリオ
 
 ### 企業プロフィール
-**QuickDeliver株式会社**は、EC事業者向けの配送代行サービスを提供する物流企業です。日次配送件数は1万件を超え、荷主、倉庫、配送ドライバー、エンドユーザーなど多くのステークホルダーと連携しています。
+**〇〇株式会社**は、EC事業者向けの配送代行サービスを提供する物流企業です。日次配送件数は1万件を超え、荷主、倉庫、配送ドライバー、エンドユーザーなど多くのステークホルダーと連携しています。
 
 ### 現状の課題
 配送状況の通知システムが各所に分散し、リアルタイム性と一貫性に問題があります：
@@ -45,15 +45,15 @@
 
 ---
 
-## 3. 学習目標
+## 3. 達成目標
 
-### 主要な学習成果
+### 技術的な学習ポイント
 1. EventBridgeを使ったイベント駆動アーキテクチャの構築
 2. Fan-outパターンによる複数通知チャネルへの配信
 3. DynamoDB Streamsによるイベント発行
 4. デッドレターキューによるエラーハンドリング
 
-### 習得するスキル
+### 実務で活かせる知識
 - EventBridge Rules / Event Bus の設計
 - Lambda と SQS / SNS の連携
 - イベントスキーマの設計
@@ -61,7 +61,7 @@
 
 ---
 
-## 4. 使用するAWSサービス
+## 4. 学習するAWSサービス
 
 ### コアサービス
 | サービス | 用途 | 重要度 |
@@ -151,6 +151,22 @@ architecture-beta
     sqs_shipper:B --> T:lambda_webhook
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **WMS Warehouse** | 倉庫管理システム（イベントソース） |
+| **TMS Transport** | 輸送管理システム（イベントソース） |
+| **Driver App** | 配達員モバイルアプリ（イベントソース） |
+| **External API** | 外部システム連携API |
+| **API Gateway** | イベント受信エンドポイント |
+| **Lambda EventIngestion** | イベント検証・正規化 |
+| **EventBridge Custom Event Bus** | イベントルーティング・フィルタリング |
+| **SNS Customer** | 顧客向け通知のFan-out |
+| **SQS Shipper** | 荷主向け通知キュー |
+| **Lambda Dashboard** | ダッシュボード更新処理 |
+| **S3 Archive** | イベント履歴保存 |
+| **Lambda Email/SMS/Push** | 各通知チャネル処理 |
+| **SES/SNS SMS/Pinpoint** | 通知送信サービス |
+
 **EventBridge Rules:**
 - NotifyCustomer: status = OUT_FOR_DELIVERY, DELIVERED
 - NotifyShipper: status = *
@@ -179,7 +195,7 @@ stateDiagram-v2
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### Challenge 1: イベントの重複処理
 **状況**: 同じ配送ステータス更新が複数回処理されている
@@ -207,7 +223,7 @@ stateDiagram-v2
 
 ---
 
-## 9. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### ディスカッション1: イベントスキーマの設計
 **テーマ**: スキーマバージョニングと互換性
@@ -237,7 +253,7 @@ stateDiagram-v2
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### Advanced 1: Event Replay 機能
 **課題**: EventBridge Archive を使って、特定期間のイベントを再処理
@@ -250,7 +266,7 @@ stateDiagram-v2
 
 ---
 
-## 11. コスト見積もり
+## 10. コスト見積もり
 
 ### 月額コスト概算
 
@@ -268,7 +284,7 @@ stateDiagram-v2
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 重要な概念の整理
 
@@ -286,16 +302,6 @@ stateDiagram-v2
    - 1つのイベントを複数の消費者に配信
    - SNS + SQSの組み合わせ
    - フィルタリングによる効率化
-
-### GCPとの比較
-
-| 概念 | AWS | GCP |
-|------|-----|-----|
-| イベントバス | EventBridge | Eventarc |
-| メッセージング | SNS/SQS | Pub/Sub |
-| サーバーレス関数 | Lambda | Cloud Functions |
-| NoSQL DB | DynamoDB | Firestore |
-| メール送信 | SES | SendGrid等 |
 
 ### 次のステップ
 1. リアルタイムダッシュボードの構築

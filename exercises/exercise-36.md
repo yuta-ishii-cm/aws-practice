@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -16,17 +16,17 @@
 
 ---
 
-## 2. ビジネスシナリオ
+## ビジネスシナリオ
 
 ### 企業プロファイル
-- **企業名**: MedSecure株式会社
+- **企業名**: 〇〇株式会社
 - **業種**: 医療データ管理・分析プラットフォーム
 - **規模**: 従業員150名、エンジニア25名
 - **データ規模**: 患者データ100万件、月間API呼び出し5000万回
 - **現状インフラ**: AWS上でマルチアカウント環境を運用
 
 ### 現状の課題
-MedSecure株式会社は、複数の医療機関から患者データを預かり、AIによる診断支援サービスを提供しています。しかし、以下の問題を抱えています：
+〇〇株式会社は、複数の医療機関から患者データを預かり、AIによる診断支援サービスを提供しています。しかし、以下の問題を抱えています：
 
 1. **セキュリティ可視性の欠如**
    - 複数AWSアカウントのセキュリティ状態が一元管理されていない
@@ -69,7 +69,7 @@ MedSecure株式会社は、複数の医療機関から患者データを預か�
 
 ---
 
-## 3. 学習目標
+## 学習目標
 
 ### 本課題で習得するスキル
 
@@ -90,30 +90,9 @@ MedSecure株式会社は、複数の医療機関から患者データを預か�
    - 監査レポートの自動生成
 ```
 
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Security Command Center → Security Hub
-- Event Threat Detection → GuardDuty
-- Cloud Functions → Lambda
-- Eventarc → EventBridge
-- Organization Policy → AWS Config Rules
-
-主な違い:
-1. Security Hub: 複数のセキュリティサービスを統合し、
-   統一されたセキュリティビューを提供（SCCに近いが、
-   より多くのサードパーティ統合が可能）
-
-2. GuardDuty: ML ベースの脅威検知に特化
-   （GCPのEvent Threat Detectionより広範な検知パターン）
-
-3. EventBridge: イベント駆動アーキテクチャの中核
-   （Eventarcより柔軟なルーティングとフィルタリング）
-```
-
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### メインサービス
 | サービス | 役割 | 使用機能 |
@@ -140,29 +119,29 @@ GCP → AWS マッピング:
 architecture-beta
     group org(cloud)[AWS Organizations]
 
-    group security_acct(server)[Security Account 集約] in org
+    group security_acct(server)[Security Account] in org
     group prod_acct(server)[Production Account] in org
     group dev_acct(server)[Development Account] in org
     group stg_acct(server)[Staging Account] in org
 
-    service sechub(server)[Security Hub Admin] in security_acct
-    service guardduty_admin(server)[GuardDuty Delegated Admin] in security_acct
-    service config_agg(server)[AWS Config Aggregator] in security_acct
-    service eventbridge(server)[EventBridge Central] in security_acct
-    service lambda_remediate(server)[Lambda Remediate] in security_acct
-    service stepfunctions(server)[Step Functions] in security_acct
-    service sns(server)[SNS Notify] in security_acct
-    service s3_trail(disk)[S3 証跡保存] in security_acct
+    service sechub(server)[Security Hub] in security_acct
+    service guardduty_admin(server)[GuardDuty Admin] in security_acct
+    service config_agg(server)[Config Aggregator] in security_acct
+    service eventbridge(server)[EventBridge] in security_acct
+    service lambda_remediate(logos:aws-lambda)[Lambda Remediate] in security_acct
+    service stepfunctions(logos:aws-step-functions)[Step Functions] in security_acct
+    service sns(logos:aws-sns)[SNS Notify] in security_acct
+    service s3_trail(logos:aws-s3)[S3 Trail] in security_acct
     service slack(internet)[Slack PagerDuty] in security_acct
 
-    service prod_guardduty(server)[GuardDuty Member] in prod_acct
-    service prod_config(server)[Config Member] in prod_acct
+    service prod_guardduty(server)[GuardDuty] in prod_acct
+    service prod_config(server)[Config] in prod_acct
 
-    service dev_guardduty(server)[GuardDuty Member] in dev_acct
-    service dev_config(server)[Config Member] in dev_acct
+    service dev_guardduty(server)[GuardDuty] in dev_acct
+    service dev_config(server)[Config] in dev_acct
 
-    service stg_guardduty(server)[GuardDuty Member] in stg_acct
-    service stg_config(server)[Config Member] in stg_acct
+    service stg_guardduty(server)[GuardDuty] in stg_acct
+    service stg_config(server)[Config] in stg_acct
 
     guardduty_admin:L --> R:sechub
     config_agg:L --> R:sechub
@@ -181,9 +160,23 @@ architecture-beta
     stg_config:T --> B:config_agg
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **Security Account** | セキュリティ集約アカウント |
+| **Security Hub** | セキュリティ検出結果の集約 |
+| **GuardDuty Admin** | 脅威検知の委任管理者 |
+| **Config Aggregator** | 設定ルールの集約 |
+| **EventBridge** | セキュリティイベントのルーティング |
+| **Lambda Remediate** | 自動修復処理 |
+| **Step Functions** | 修復ワークフロー管理 |
+| **SNS Notify** | 通知配信 |
+| **S3 Trail** | 証跡データの保存 |
+| **Slack PagerDuty** | アラート通知先 |
+| **GuardDuty/Config (各アカウント)** | 各アカウントのメンバー |
+
 ---
 
-## 5. 前提条件と事前準備
+## 前提条件と事前準備
 
 ### 必要な環境
 ```bash
@@ -242,7 +235,7 @@ aws guardduty list-detectors --region $REGION
 
 ---
 
-## 6. アーキテクチャ設計
+## アーキテクチャ設計
 
 ### セキュリティ検知フロー設計
 ```yaml
@@ -336,7 +329,7 @@ remediation_actions:
 
 ---
 
-## 8. トラブルシューティング課題
+## トラブルシューティング課題
 
 ### 課題1: GuardDuty の検出結果が Security Hub に表示されない
 
@@ -556,7 +549,7 @@ def assume_role_in_account(account_id):
 
 ---
 
-## 9. 設計課題
+## 設計課題
 
 ### 設計課題: マルチリージョン・マルチアカウントのセキュリティ集約アーキテクチャ
 
@@ -744,7 +737,7 @@ Phase 4（Week 7-8）: コンプライアンス・最適化
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
 ### 発展課題1: SIEM 統合（難易度：上級）
 
@@ -816,7 +809,7 @@ Amazon Managed Grafana を使用して、経営層向けのセキュリティダ
 
 ---
 
-## 11. 振り返りと次のステップ
+## 振り返りと次のステップ
 
 ### 学習のまとめ
 
@@ -828,23 +821,7 @@ Amazon Managed Grafana を使用して、経営層向けのセキュリティダ
 □ Lambda/Step Functions による自動修復
 □ HIPAA 準拠のセキュリティ要件
 □ マルチアカウント・マルチリージョンセキュリティ
-
-GCP との主な違い:
-- Security Hub は SCC よりサードパーティ統合が豊富
-- GuardDuty は専用の ML モデルで検知精度が高い
-- EventBridge はより柔軟なイベントルーティングが可能
-- Organizations との統合が深い
 ```
-
-### GCP経験者向けポイント
-
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| 統合セキュリティ | Security Command Center | Security Hub | 検出結果のスキーマが異なる |
-| 脅威検知 | Event Threat Detection | GuardDuty | ML モデルの検知パターンが異なる |
-| イベント処理 | Eventarc | EventBridge | イベントパターンの記法が異なる |
-| ポリシー管理 | Organization Policy | AWS Config | ルール定義方法が異なる |
-| ログ集約 | Cloud Logging | CloudWatch + CloudTrail | ログの構造と検索方法が異なる |
 
 ### 推奨される次のステップ
 
@@ -868,7 +845,7 @@ GCP との主な違い:
 
 ---
 
-## 12. 推定コストと注意事項
+## 推定コストと注意事項
 
 ### 本課題の推定コスト
 

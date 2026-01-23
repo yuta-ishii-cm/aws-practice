@@ -19,7 +19,7 @@
 ## 2. シナリオ
 
 ### 企業プロフィール
-**RetailMax株式会社**は、全国200店舗を展開する小売チェーンです。各店舗の在庫をリアルタイムで把握し、オムニチャネル（店舗・EC・アプリ）で在庫情報を一元管理したいと考えています。
+**〇〇株式会社**は、全国200店舗を展開する小売チェーンです。各店舗の在庫をリアルタイムで把握し、オムニチャネル（店舗・EC・アプリ）で在庫情報を一元管理したいと考えています。
 
 ### 現状の課題
 在庫管理システムが分散し、リアルタイムの在庫把握ができていません：
@@ -45,15 +45,15 @@
 
 ---
 
-## 3. 学習目標
+## 3. 達成目標
 
-### 主要な学習成果
+### 技術的な学習ポイント
 1. AWS App Meshによるサービスメッシュの構築
 2. サービス間通信の可観測性向上（トレーシング、メトリクス）
 3. サーキットブレーカーとリトライポリシーの実装
 4. Aurora PostgreSQLによる在庫データの一貫性管理
 
-### 習得するスキル
+### 実務で活かせる知識
 - App Mesh Virtual Service / Virtual Node の設計
 - Envoy プロキシの基本設定
 - X-Ray による分散トレーシング
@@ -61,7 +61,7 @@
 
 ---
 
-## 4. 使用するAWSサービス
+## 4. 学習するAWSサービス
 
 ### コアサービス
 | サービス | 用途 | 重要度 |
@@ -104,27 +104,27 @@
 ```mermaid
 architecture-beta
     group clients(internet)[Clients]
-    service pos(server)[店舗 POS] in clients
-    service ec(internet)[EC サイト] in clients
-    service app(server)[アプリ] in clients
-    service admin(server)[管理画面] in clients
+    service pos(server)[Store POS] in clients
+    service ec(internet)[EC Site] in clients
+    service app(server)[Mobile App] in clients
+    service admin(server)[Admin Console] in clients
 
     group aws(cloud)[AWS Cloud]
 
     group alb_layer(server)[Load Balancer] in aws
-    service alb(internet)[Application Load Balancer Virtual Gateway] in alb_layer
+    service alb(internet)[ALB Virtual Gateway] in alb_layer
 
     group app_mesh(server)[AWS App Mesh] in aws
-    service api_gw(server)[API Gateway Service Envoy] in app_mesh
-    service inventory(server)[Inventory Service Envoy Circuit Breaker] in app_mesh
-    service store(server)[Store Service Envoy Retry Policy] in app_mesh
-    service product(server)[Product Service Envoy] in app_mesh
+    service api_gw(server)[API Gateway Envoy] in app_mesh
+    service inventory(server)[Inventory Svc CircuitBreaker] in app_mesh
+    service store(server)[Store Svc Retry] in app_mesh
+    service product(server)[Product Svc Envoy] in app_mesh
 
     group data_layer(database)[Data Layer] in aws
     service rds_proxy1(server)[RDS Proxy] in data_layer
     service rds_proxy2(server)[RDS Proxy] in data_layer
     service elasticache(database)[ElastiCache Redis] in data_layer
-    service aurora(database)[Aurora PostgreSQL Writer plus 2 Readers Multi-AZ] in data_layer
+    service aurora(database)[Aurora PostgreSQL Multi-AZ] in data_layer
 
     pos:B --> T:alb
     ec:B --> T:alb
@@ -142,6 +142,21 @@ architecture-beta
     rds_proxy2:B --> T:aurora
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **Store POS** | 店舗POSシステム（在庫更新ソース） |
+| **EC Site** | ECサイト（在庫照会・注文） |
+| **Mobile App** | モバイルアプリ |
+| **Admin Console** | 管理画面 |
+| **ALB Virtual Gateway** | App Mesh Virtual Gateway統合ALB |
+| **API Gateway Envoy** | APIルーティング・認証（Envoyサイドカー） |
+| **Inventory Svc** | 在庫管理サービス（サーキットブレーカー付き） |
+| **Store Svc** | 店舗情報サービス（リトライポリシー付き） |
+| **Product Svc** | 商品マスタサービス |
+| **RDS Proxy** | DBコネクションプーリング |
+| **ElastiCache Redis** | 商品情報キャッシュ |
+| **Aurora PostgreSQL** | 在庫データベース（Writer + 2 Readers） |
+
 ### サービス一覧
 | サービス | 役割 | エンドポイント |
 |----------|------|---------------|
@@ -152,7 +167,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### Challenge 1: Envoy Sidecar が起動しない
 **状況**: ECSタスクでメインコンテナは起動するが、Envoyが起動しない
@@ -180,7 +195,7 @@ architecture-beta
 
 ---
 
-## 9. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### ディスカッション1: サービスメッシュの採用判断
 **テーマ**: App Mesh vs Istio vs 自前実装
@@ -206,7 +221,7 @@ architecture-beta
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### Advanced 1: カナリアリリース
 **課題**: App Meshのトラフィック分割機能を使って、新バージョンに10%のトラフィックを流す
@@ -219,7 +234,7 @@ architecture-beta
 
 ---
 
-## 11. コスト見積もり
+## 10. コスト見積もり
 
 ### 月額コスト概算
 
@@ -238,7 +253,7 @@ architecture-beta
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 重要な概念の整理
 
@@ -256,16 +271,6 @@ architecture-beta
    - コネクションプーリング
    - フェイルオーバーの高速化
    - IAM認証対応
-
-### GCPとの比較
-
-| 概念 | AWS | GCP |
-|------|-----|-----|
-| サービスメッシュ | App Mesh | Anthos Service Mesh / Traffic Director |
-| コンテナ実行 | ECS Fargate | Cloud Run / GKE |
-| DB接続管理 | RDS Proxy | Cloud SQL Auth Proxy |
-| 分散トレーシング | X-Ray | Cloud Trace |
-| マネージドDB | Aurora | Cloud SQL / AlloyDB |
 
 ### 次のステップ
 1. mTLSによるサービス間認証

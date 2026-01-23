@@ -18,13 +18,13 @@
 
 ## 2. シナリオ
 
-ITコンサルティング会社「TechCorp株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
+ITコンサルティング会社「〇〇株式会社」の従業員向けシングルサインオン（SSO）基盤を AWS IAM Identity Center で構築します。複数AWSアカウントへのアクセス管理、外部IdP連携、権限セットの設計を通じて、エンタープライズ向けアイデンティティ管理を学びます。
 
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| 企業名 | TechCorp株式会社 |
+| 企業名 | 〇〇株式会社 |
 | 業種 | ITコンサルティング |
 | 従業員数 | 500名 |
 | AWSアカウント数 | 15アカウント（開発/本番/共有サービス等） |
@@ -80,6 +80,16 @@ architecture-beta
     permission_sets:R --> L:access_portal
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **External IdP** | 外部ID プロバイダー（Azure AD/Okta/Google） |
+| **Identity Store** | ユーザー・グループ管理 |
+| **Permission Sets** | 権限セット定義 |
+| **Management Account** | Organizations管理アカウント |
+| **Security/Workloads/Sandbox OU** | 組織単位 |
+| **各Account** | 環境別AWSアカウント |
+| **Access Portal** | SSO アクセスポータル |
+
 **Identity Store Groups:**
 - 開発部門 (80 users) / インフラ部門 (40 users) / セキュリティ部門 (20 users)
 - 営業部門 (200 users) / 管理部門 (100 users) / 経営層 (60 users)
@@ -105,19 +115,7 @@ architecture-beta
 
 ## 3. 前提知識
 
-### 3.1 IAM Identity Center の概念
-
-GCPでのアイデンティティ管理経験がある方向けの比較：
-
-| 観点 | GCP | AWS |
-|------|-----|-----|
-| SSO基盤 | Cloud Identity | IAM Identity Center |
-| IdP連携 | Cloud Identity + SAML | Identity Center + SAML/SCIM |
-| 権限管理 | IAM Roles | Permission Sets |
-| ディレクトリ | Cloud Identity Directory | Identity Center Directory |
-| マルチプロジェクト | Project IAM Bindings | Account Assignments |
-
-### 3.2 IAM Identity Center の主要概念
+### IAM Identity Center の主要概念
 
 ```mermaid
 flowchart TB
@@ -212,19 +210,12 @@ resource "aws_ssoadmin_permission_set" "break_glass" {
 - 監査証跡の記録
 
 **実装アプローチ**:
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Temporary Access Workflow                          │
-│                                                                 │
-│  1. 申請  →  2. 承認  →  3. 権限付与  →  4. 自動削除           │
-│     │           │            │              │                   │
-│     ▼           ▼            ▼              ▼                   │
-│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌──────────────┐         │
-│  │API GW   │ │Step     │ │Lambda    │ │EventBridge   │         │
-│  │+ Lambda │ │Functions│ │+ SSO API │ │Scheduled     │         │
-│  └─────────┘ └─────────┘ └──────────┘ └──────────────┘         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+
+```mermaid
+flowchart LR
+    A[1. 申請<br/>API GW + Lambda] --> B[2. 承認<br/>Step Functions]
+    B --> C[3. 権限付与<br/>Lambda + SSO API]
+    C --> D[4. 自動削除<br/>EventBridge Scheduled]
 ```
 
 ---
@@ -378,20 +369,11 @@ aws sso-admin describe-permission-set \
 
 **設計案を作成してください**:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                Zero Trust Architecture Design                    │
-│                                                                 │
-│  [ここに設計図を作成]                                            │
-│                                                                 │
-│  考慮点：                                                        │
-│  - 「Never trust, always verify」の原則                          │
-│  - デバイスポスチャの評価                                        │
-│  - 最小権限の原則の徹底                                          │
-│  - リアルタイムのリスク評価                                      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+設計時の考慮点：
+- 「Never trust, always verify」の原則
+- デバイスポスチャの評価
+- 最小権限の原則の徹底
+- リアルタイムのリスク評価
 
 ---
 
@@ -684,18 +666,7 @@ exports.handler = async (event) => {
 
 ---
 
-## 10. 参考情報
-
-### GCPとの比較まとめ
-
-| 機能 | GCP | AWS |
-|------|-----|-----|
-| 企業SSO | Cloud Identity | IAM Identity Center |
-| マルチプロジェクトアクセス | Organization IAM | Account Assignments |
-| 権限テンプレート | Custom Roles | Permission Sets |
-| IdP連携 | Cloud Identity SAML | Identity Center SAML/SCIM |
-| ディレクトリ同期 | GCDS | AD Connector / SCIM |
-| 監査ログ | Cloud Audit Logs | CloudTrail |
+## 参考情報
 
 ### セキュリティチェックリスト
 

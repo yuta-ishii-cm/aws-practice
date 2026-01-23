@@ -1,4 +1,4 @@
-# 課題29: AgriTech株式会社のセンサーデータ集計・異常検知レポート自動生成システム構築
+# 課題29: センサーデータ集計・異常検知レポート自動生成システム構築
 
 **難易度: 🟡 中級**
 
@@ -16,15 +16,19 @@
 
 ---
 
-## シナリオ
+## 2. ビジネスシナリオ
 
-### 企業プロフィール
-
-**AgriTech株式会社**は、スマート農業ソリューションを提供するアグリテックスタートアップです。
+### 企業プロファイル: 〇〇株式会社
 
 | 項目 | 内容 |
 |------|------|
-| 業種 | アグリテック（スマート農業） |
+| **企業名** | 〇〇株式会社 |
+| **業種** | アグリテック（スマート農業） |
+
+〇〇株式会社は、スマート農業ソリューションを提供するアグリテックスタートアップです。
+
+| 項目 | 内容 |
+|------|------|
 | 設立 | 2018年 |
 | 従業員数 | 45名 |
 | 契約農家数 | 500件 |
@@ -79,7 +83,7 @@
 
 ---
 
-## 達成目標
+## 学習目標
 
 この演習で習得できるスキル：
 
@@ -111,19 +115,9 @@
 - 時系列データの分析パターン
 - IoTデータ基盤の構築
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| ETL | Glue | Dataflow / Dataproc |
-| データウェアハウス | Athena / Redshift | BigQuery |
-| データカタログ | Glue Data Catalog | Data Catalog |
-| ワークフロー | Step Functions | Cloud Workflows / Composer |
-| ストレージ | S3 | Cloud Storage |
-
 ---
 
-## 使用するAWSサービス
+## 3. 使用するAWSサービス
 
 ### メインサービス
 
@@ -147,7 +141,7 @@
 
 ---
 
-## 前提条件
+## 4. 前提条件
 
 ### 必要な事前知識
 
@@ -172,50 +166,72 @@
 
 ---
 
-## アーキテクチャ概要
+## 5. アーキテクチャ設計
 
 ### システム全体構成
 
 ```mermaid
-flowchart TB
-    subgraph DataIngestion["データ収集"]
-        IoTSensor["IoTセンサー"]
-        IoTCore["IoT Core"]
-        S3Raw["S3: Raw Data"]
-    end
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
-    EventBridge["EventBridge<br/>（毎日 AM 1:00）"]
+    group ingestion(server)[Data Ingestion] in aws
+    service iot_sensor(internet)[IoT Sensors] in ingestion
+    service iot_core(server)[IoT Core] in ingestion
+    service s3_raw(logos:aws-s3)[S3 Raw Data] in ingestion
 
-    subgraph StepFunctions["Step Functions: DailyETLWorkflow"]
-        Step1["[1] Glue Job: データ変換<br/>Raw → Processed (Parquet変換)"]
-        Step2["[2] Athena: 異常検知クエリ<br/>閾値超過データ抽出"]
-        Step3["[3] Lambda: 異常アラート送信<br/>SNS経由で農家に通知"]
-        Step4["[4] Athena: 日次集計クエリ<br/>センサーごとの統計"]
-        Step5["[5] Lambda: レポート生成<br/>S3にレポート出力"]
-        Step6["[6] Lambda: レポート配信<br/>SES経由でメール送信"]
-    end
+    group orchestration(server)[Orchestration] in aws
+    service eventbridge(server)[EventBridge] in orchestration
+    service sfn(logos:aws-step-functions)[Step Functions] in orchestration
 
-    subgraph DataLakeStructure["データレイク構成"]
-        Raw["Raw:<br/>s3://bucket/raw/year=YYYY/month=MM/day=DD/"]
-        Processed["Processed:<br/>s3://bucket/processed/year=YYYY/month=MM/day=DD/"]
-        Curated["Curated:<br/>s3://bucket/curated/daily_stats/"]
-        Reports["Reports:<br/>s3://bucket/reports/YYYY-MM-DD/"]
-    end
+    group processing(server)[Processing Pipeline] in aws
+    service glue(server)[Glue ETL] in processing
+    service athena_anomaly(server)[Athena Anomaly] in processing
+    service lambda_alert(logos:aws-lambda)[Lambda Alert] in processing
+    service athena_stats(server)[Athena Stats] in processing
+    service lambda_report(logos:aws-lambda)[Lambda Report] in processing
+    service lambda_send(logos:aws-lambda)[Lambda Send] in processing
 
-    IoTSensor --> IoTCore
-    IoTCore --> S3Raw
-    S3Raw --> EventBridge
-    EventBridge --> StepFunctions
-    Step1 --> Step2
-    Step2 --> Step3
-    Step3 --> Step4
-    Step4 --> Step5
-    Step5 --> Step6
+    group datalake(server)[Data Lake] in aws
+    service s3_processed(logos:aws-s3)[S3 Processed] in datalake
+    service s3_curated(logos:aws-s3)[S3 Curated] in datalake
+    service s3_reports(logos:aws-s3)[S3 Reports] in datalake
 
-    Step1 -.-> Processed
-    Step4 -.-> Curated
-    Step5 -.-> Reports
+    group notification(server)[Notification] in aws
+    service sns(logos:aws-sns)[SNS Alert] in notification
+    service ses(server)[SES Email] in notification
+
+    iot_sensor:R --> L:iot_core
+    iot_core:R --> L:s3_raw
+    s3_raw:B --> T:eventbridge
+    eventbridge:R --> L:sfn
+    sfn:B --> T:glue
+    glue:R --> L:athena_anomaly
+    athena_anomaly:R --> L:lambda_alert
+    lambda_alert:B --> T:athena_stats
+    athena_stats:R --> L:lambda_report
+    lambda_report:R --> L:lambda_send
+    glue:B --> T:s3_processed
+    athena_stats:B --> T:s3_curated
+    lambda_report:B --> T:s3_reports
+    lambda_alert:B --> T:sns
+    lambda_send:B --> T:ses
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **IoT Sensors** | IoTセンサー（データ収集元） |
+| **IoT Core** | IoTデータの受信 |
+| **S3 Raw Data** | 生データの保存 |
+| **EventBridge** | 日次スケジュール（AM 1:00） |
+| **Step Functions** | ETLワークフロー管理 |
+| **Glue ETL** | データ変換処理 |
+| **Athena Anomaly** | 異常検知クエリ |
+| **Lambda Alert** | アラート送信処理 |
+| **Athena Stats** | 日次集計クエリ |
+| **Lambda Report** | レポート生成 |
+| **Lambda Send** | レポート配信 |
+| **S3 Processed/Curated/Reports** | 各段階のデータ保存 |
+| **SNS Alert / SES Email** | 通知配信 |
 
 ### 処理フロー
 
@@ -230,7 +246,7 @@ flowchart TB
 
 ---
 
-## トラブルシューティング課題
+## 6. トラブルシューティング演習
 
 ### 問題1: Glue Jobが失敗
 
@@ -305,7 +321,7 @@ Glue Jobの完了を待てない
 
 ---
 
-## 設計の考察ポイント
+## 7. 設計課題
 
 ### 1. データレイクのレイヤー設計
 
@@ -344,7 +360,7 @@ Glue Jobの完了を待てない
 
 ---
 
-## 発展課題（オプション）
+## 8. 発展課題
 
 ### 1. リアルタイム異常検知
 - Kinesis Data Streams + Lambda
@@ -373,7 +389,7 @@ Glue Jobの完了を待てない
 
 ---
 
-## 想定コストと削減方法
+## 9. コスト見積もり
 
 ### 月額概算コスト（日次10GB処理想定）
 
@@ -417,19 +433,19 @@ Glue Jobの完了を待てない
 aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
 
 # Glue
-aws glue delete-job --job-name agritech-transform-sensor-data
-aws glue delete-table --database-name agritech_sensor_data --name raw_sensor_data
-aws glue delete-table --database-name agritech_sensor_data --name processed_sensor_data
-aws glue delete-database --name agritech_sensor_data
+aws glue delete-job --job-name sensor-app-transform-sensor-data
+aws glue delete-table --database-name sensor-app_sensor_data --name raw_sensor_data
+aws glue delete-table --database-name sensor-app_sensor_data --name processed_sensor_data
+aws glue delete-database --name sensor-app_sensor_data
 
 # Lambda
-aws lambda delete-function --function-name agritech-anomaly-alert
-aws lambda delete-function --function-name agritech-generate-report
-aws lambda delete-function --function-name agritech-send-report
+aws lambda delete-function --function-name sensor-app-anomaly-alert
+aws lambda delete-function --function-name sensor-app-generate-report
+aws lambda delete-function --function-name sensor-app-send-report
 
 # S3（データ削除後）
-aws s3 rm s3://agritech-data-lake-dev-${ACCOUNT_ID} --recursive
-aws s3 rb s3://agritech-data-lake-dev-${ACCOUNT_ID}
+aws s3 rm s3://sensor-app-data-lake-dev-${ACCOUNT_ID} --recursive
+aws s3 rb s3://sensor-app-data-lake-dev-${ACCOUNT_ID}
 
 # SNS/SES
 aws sns delete-topic --topic-arn arn:aws:sns:...
@@ -440,7 +456,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 学習のポイント
+## 10. 学習のまとめ
 
 ### 1. データレイクアーキテクチャの基本
 Raw → Processed → Curated の3層構造で、データの鮮度・品質・用途に応じた管理を行う。各層で適切な形式（JSON, Parquet）を選択。

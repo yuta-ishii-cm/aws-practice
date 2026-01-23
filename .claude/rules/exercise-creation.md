@@ -33,29 +33,67 @@ exercises フォルダ内のマークダウンファイル作成・編集時に�
 
 AWS構成図は **Mermaid architecture-beta** 記法を使用する。
 
+**重要な制約:**
+- **ラベルは英語のみ**（日本語は非サポート、パースエラーになる）
+- 図の直下に日本語の役割説明テーブルを追加する
+
 ```mermaid
 architecture-beta
     group aws(cloud)[AWS Cloud]
 
     group api_layer(server)[API Layer] in aws
-    group data_layer(database)[Data Layer] in aws
+    group data_layer(server)[Data Layer] in aws
 
     service user(internet)[User]
-    service apigw(server)[API Gateway] in api_layer
-    service lambda(server)[Lambda] in api_layer
-    service dynamodb(database)[DynamoDB] in data_layer
+    service apigw(logos:aws-api-gateway)[API Gateway] in api_layer
+    service lambda(logos:aws-lambda)[Lambda] in api_layer
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in data_layer
 
     user:R --> L:apigw
     apigw:B --> T:lambda
     lambda:R --> L:dynamodb
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | ユーザー（APIを呼び出す） |
+| **API Gateway** | APIエンドポイント |
+| **Lambda** | ビジネスロジック実行 |
+| **DynamoDB** | データ永続化 |
+
 **使用可能なアイコン種別:**
-- `cloud` - クラウド
-- `server` - サーバー/コンピューティング
-- `database` - データベース
-- `disk` - ストレージ
-- `internet` - インターネット/ユーザー
+
+| アイコン | 用途 |
+|----------|------|
+| `cloud` | クラウド全体のグループ |
+| `server` | サーバー/コンピューティング |
+| `database` | データベース |
+| `disk` | ストレージ |
+| `internet` | インターネット/ユーザー |
+
+**AWSサービスアイコン（logos パック）:**
+
+主要なAWSアイコンは `logos:aws-xxx` 形式で使用可能：
+
+| アイコン名 | サービス |
+|------------|----------|
+| `logos:aws-lambda` | Lambda |
+| `logos:aws-api-gateway` | API Gateway |
+| `logos:aws-s3` | S3 |
+| `logos:aws-dynamodb` | DynamoDB |
+| `logos:aws-cloudwatch` | CloudWatch |
+| `logos:aws-sns` | SNS |
+| `logos:aws-sqs` | SQS |
+| `logos:aws-ec2` | EC2 |
+| `logos:aws-rds` | RDS |
+| `logos:aws-cognito` | Cognito |
+| `logos:aws-cloudfront` | CloudFront |
+| `logos:aws-ecs` | ECS |
+| `logos:aws-eks` | EKS |
+| `logos:aws-kinesis` | Kinesis |
+| `logos:aws-step-functions` | Step Functions |
+
+アイコンがない場合は汎用アイコン（`server`, `database` 等）を使用する。
 
 ### その他の図（フローチャート、シーケンス図など）
 

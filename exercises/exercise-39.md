@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -16,17 +16,17 @@
 
 ---
 
-## 2. ビジネスシナリオ
+## シナリオ
 
 ### 企業プロファイル
-- **企業名**: AdMetrics株式会社
+- **企業名**: 〇〇株式会社
 - **業種**: マーケティングSaaS（広告効果測定・分析）
 - **規模**: 従業員80名、エンジニア20名
 - **顧客数**: 500社、月間データ処理量50TB
 - **現状インフラ**: AWS（月額コスト300万円）
 
 ### 現状の課題
-AdMetrics株式会社は急成長に伴いAWSコストが急増しています。
+〇〇株式会社は急成長に伴いAWSコストが急増しています。
 CFO から「コストを30%削減しつつ、パフォーマンスを維持せよ」という指示が出ました。
 
 1. **コスト可視性の欠如**
@@ -45,20 +45,17 @@ CFO から「コストを30%削減しつつ、パフォーマンスを維持せ�
    - Spot インスタンス未活用
 
 ### 現状のAWSコスト内訳
-```
-月額コスト: 300万円（$20,000相当）
 
-┌────────────────────────────────────────┐
-│           コスト内訳                    │
-├────────────────────────────────────────┤
-│ EC2 (コンピュート)      : 120万円 (40%) │
-│ RDS (データベース)      :  60万円 (20%) │
-│ S3 (ストレージ)         :  45万円 (15%) │
-│ Data Transfer           :  30万円 (10%) │
-│ ElastiCache             :  15万円  (5%) │
-│ その他                  :  30万円 (10%) │
-└────────────────────────────────────────┘
-```
+**月額コスト: 300万円（$20,000相当）**
+
+| カテゴリ | コスト | 割合 |
+|----------|--------|------|
+| EC2 (コンピュート) | 120万円 | 40% |
+| RDS (データベース) | 60万円 | 20% |
+| S3 (ストレージ) | 45万円 | 15% |
+| Data Transfer | 30万円 | 10% |
+| ElastiCache | 15万円 | 5% |
+| その他 | 30万円 | 10% |
 
 ### ビジネス要件
 ```
@@ -86,7 +83,7 @@ CFO から「コストを30%削減しつつ、パフォーマンスを維持せ�
 
 ---
 
-## 3. 学習目標
+## 達成目標
 
 ### 本課題で習得するスキル
 
@@ -107,33 +104,9 @@ CFO から「コストを30%削減しつつ、パフォーマンスを維持せ�
    - 自動停止・削除の実装
 ```
 
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Billing Reports → Cost Explorer
-- Committed Use Discounts → Reserved Instances / Savings Plans
-- Preemptible VMs → Spot Instances
-- Recommender → Compute Optimizer / Trusted Advisor
-- Budget Alerts → AWS Budgets
-
-主な違い:
-1. AWS は購入オプションが豊富
-   - Reserved Instances（1年/3年、全額/一部前払い）
-   - Savings Plans（Compute/EC2/SageMaker）
-   - Spot Instances（中断あり、最大90%割引）
-
-2. タグベースのコスト配分が詳細
-   - Cost Allocation Tags で部門別管理
-   - Cost Categories でグルーピング
-
-3. Cost and Usage Report (CUR) で詳細分析
-   - S3 + Athena で SQL クエリ可能
-   - QuickSight で可視化
-```
-
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### メインサービス
 | サービス | 役割 | 使用機能 |
@@ -158,24 +131,24 @@ GCP → AWS マッピング:
 
 ```mermaid
 architecture-beta
-    group cost_platform(cloud)[AdMetrics コスト最適化基盤]
+    group cost_platform(cloud)[Cost Optimization Platform]
 
-    group visibility(server)[コスト可視化層] in cost_platform
-    group optimization(server)[コスト最適化層] in cost_platform
-    group governance(server)[ガバナンス・自動化層] in cost_platform
+    group visibility(server)[Cost Visibility] in cost_platform
+    group optimization(server)[Cost Optimization] in cost_platform
+    group governance(server)[Governance Automation] in cost_platform
 
-    service cost_explorer(server)[Cost Explorer 分析・予測・RI推奨] in visibility
-    service cur(database)[CUR S3/Athena 詳細データ] in visibility
-    service quicksight(server)[QuickSight Dashboard] in visibility
+    service cost_explorer(server)[Cost Explorer] in visibility
+    service cur(database)[CUR S3/Athena] in visibility
+    service quicksight(server)[QuickSight] in visibility
 
-    service compute_opt(server)[Compute Optimizer EC2・Lambda・EBS] in optimization
-    service trusted_adv(server)[Trusted Advisor 未使用リソース検出] in optimization
-    service savings_plans(server)[Savings Plans Compute/EC2 SP] in optimization
+    service compute_opt(server)[Compute Optimizer] in optimization
+    service trusted_adv(server)[Trusted Advisor] in optimization
+    service savings_plans(server)[Savings Plans] in optimization
 
-    service budgets(server)[AWS Budgets 予算・アラート] in governance
-    service eventbridge(server)[EventBridge Scheduler] in governance
-    service lambda(server)[Lambda Functions 自動停止・削除] in governance
-    service sns(server)[SNS 通知配信] in governance
+    service budgets(server)[AWS Budgets] in governance
+    service eventbridge(server)[EventBridge] in governance
+    service lambda(logos:aws-lambda)[Lambda] in governance
+    service sns(logos:aws-sns)[SNS] in governance
     service slack(internet)[Slack] in governance
     service email(internet)[Email] in governance
     service pagerduty(internet)[PagerDuty] in governance
@@ -188,9 +161,23 @@ architecture-beta
     sns:B --> T:pagerduty
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **Cost Explorer** | コスト分析・予測・RI推奨 |
+| **CUR S3/Athena** | コスト詳細データ |
+| **QuickSight** | ダッシュボード |
+| **Compute Optimizer** | EC2・Lambda・EBS最適化推奨 |
+| **Trusted Advisor** | 未使用リソース検出 |
+| **Savings Plans** | Compute/EC2 Savings Plans |
+| **AWS Budgets** | 予算・アラート設定 |
+| **EventBridge** | スケジュール実行 |
+| **Lambda** | 自動停止・削除処理 |
+| **SNS** | 通知配信 |
+| **Slack/Email/PagerDuty** | 通知先 |
+
 ---
 
-## 5. 前提条件と事前準備
+## 前提条件
 
 ### 必要な環境
 ```bash
@@ -253,7 +240,7 @@ aws ce list-cost-allocation-tags \
 
 ---
 
-## 6. アーキテクチャ設計
+## アーキテクチャ設計
 
 ### コスト配分タグ設計
 ```yaml
@@ -372,7 +359,7 @@ optimization_targets:
 
 ---
 
-## 8. トラブルシューティング課題
+## トラブルシューティング課題
 
 ### 課題1: Cost Explorer のデータが表示されない
 
@@ -598,12 +585,12 @@ aws budgets create-budget \
 
 ---
 
-## 9. 設計課題
+## 設計課題
 
 ### 設計課題: エンタープライズ規模のコストガバナンス体制
 
 **シナリオ**:
-AdMetrics社は急成長に伴い、AWS アカウントが10個に増加しました。
+〇〇社は急成長に伴い、AWS アカウントが10個に増加しました。
 全社的なコストガバナンス体制を設計してください。
 
 **現状**:
@@ -803,7 +790,7 @@ budget_hierarchy:
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
 ### 発展課題1: FinOps プラクティスの導入（難易度：上級）
 
@@ -837,7 +824,7 @@ AWS + GCP のマルチクラウド環境でのコスト統合管理ダッシュ�
 
 ---
 
-## 11. 振り返りと次のステップ
+## 振り返りと次のステップ
 
 ### 学習のまとめ
 
@@ -849,23 +836,7 @@ AWS + GCP のマルチクラウド環境でのコスト統合管理ダッシュ�
 □ AWS Budgets によるコスト管理とアラート
 □ コスト配分タグの設計と実装
 □ 自動化によるコスト最適化
-
-GCP との主な違い:
-- AWS は購入オプションが豊富（RI, SP, Spot）
-- タグベースのコスト配分がより詳細
-- CUR による詳細なコストデータ分析が可能
-- Trusted Advisor は Business Support 以上で本領発揮
 ```
-
-### GCP経験者向けポイント
-
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| コスト分析 | Billing Reports | Cost Explorer | UIとクエリ方法が異なる |
-| コミットメント | CUD | RI / Savings Plans | AWSはより柔軟なオプション |
-| スポット | Preemptible/Spot VM | Spot Instances | 中断通知の仕組みが異なる |
-| 推奨 | Recommender | Compute Optimizer | カバー範囲が異なる |
-| 予算管理 | Budget Alerts | AWS Budgets | アクション機能がAWSは豊富 |
 
 ### 推奨される次のステップ
 
@@ -887,7 +858,7 @@ GCP との主な違い:
 
 ---
 
-## 12. 推定コストと注意事項
+## 推定コストと注意事項
 
 ### 本課題の推定コスト
 
@@ -909,7 +880,7 @@ GCP との主な違い:
 - AWSコスト: ~$5
 - 合計コスト: 約 $50（時間コスト含む）
 
-期待される効果（AdMetrics のケース）:
+期待される効果（〇〇 のケース）:
 - 月額削減額: 90万円（30%削減）
 - 年間削減額: 1,080万円
 - ROI: 21,600倍

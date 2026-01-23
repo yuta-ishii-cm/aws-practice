@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -16,13 +16,13 @@
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | ShopSmart株式会社 |
+| **企業名** | 〇〇株式会社 |
 | **業種** | 小売チェーン（総合スーパー） |
 | **従業員数** | 3,000名（本部100名、店舗2,900名） |
 | **店舗数** | 全国150店舗 |
@@ -33,7 +33,7 @@
 ### 現状の課題
 
 ```
-ShopSmart株式会社は全国展開する総合スーパーチェーンです。
+〇〇株式会社は全国展開する総合スーパーチェーンです。
 データ活用において以下の課題を抱えています：
 
 1. データの分散
@@ -69,7 +69,7 @@ ShopSmart株式会社は全国展開する総合スーパーチェーンです�
 
 ---
 
-## 3. 達成目標（ゴール）
+## 達成目標（ゴール）
 
 ### 主要な学習成果
 
@@ -109,7 +109,7 @@ ShopSmart株式会社は全国展開する総合スーパーチェーンです�
 
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### コア技術スタック
 
@@ -141,19 +141,9 @@ ShopSmart株式会社は全国展開する総合スーパーチェーンです�
   - AWS Glue Data Quality: データ品質監視
 ```
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| DWH | Redshift | BigQuery |
-| ETL | Glue | Dataflow / Dataproc |
-| 変換ツール | dbt (両対応) | dbt (両対応) |
-| BI | QuickSight | Looker |
-| スキーマ管理 | Glue Data Catalog | Data Catalog |
-
 ---
 
-## 5. 前提条件
+## 前提条件
 
 ### 技術要件
 
@@ -199,7 +189,7 @@ shopsmart-dwh/
 
 ---
 
-## 6. アーキテクチャ図
+## アーキテクチャ図
 
 ### 全体構成
 
@@ -207,26 +197,26 @@ shopsmart-dwh/
 architecture-beta
     group datasources(cloud)[Data Sources]
     group aws(cloud)[AWS Cloud]
-    group datalake(disk)[Data Lake] in aws
+    group datalake(server)[Data Lake] in aws
     group etl(server)[ETL Layer] in aws
-    group dwh(database)[Data Warehouse] in aws
+    group dwh(server)[Data Warehouse] in aws
     group bi(server)[BI Layer] in aws
 
-    service pos(server)[店舗POS システム] in datasources
-    service inventory_sys(server)[在庫管理 システム] in datasources
-    service customer_sys(server)[顧客管理 システム] in datasources
-    service external(server)[外部データ 天気・競合] in datasources
+    service pos(server)[POS System] in datasources
+    service inventory_sys(server)[Inventory System] in datasources
+    service customer_sys(server)[Customer System] in datasources
+    service external(server)[External Data] in datasources
 
-    service s3_raw(disk)[S3 Data Lake Raw Zone] in datalake
-    service glue_catalog(database)[Glue Data Catalog] in etl
+    service s3_raw(logos:aws-s3)[S3 Raw Zone] in datalake
+    service glue_catalog(server)[Glue Catalog] in etl
     service glue_etl(server)[Glue ETL] in etl
 
-    service redshift(database)[Redshift Serverless] in dwh
-    service staging(database)[Schema: staging] in dwh
-    service intermediate(database)[Schema: intermediate] in dwh
-    service marts(database)[Schema: marts] in dwh
+    service redshift(server)[Redshift Serverless] in dwh
+    service staging(database)[staging] in dwh
+    service intermediate(database)[intermediate] in dwh
+    service marts(database)[marts] in dwh
 
-    service quicksight(server)[Amazon QuickSight] in bi
+    service quicksight(server)[QuickSight] in bi
 
     pos:B --> T:s3_raw
     inventory_sys:B --> T:s3_raw
@@ -239,6 +229,19 @@ architecture-beta
     intermediate:B --> T:marts
     marts:B --> T:quicksight
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **POS System** | 店舗POSシステム |
+| **Inventory System** | 在庫管理システム |
+| **Customer System** | 顧客管理システム |
+| **External Data** | 外部データ（天気・競合情報） |
+| **S3 Raw Zone** | データレイク（生データ保存） |
+| **Glue ETL** | データ変換処理 |
+| **Glue Catalog** | データカタログ |
+| **Redshift Serverless** | データウェアハウス |
+| **staging/intermediate/marts** | dbtスキーマ構成 |
+| **QuickSight** | BIダッシュボード |
 
 **Redshift Serverless 設定:**
 - Workgroup: shopsmart-analytics
@@ -276,7 +279,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## トラブルシューティングチャレンジ
 
 ### Challenge 1: Redshiftクエリが遅い
 
@@ -466,7 +469,7 @@ FORMAT AS PARQUET;
 
 ---
 
-## 9. 設計考慮ポイント
+## 設計考慮ポイント
 
 ### データモデリング戦略
 
@@ -529,7 +532,7 @@ ANALYZE COMPRESSION marts.fct_sales;
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
 ### 上級チャレンジ1: 需要予測モデル統合
 
@@ -635,7 +638,7 @@ Data Contracts:
 
 ---
 
-## 11. コスト見積もり
+## コスト見積もり
 
 ### 月額コスト概算
 
@@ -671,7 +674,7 @@ Data Contracts:
 
 ---
 
-## 12. 学習のポイント
+## 学習のポイント
 
 ### 今回学んだこと
 
@@ -696,16 +699,6 @@ Data Contracts:
    □ Step Functionsでのオーケストレーション
    □ データ品質管理
 ```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (Redshift + dbt) | GCP (BigQuery + dbt) |
-|------|---------------------|---------------------|
-| 課金モデル | RPU時間課金 | スキャン量課金 |
-| パフォーマンス | 専用リソース | 自動スケール |
-| ETL | Glue | Dataflow |
-| 運用複雑さ | 中 | 低 |
-| カスタマイズ性 | 高 | 中 |
 
 ### 次のステップ
 

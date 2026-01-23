@@ -48,15 +48,15 @@ architecture-beta
     group monitoring(server)[Monitoring Layer] in aws
     group notification(server)[Notification] in aws
 
-    service user(internet)[予約ユーザー]
-    service apigw(server)[API Gateway 予約API] in api
-    service lambda(server)[Lambda 予約処理] in api
+    service user(internet)[User]
+    service apigw(logos:aws-api-gateway)[API Gateway] in api
+    service lambda(logos:aws-lambda)[Lambda] in api
     service cw_metrics(server)[CloudWatch Metrics] in monitoring
     service cw_alarms(server)[CloudWatch Alarms] in monitoring
     service cw_dashboard(server)[CloudWatch Dashboard] in monitoring
-    service sns(server)[SNS アラート通知] in notification
-    service email(internet)[メール通知]
-    service slack(internet)[Slack通知]
+    service sns(server)[SNS] in notification
+    service email(internet)[Email]
+    service slack(internet)[Slack]
 
     user:R --> L:apigw
     apigw:B --> T:lambda
@@ -68,6 +68,17 @@ architecture-beta
     sns:R --> L:email
     sns:R --> L:slack
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | 予約ユーザー（APIを呼び出す） |
+| **API Gateway** | 予約APIのエンドポイント |
+| **Lambda** | 予約処理を実行 |
+| **CloudWatch Metrics** | API Gateway/Lambdaのメトリクス収集 |
+| **CloudWatch Alarms** | 閾値監視・アラート発報 |
+| **CloudWatch Dashboard** | メトリクスの可視化 |
+| **SNS** | アラート通知の配信 |
+| **Email / Slack** | 通知の受信先 |
 
 ### 監視対象メトリクス
 

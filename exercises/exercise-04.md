@@ -43,21 +43,29 @@
 architecture-beta
     group aws(cloud)[AWS Cloud]
 
-    group billing(server)[Billing & Cost Management] in aws
+    group billing(server)[Billing and Cost Management] in aws
     group notification(server)[Notification] in aws
 
-    service budget(server)[AWS Budgets 月額予算] in billing
+    service budget(server)[AWS Budgets] in billing
     service anomaly(server)[Cost Anomaly Detection] in billing
     service explorer(server)[Cost Explorer] in billing
-    service sns(server)[SNS コスト通知] in notification
-    service email(internet)[メール通知]
-    service slack(internet)[Slack通知]
+    service sns(logos:aws-sns)[SNS] in notification
+    service email(internet)[Email]
+    service slack(internet)[Slack]
 
     budget:R --> L:sns
     anomaly:R --> L:sns
     sns:R --> L:email
     sns:R --> L:slack
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **AWS Budgets** | 月額予算の設定・監視 |
+| **Cost Anomaly Detection** | 異常なコストパターンの検出 |
+| **Cost Explorer** | コスト分析・可視化 |
+| **SNS** | コストアラートの配信 |
+| **Email / Slack** | 通知の受信先 |
 
 ### 通知フロー
 

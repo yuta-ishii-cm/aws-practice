@@ -1,14 +1,14 @@
-# 課題12: TalentBridge株式会社のAIマッチング非同期処理システム構築
+# 課題12: AIマッチング非同期処理システム構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | バッチ処理 / AI / 人材サービス |
 | 処理タイプ | 非同期 / イベント駆動 |
 | 使用IaC | CloudFormation |
@@ -20,7 +20,7 @@
 
 ### 企業プロフィール
 
-**TalentBridge株式会社**は、IT・Web業界に特化した人材紹介サービスを運営しています。
+**〇〇株式会社**は、IT・Web業界に特化した人材紹介サービスを運営しています。
 
 | 項目 | 内容 |
 |------|------|
@@ -172,32 +172,53 @@
 
 ---
 
-## アーキテクチャ概要
+## 最終構成図
 
-### システム全体構成
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
+    group batch(server)[Daily Batch] in aws
+    group realtime(server)[Realtime Processing] in aws
+    group data(server)[Data Layer] in aws
+    group notification(server)[Notification] in aws
+
+    service eventbridge(server)[EventBridge] in batch
+    service lambda_enqueue(logos:aws-lambda)[Lambda Enqueue] in batch
+    service sqs(logos:aws-sqs)[SQS Queue] in batch
+    service lambda_process(logos:aws-lambda)[Lambda Process] in batch
+
+    service lambda_newjob(logos:aws-lambda)[Lambda NewJob] in realtime
+
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in data
+    service bedrock(server)[Bedrock] in data
+
+    service sns(logos:aws-sns)[SNS] in notification
+    service user(internet)[User / CA]
+
+    eventbridge:R --> L:lambda_enqueue
+    lambda_enqueue:R --> L:sqs
+    sqs:B --> T:lambda_process
+    lambda_process:R --> L:dynamodb
+    lambda_process:R --> L:bedrock
+    lambda_process:B --> T:sns
+    lambda_newjob:R --> L:dynamodb
+    lambda_newjob:R --> L:bedrock
+    lambda_newjob:B --> T:sns
+    sns:R --> L:user
 ```
-[日次バッチ]
-    ↓ EventBridge（毎日 AM 2:00）
-[Lambda: EnqueueMatchingJobs]
-    ↓ 全求職者をキューに投入
-[SQS: MatchingQueue]
-    ↓ バッチサイズ10
-[Lambda: ProcessMatching] × N並列
-    ├── DynamoDB: 求職者情報取得
-    ├── DynamoDB: 求人一覧取得
-    ├── Bedrock: マッチングスコア算出
-    └── DynamoDB: マッチング結果保存
-    ↓ 高スコアマッチング
-[SNS: MatchingNotification]
-    ↓
-[求職者/キャリアアドバイザーに通知]
 
-[新着求人イベント]
-    ↓
-[Lambda: NewJobMatching]
-    └── リアルタイムマッチング
-```
+| コンポーネント | 役割 |
+|----------------|------|
+| **EventBridge** | 日次バッチのスケジュール起動 |
+| **Lambda Enqueue** | マッチングジョブをキューに登録 |
+| **SQS Queue** | マッチング処理キュー |
+| **Lambda Process** | マッチング処理（N並列） |
+| **Lambda NewJob** | 新着求人のリアルタイムマッチング |
+| **DynamoDB** | 求職者・求人・マッチング結果データ |
+| **Bedrock** | AI によるマッチングスコア算出 |
+| **SNS** | マッチング通知配信 |
+| **User / CA** | 求職者・キャリアアドバイザー（通知受信） |
 
 ### データフロー
 

@@ -1,6 +1,6 @@
 # 課題17: ニュースメディアのCMS基盤
 
-**難易度: 🟢 初級〜🟡 中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | コンテナ |
 | 処理タイプ | リアルタイム |
 | 使用IaC | Terraform |
@@ -83,7 +83,50 @@
 
 ---
 
-## 5. 前提条件
+## 5. 最終構成図
+
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group cdn(server)[CDN Layer] in aws
+    group app(server)[Application Layer] in aws
+    group data(server)[Data Layer] in aws
+
+    service user(internet)[User]
+    service cloudfront(logos:aws-cloudfront)[CloudFront] in cdn
+    service s3_static(logos:aws-s3)[S3 Static] in cdn
+    service waf(server)[WAF] in cdn
+
+    service alb(server)[ALB] in app
+    service ecs(logos:aws-ecs)[ECS Fargate] in app
+
+    service aurora(logos:aws-rds)[Aurora] in data
+    service redis(server)[ElastiCache] in data
+
+    user:R --> L:cloudfront
+    cloudfront:R --> L:s3_static
+    cloudfront:B --> T:waf
+    waf:B --> T:alb
+    alb:B --> T:ecs
+    ecs:R --> L:aurora
+    ecs:R --> L:redis
+```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | ユーザー（コンテンツにアクセス） |
+| **CloudFront** | CDN（コンテンツ配信・キャッシュ） |
+| **S3 Static** | 静的アセット（画像・CSS・JS）の保存 |
+| **WAF** | Webアプリケーションファイアウォール |
+| **ALB** | Application Load Balancer |
+| **ECS Fargate** | CMSアプリケーションのコンテナ実行 |
+| **Aurora** | Aurora Serverless v2（データベース） |
+| **ElastiCache** | Redis（セッション・キャッシュ） |
+
+---
+
+## 6. 前提条件
 
 ### 必要な知識
 - Dockerの基本操作
@@ -98,7 +141,7 @@
 
 ---
 
-## 6. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### Challenge 1: CloudFront でキャッシュが効かない
 **状況**: 記事ページが毎回オリジンに到達している
@@ -126,7 +169,7 @@
 
 ---
 
-## 7. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### ディスカッション1: CDN キャッシュ戦略
 **テーマ**: キャッシュTTLの最適化
@@ -157,7 +200,7 @@
 
 ---
 
-## 8. 発展課題
+## 9. 発展課題
 
 ### Advanced 1: Lambda@Edge による動的コンテンツ
 **課題**: エッジでのA/Bテストやパーソナライゼーション実装
@@ -170,7 +213,7 @@
 
 ---
 
-## 9. コスト見積もり
+## 10. 想定コストと削減方法
 
 ### 月額コスト概算
 
@@ -188,7 +231,7 @@
 
 ---
 
-## 10. 学習のポイント
+## 11. 学習のポイント
 
 ### 重要な概念の整理
 

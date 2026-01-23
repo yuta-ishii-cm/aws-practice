@@ -19,41 +19,22 @@
 ## 2. ビジネスシナリオ
 
 ### 企業プロファイル
-- **企業名**: TaskFlow株式会社
+- **企業名**: 〇〇株式会社
 - **業種**: プロジェクト管理SaaS
 - **規模**: 従業員100名、エンジニア30名
 - **現状**: 日本国内ユーザー5万人、海外展開開始
 - **展開計画**: 米国・欧州市場への進出
 
 ### 現状の課題
-TaskFlow株式会社は日本市場で成功を収め、米国・欧州への展開を計画しています。
+〇〇株式会社は日本市場で成功を収め、米国・欧州への展開を計画しています。
 しかし、現在の東京リージョン単一構成では以下の問題があります：
 
-```
-現状の問題点:
-┌─────────────────────────────────────────────────────────────────┐
-│                   現行システム構成（東京リージョンのみ）          │
-├─────────────────────────────────────────────────────────────────┤
-│ 1. レイテンシ問題                                               │
-│    - 米国からのアクセス: 200-300ms                              │
-│    - 欧州からのアクセス: 250-350ms                              │
-│    - リアルタイム協調編集に支障                                  │
-│                                                                  │
-│ 2. データレジデンシー要件                                       │
-│    - GDPR（EU）: EUユーザーのデータはEU内保存必須               │
-│    - 州法（米国）: 一部州でデータローカライゼーション要求        │
-│    - 契約要件: 大企業顧客からリージョン指定要求                  │
-│                                                                  │
-│ 3. 可用性リスク                                                 │
-│    - 東京リージョン障害時に全世界でサービス停止                  │
-│    - RPO/RTO が顧客SLA要件を満たさない                          │
-│    - DR サイトが未整備                                          │
-│                                                                  │
-│ 4. スケーラビリティ                                             │
-│    - 単一リージョンでのキャパシティ制限                          │
-│    - ピーク時のリソース競合                                      │
-└─────────────────────────────────────────────────────────────────┘
-```
+| 課題カテゴリ | 問題点 |
+|-------------|--------|
+| **レイテンシ問題** | 米国からのアクセス: 200-300ms、欧州からのアクセス: 250-350ms、リアルタイム協調編集に支障 |
+| **データレジデンシー要件** | GDPR（EU）: EUユーザーのデータはEU内保存必須、州法（米国）: 一部州でデータローカライゼーション要求、契約要件: 大企業顧客からリージョン指定要求 |
+| **可用性リスク** | 東京リージョン障害時に全世界でサービス停止、RPO/RTO が顧客SLA要件を満たさない、DR サイトが未整備 |
+| **スケーラビリティ** | 単一リージョンでのキャパシティ制限、ピーク時のリソース競合 |
 
 ### ビジネス要件
 ```
@@ -81,56 +62,40 @@ TaskFlow株式会社は日本市場で成功を収め、米国・欧州への展
 
 ---
 
-## 3. 学習目標
+## 3. 達成目標
 
-### 本課題で習得するスキル
+### 技術的な学習ポイント
 
-```
-1. マルチリージョン設計（理解度：詳細）
+1. **マルチリージョン設計**
    - Active-Active / Active-Passive 構成
    - グローバルロードバランシング
    - データレプリケーション戦略
 
-2. グローバルサービス活用（理解度：実装）
+2. **グローバルサービス活用**
    - Route 53 ジオロケーション/レイテンシールーティング
    - CloudFront グローバル配信
    - Global Accelerator
    - DynamoDB Global Tables
 
-3. データレジデンシー対応（理解度：実装）
+3. **データレジデンシー対応**
    - リージョン別データ分離
    - GDPR 準拠アーキテクチャ
    - データ主権の考慮
 
-4. AWS CDK（理解度：実装）
+4. **AWS CDK**
    - マルチリージョンスタック
    - クロスリージョン参照
    - 環境別デプロイ
-```
 
-### GCPエンジニア向け補足
-```
-GCP → AWS マッピング:
-- Cloud DNS → Route 53
-- Cloud CDN → CloudFront
-- Global Load Balancer → Global Accelerator / CloudFront
-- Cloud Spanner → DynamoDB Global Tables
-- Cloud Interconnect → Direct Connect
+### 実務で活かせる知識
 
-主な違い:
-1. AWS Global Accelerator: Anycast IP で最適なエッジへルーティング
-   （GCPのグローバルLBに近いが、TCP/UDP対応）
-
-2. DynamoDB Global Tables: 自動マルチリージョンレプリケーション
-   （Spannerより設定が簡単だが、強整合性は単一リージョン内のみ）
-
-3. Route 53: 多様なルーティングポリシー
-   （ジオロケーション、レイテンシー、加重など）
-```
+- グローバル展開時のアーキテクチャ設計判断
+- データレジデンシー要件への対応パターン
+- マルチリージョン構成のコスト最適化
 
 ---
 
-## 4. 使用するAWSサービス
+## 4. 学習するAWSサービス
 
 ### メインサービス
 | サービス | 役割 | 使用機能 |
@@ -153,34 +118,34 @@ GCP → AWS マッピング:
 
 ```mermaid
 architecture-beta
-    group global(cloud)[TaskFlow グローバルアーキテクチャ]
+    group global(cloud)[TaskFlow Global Architecture]
 
     group tokyo(cloud)[ap-northeast-1 Tokyo] in global
     group virginia(cloud)[us-east-1 Virginia] in global
     group ireland(cloud)[eu-west-1 Ireland] in global
     group global_data(database)[Global Data Layer] in global
 
-    service route53(server)[Route 53 Geolocation + Latency Based] in global
+    service route53(server)[Route 53 Geo/Latency] in global
 
-    service cf_tokyo(server)[CloudFront] in tokyo
+    service cf_tokyo(logos:aws-cloudfront)[CloudFront] in tokyo
     service alb_tokyo(server)[ALB] in tokyo
-    service ecs_tokyo(server)[ECS Fargate API/Web] in tokyo
+    service ecs_tokyo(logos:aws-ecs)[ECS Fargate] in tokyo
     service aurora_tokyo(database)[Aurora Primary] in tokyo
-    service cache_tokyo(database)[ElastiCache Global Store] in tokyo
+    service cache_tokyo(database)[ElastiCache] in tokyo
 
-    service cf_virginia(server)[CloudFront] in virginia
+    service cf_virginia(logos:aws-cloudfront)[CloudFront] in virginia
     service alb_virginia(server)[ALB] in virginia
-    service ecs_virginia(server)[ECS Fargate API/Web] in virginia
+    service ecs_virginia(logos:aws-ecs)[ECS Fargate] in virginia
     service aurora_virginia(database)[Aurora Replica] in virginia
-    service cache_virginia(database)[ElastiCache Global Store] in virginia
+    service cache_virginia(database)[ElastiCache] in virginia
 
-    service cf_ireland(server)[CloudFront] in ireland
+    service cf_ireland(logos:aws-cloudfront)[CloudFront] in ireland
     service alb_ireland(server)[ALB] in ireland
-    service ecs_ireland(server)[ECS Fargate API/Web] in ireland
+    service ecs_ireland(logos:aws-ecs)[ECS Fargate] in ireland
     service aurora_ireland(database)[Aurora Replica] in ireland
-    service cache_ireland(database)[ElastiCache Global Store] in ireland
+    service cache_ireland(database)[ElastiCache] in ireland
 
-    service dynamodb_global(database)[DynamoDB Global Tables] in global_data
+    service dynamodb_global(logos:aws-dynamodb)[DynamoDB Global Tables] in global_data
 
     route53:B --> T:cf_tokyo
     route53:B --> T:cf_virginia
@@ -197,6 +162,17 @@ architecture-beta
     aurora_tokyo:R --> L:aurora_virginia
     aurora_virginia:R --> L:aurora_ireland
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Route 53 Geo/Latency** | ジオロケーション/レイテンシベースのDNSルーティング |
+| **CloudFront** | 各リージョンのCDN・エッジ配信 |
+| **ALB** | リージョン内ロードバランシング |
+| **ECS Fargate** | API/Webアプリケーション実行 |
+| **Aurora Primary** | 東京リージョンのプライマリDB |
+| **Aurora Replica** | 米国/欧州リージョンのリードレプリカ |
+| **ElastiCache** | リージョナルキャッシュ（Global Datastore） |
+| **DynamoDB Global Tables** | マルチリージョン同期データ（セッション等） |
 
 ---
 
@@ -386,7 +362,7 @@ data_residency:
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### 課題1: リージョン間レプリケーション遅延
 
@@ -633,12 +609,12 @@ const euUserDataTable = new dynamodb.Table(this, 'EUUserData', {
 
 ---
 
-## 9. 設計課題
+## 8. 設計課題
 
 ### 設計課題: Active-Active から Active-Passive への切り替え戦略
 
 **シナリオ**:
-TaskFlow社はコスト削減のため、一部の時間帯で Active-Passive 構成に切り替えることを検討しています。以下の要件を満たす設計を行ってください。
+〇〇株式会社はコスト削減のため、一部の時間帯で Active-Passive 構成に切り替えることを検討しています。以下の要件を満たす設計を行ってください。
 
 **要件**:
 ```
@@ -838,7 +814,7 @@ def emergency_activate_all():
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### 発展課題1: Global Accelerator の導入（難易度：中級）
 
@@ -864,32 +840,21 @@ AWS Fault Injection Simulator を使用して、
 
 ---
 
-## 11. 振り返りと次のステップ
+## 10. 学習のポイント
 
 ### 学習のまとめ
 
-```
 本課題で学んだこと:
-□ マルチリージョンアーキテクチャの設計パターン
-□ Route 53 のルーティングポリシー
-□ DynamoDB Global Tables
-□ Aurora Global Database
-□ データレジデンシー・GDPR 対応
-□ AWS CDK でのマルチリージョンデプロイ
-```
-
-### GCP経験者向けポイント
-
-| 観点 | GCP | AWS | 移行時の注意 |
-|------|-----|-----|-------------|
-| グローバルLB | Global HTTP(S) LB | CloudFront + ALB | AWS は CDN とLB が分離 |
-| DNS | Cloud DNS | Route 53 | ルーティングポリシーが豊富 |
-| グローバルDB | Spanner | DynamoDB Global Tables | 整合性モデルが異なる |
-| リージョン間接続 | VPC Peering | Transit Gateway | AWS は Transit Gateway 推奨 |
+- マルチリージョンアーキテクチャの設計パターン
+- Route 53 のルーティングポリシー
+- DynamoDB Global Tables
+- Aurora Global Database
+- データレジデンシー・GDPR 対応
+- AWS CDK でのマルチリージョンデプロイ
 
 ---
 
-## 12. 推定コストと注意事項
+## 11. 推定コストと注意事項
 
 ### 本課題の推定コスト（3リージョン構成）
 

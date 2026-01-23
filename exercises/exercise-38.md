@@ -46,39 +46,39 @@ BtoB SaaS「〇〇株式会社」のマルチテナント認証・認可シス�
 
 ```mermaid
 architecture-beta
-    group teamhub(cloud)[TeamHub マルチテナント認証アーキテクチャ]
+    group teamhub(cloud)[TeamHub Multi-tenant Auth]
 
     group tenants(cloud)[Tenants] in teamhub
     group cognito(server)[Amazon Cognito] in teamhub
     group triggers(server)[Lambda Triggers] in teamhub
     group api(server)[API Layer] in teamhub
     group backend(server)[Backend Services] in teamhub
-    group data(database)[Data Layer] in teamhub
+    group data(server)[Data Layer] in teamhub
     group portal(server)[Management Portal] in teamhub
 
-    service tenant_a(internet)[Tenant A Users] in tenants
-    service tenant_b(internet)[Tenant B Users] in tenants
-    service tenant_c(internet)[Tenant C Users] in tenants
+    service tenant_a(internet)[Tenant A] in tenants
+    service tenant_b(internet)[Tenant B] in tenants
+    service tenant_c(internet)[Tenant C] in tenants
 
-    service userpool(server)[Cognito User Pool] in cognito
+    service userpool(logos:aws-cognito)[User Pool] in cognito
 
-    service pre_signup(server)[Pre-SignUp Trigger] in triggers
-    service post_auth(server)[Post-Auth Trigger] in triggers
-    service pre_token(server)[Pre-Token Generation] in triggers
+    service pre_signup(logos:aws-lambda)[Pre-SignUp] in triggers
+    service post_auth(logos:aws-lambda)[Post-Auth] in triggers
+    service pre_token(logos:aws-lambda)[Pre-Token] in triggers
 
-    service apigw(server)[API Gateway] in api
-    service authorizer(server)[Lambda Authorizer JWT RBAC] in api
+    service apigw(logos:aws-api-gateway)[API Gateway] in api
+    service authorizer(logos:aws-lambda)[Authorizer] in api
 
-    service project_svc(server)[Project Service Lambda] in backend
-    service task_svc(server)[Task Service Lambda] in backend
-    service team_svc(server)[Team Service Lambda] in backend
+    service project_svc(logos:aws-lambda)[Project Svc] in backend
+    service task_svc(logos:aws-lambda)[Task Svc] in backend
+    service team_svc(logos:aws-lambda)[Team Svc] in backend
 
-    service dynamodb(database)[DynamoDB Single Table] in data
-    service tenant_meta(database)[Tenant Metadata Table] in data
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in data
+    service tenant_meta(logos:aws-dynamodb)[Tenant Meta] in data
 
-    service admin_ui(server)[Tenant Admin UI] in portal
-    service user_mgmt(server)[User Management] in portal
-    service usage_dash(server)[Usage Dashboard] in portal
+    service admin_ui(server)[Admin UI] in portal
+    service user_mgmt(server)[User Mgmt] in portal
+    service usage_dash(server)[Usage Dash] in portal
 
     tenant_a:B --> T:userpool
     tenant_b:B --> T:userpool
@@ -94,6 +94,18 @@ architecture-beta
     task_svc:B --> T:dynamodb
     team_svc:B --> T:dynamodb
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Tenant A/B/C** | テナントユーザー |
+| **User Pool** | Cognito ユーザープール |
+| **Pre-SignUp/Post-Auth/Pre-Token** | Lambda トリガー |
+| **API Gateway** | APIエンドポイント |
+| **Authorizer** | JWT検証・RBAC認可 |
+| **Project/Task/Team Svc** | バックエンドサービス |
+| **DynamoDB** | シングルテーブル設計 |
+| **Tenant Meta** | テナントメタデータ |
+| **Admin UI/User Mgmt/Usage Dash** | 管理ポータル |
 
 **Custom Attributes:** tenant_id (必須), tenant_role (admin/manager/member), tenant_tier (free/standard/enterprise)
 
@@ -124,20 +136,9 @@ flowchart TB
 
 ---
 
-## 3. 前提知識
+## 前提知識
 
-### 3.1 マルチテナントアーキテクチャ
-
-GCPでのマルチテナント経験がある方向けの比較：
-
-| 観点 | GCP | AWS |
-|------|-----|-----|
-| 認証基盤 | Firebase Authentication | Cognito User Pool |
-| カスタムクレーム | Custom Claims | Custom Attributes + Pre Token Generation |
-| テナント分離 | Identity Platform Multi-tenancy | Cognito + Custom Lambda |
-| RBAC | Custom Claims based | Groups + Custom Attributes |
-
-### 3.2 テナント分離パターン
+### テナント分離パターン
 
 ```mermaid
 flowchart TB
@@ -650,18 +651,7 @@ export const acceptInviteHandler = async (event: APIGatewayProxyEvent): Promise<
 
 ---
 
-## 10. 参考情報
-
-### GCPとの比較まとめ
-
-| 機能 | GCP | AWS |
-|------|-----|-----|
-| ユーザー認証 | Firebase Auth / Identity Platform | Cognito User Pool |
-| マルチテナント | Identity Platform Multi-tenancy | Cognito + Custom Implementation |
-| カスタムクレーム | Firebase Admin SDK | Pre-Token Generation Trigger |
-| SAML/OIDC | Identity Platform | Cognito Identity Provider |
-| 認可 | Cloud IAM + Custom | Lambda Authorizer + Custom |
-| SSO | Cloud Identity | IAM Identity Center |
+## 参考情報
 
 ### セキュリティチェックリスト
 

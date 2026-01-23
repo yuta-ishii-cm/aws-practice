@@ -49,19 +49,19 @@ architecture-beta
 
     group edge(server)[Edge Layer] in aws
     group api(server)[API Layer] in aws
-    group data(database)[Data Layer] in aws
+    group data(server)[Data Layer] in aws
     group async(server)[Async Processing] in aws
 
     service user(internet)[User]
-    service cloudfront(server)[CloudFront + WAF] in edge
-    service apigw(server)[API Gateway] in api
-    service lambda_hotel(server)[Lambda HotelSearch] in api
-    service lambda_flight(server)[Lambda FlightSearch] in api
-    service lambda_booking(server)[Lambda CreateBooking] in api
-    service dynamo_cache(database)[DynamoDB SearchCache] in data
-    service dynamo_booking(database)[DynamoDB Bookings] in data
-    service sqs(server)[SQS] in async
-    service lambda_confirm(server)[Lambda SendConfirmation] in async
+    service cloudfront(logos:aws-cloudfront)[CloudFront] in edge
+    service apigw(logos:aws-api-gateway)[API Gateway] in api
+    service lambda_hotel(logos:aws-lambda)[Lambda Hotel] in api
+    service lambda_flight(logos:aws-lambda)[Lambda Flight] in api
+    service lambda_booking(logos:aws-lambda)[Lambda Booking] in api
+    service dynamo_cache(logos:aws-dynamodb)[DynamoDB Cache] in data
+    service dynamo_booking(logos:aws-dynamodb)[DynamoDB Bookings] in data
+    service sqs(logos:aws-sqs)[SQS] in async
+    service lambda_confirm(logos:aws-lambda)[Lambda Confirm] in async
     service ses(server)[SES] in async
 
     user:R --> L:cloudfront
@@ -76,6 +76,20 @@ architecture-beta
     sqs:R --> L:lambda_confirm
     lambda_confirm:R --> L:ses
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | 旅行予約サイトのユーザー |
+| **CloudFront** | CDN + WAF連携でAPI保護・キャッシュ |
+| **API Gateway** | REST APIエンドポイント |
+| **Lambda Hotel** | ホテル検索処理 |
+| **Lambda Flight** | フライト検索処理 |
+| **Lambda Booking** | 予約作成処理 |
+| **DynamoDB Cache** | 検索結果キャッシュ |
+| **DynamoDB Bookings** | 予約データ保存 |
+| **SQS** | 非同期処理キュー |
+| **Lambda Confirm** | 予約確認メール送信 |
+| **SES** | メール配信 |
 
 ### API エンドポイント設計
 

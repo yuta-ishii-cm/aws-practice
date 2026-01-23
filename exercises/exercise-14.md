@@ -150,7 +150,7 @@ flowchart TB
 
 ---
 
-## 6. アーキテクチャ概要
+## 7. アーキテクチャ概要
 
 ### システム構成図
 ```mermaid
@@ -304,7 +304,7 @@ Not authorized to perform sts:AssumeRoleWithWebIdentity
 
 ---
 
-## 11. コスト見積もり
+## 11. 想定コストと削減方法
 
 ### 月額コスト概算（開発環境1つの場合）
 

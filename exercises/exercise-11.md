@@ -1,14 +1,14 @@
-# 課題11: LearnHub株式会社の動画教材自動字幕生成システム構築
+# 課題11: 動画教材自動字幕生成システム構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | AI / メディア処理 / EdTech |
 | 処理タイプ | バッチ / 非同期 |
 | 使用IaC | CloudFormation |
@@ -20,7 +20,7 @@
 
 ### 企業プロフィール
 
-**LearnHub株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
+**〇〇株式会社**は、プログラミング・IT技術に特化したオンライン学習プラットフォームを運営するEdTechスタートアップです。
 
 | 項目 | 内容 |
 |------|------|
@@ -171,37 +171,61 @@
 
 ---
 
-## アーキテクチャ概要
+## 最終構成図
 
-### システム全体構成
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
+    group input(server)[Input Layer] in aws
+    group processing(server)[Processing Layer] in aws
+    group output(server)[Output Layer] in aws
+
+    service user(internet)[Instructor]
+    service s3_input(logos:aws-s3)[S3 Video Input] in input
+    service sqs(logos:aws-sqs)[SQS Queue] in input
+
+    service lambda_start(logos:aws-lambda)[Lambda Starter] in processing
+    service transcribe(server)[Transcribe] in processing
+    service lambda_callback(logos:aws-lambda)[Lambda Callback] in processing
+    service s3_json(logos:aws-s3)[S3 JSON] in processing
+    service lambda_translator(logos:aws-lambda)[Lambda Translator] in processing
+    service translate(server)[Translate] in processing
+    service lambda_vtt(logos:aws-lambda)[Lambda VTT] in processing
+    service bedrock(server)[Bedrock] in processing
+
+    service s3_output(logos:aws-s3)[S3 Subtitles] in output
+    service sns(logos:aws-sns)[SNS] in output
+
+    user:R --> L:s3_input
+    s3_input:R --> L:sqs
+    sqs:B --> T:lambda_start
+    lambda_start:R --> L:transcribe
+    transcribe:B --> T:lambda_callback
+    lambda_callback:R --> L:s3_json
+    s3_json:B --> T:lambda_translator
+    lambda_translator:R --> L:translate
+    translate:B --> T:lambda_vtt
+    lambda_vtt:R --> L:bedrock
+    bedrock:B --> T:s3_output
+    s3_output:R --> L:sns
 ```
-[講師が動画アップロード]
-        ↓
-[S3: 動画入力バケット]
-        ↓ S3イベント
-[SQS: 処理キュー]
-        ↓
-[Lambda: transcribe-starter]
-        ↓
-[Amazon Transcribe]（非同期ジョブ）
-        ↓ 完了イベント
-[Lambda: transcribe-callback]
-        ↓
-[S3: 日本語字幕JSON保存]
-        ↓
-[Lambda: translator]
-        ├── Amazon Translate（英語）
-        └── Amazon Translate（中国語）
-        ↓
-[Lambda: vtt-generator]
-        ├── Bedrock（字幕校正）
-        └── VTT/SRTファイル生成
-        ↓
-[S3: 字幕出力バケット]
-        ↓
-[SNS: 完了通知]
-```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Instructor** | 講師（動画をアップロード） |
+| **S3 Video Input** | 動画入力バケット |
+| **SQS Queue** | 処理キュー |
+| **Lambda Starter** | Transcribeジョブ開始 |
+| **Transcribe** | 音声認識・文字起こし |
+| **Lambda Callback** | Transcribe完了時の処理 |
+| **S3 JSON** | 日本語字幕JSONの保存 |
+| **Lambda Translator** | 翻訳処理 |
+| **Translate** | 英語・中国語への翻訳 |
+| **Lambda VTT** | VTTファイル生成 |
+| **Bedrock** | 字幕の品質向上・校正 |
+| **S3 Subtitles** | 字幕ファイル出力 |
+| **SNS** | 処理完了通知 |
 
 ### 字幕生成フロー
 

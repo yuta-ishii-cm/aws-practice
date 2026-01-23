@@ -1,4 +1,4 @@
-# 課題26: リーガルパートナーズ法律事務所の契約書レビュー支援システム構築
+# 課題26: 契約書レビュー支援システム構築
 
 **難易度: 🟡 中級**
 
@@ -20,7 +20,7 @@
 
 ### 企業プロフィール
 
-**リーガルパートナーズ法律事務所**は、企業法務を専門とする中堅法律事務所です。
+**〇〇株式会社**は、企業法務を専門とする中堅法律事務所です。
 
 | 項目 | 内容 |
 |------|------|
@@ -116,16 +116,6 @@
 - 法務業務におけるAI活用パターン
 - CDKによるモダンなIaC実践
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| OCR/ドキュメント処理 | Amazon Textract | Document AI |
-| NLP | Amazon Comprehend | Natural Language API |
-| 生成AI | Bedrock (Claude 3) | Vertex AI (Gemini) |
-| ワークフロー | Step Functions | Cloud Workflows |
-| IaC | CDK | Deployment Manager / Terraform |
-
 ---
 
 ## 使用するAWSサービス
@@ -204,37 +194,59 @@ npm install @aws-cdk/aws-lambda-python-alpha
 
 ### システム全体構成
 
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
+
+    group input_layer(server)[Input Layer] in aws
+    group workflow_layer(logos:aws-step-functions)[Step Functions Workflow] in aws
+    group output_layer(server)[Output Layer] in aws
+
+    service user(internet)[Lawyer / Paralegal]
+    service s3_input(logos:aws-s3)[S3 Input] in input_layer
+
+    service stepfn(logos:aws-step-functions)[Step Functions] in workflow_layer
+    service lambda_text(logos:aws-lambda)[Lambda ExtractText] in workflow_layer
+    service lambda_entity(logos:aws-lambda)[Lambda AnalyzeEntities] in workflow_layer
+    service lambda_classify(logos:aws-lambda)[Lambda ClassifyClauses] in workflow_layer
+    service lambda_compare(logos:aws-lambda)[Lambda CompareTemplate] in workflow_layer
+    service lambda_report(logos:aws-lambda)[Lambda GenerateReport] in workflow_layer
+
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in output_layer
+    service s3_output(logos:aws-s3)[S3 Output] in output_layer
+    service opensearch(database)[OpenSearch] in output_layer
+    service sns(logos:aws-sns)[SNS] in output_layer
+    service email(internet)[Email Notification]
+
+    user:R --> L:s3_input
+    s3_input:B --> T:stepfn
+    stepfn:B --> T:lambda_text
+    lambda_text:B --> T:lambda_entity
+    lambda_entity:B --> T:lambda_classify
+    lambda_classify:B --> T:lambda_compare
+    lambda_compare:B --> T:lambda_report
+    lambda_report:R --> L:dynamodb
+    lambda_report:R --> L:s3_output
+    dynamodb:R --> L:opensearch
+    s3_output:B --> T:sns
+    sns:R --> L:email
 ```
-[弁護士/パラリーガル]
-        ↓ アップロード
-[S3: 入力バケット]
-        ↓ S3イベント
-[Step Functions: ContractReviewWorkflow]
-        │
-        ├─[1] Lambda: ExtractText
-        │     └── Textract: PDF→テキスト変換
-        │
-        ├─[2] Lambda: AnalyzeEntities
-        │     └── Comprehend: エンティティ抽出
-        │
-        ├─[3] Lambda: ClassifyClauses
-        │     └── Bedrock: 条項分類・リスク評価
-        │
-        ├─[4] Lambda: CompareTemplate
-        │     └── Bedrock: ひな形との差分検出
-        │
-        └─[5] Lambda: GenerateReport
-              └── Bedrock: レビューレポート生成
-        │
-        ↓
-[DynamoDB: 分析結果保存]
-[S3: レポート出力]
-[OpenSearch: 検索インデックス]
-        ↓
-[SNS: 完了通知]
-        ↓
-[弁護士にメール通知]
-```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Lawyer / Paralegal** | 弁護士・パラリーガル（契約書アップロード） |
+| **S3 Input** | 入力バケット（契約書PDF保存） |
+| **Step Functions** | 契約書レビューワークフロー管理 |
+| **Lambda ExtractText** | Textractによるテキスト抽出 |
+| **Lambda AnalyzeEntities** | Comprehendによるエンティティ認識 |
+| **Lambda ClassifyClauses** | Bedrockによる条項分類 |
+| **Lambda CompareTemplate** | Bedrockによるテンプレート差分検出 |
+| **Lambda GenerateReport** | Bedrockによるレビューレポート生成 |
+| **DynamoDB** | 分析結果・メタデータ保存 |
+| **S3 Output** | レビューレポート出力 |
+| **OpenSearch** | 過去契約書・コメント全文検索 |
+| **SNS** | 処理完了通知 |
+| **Email Notification** | 担当弁護士へのメール通知 |
 
 ### 処理フロー詳細
 

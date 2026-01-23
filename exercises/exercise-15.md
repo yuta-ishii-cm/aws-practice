@@ -1,6 +1,6 @@
 # 課題15: ゲーム会社のマルチ環境管理
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | IaC・DevOps |
 | 処理タイプ | バッチ |
 | 使用IaC | CDK |
@@ -19,7 +19,7 @@
 ## 2. シナリオ
 
 ### 企業プロフィール
-**GameStudio株式会社**は、モバイルゲームを開発・運営する企業です。主力タイトルは DAU（Daily Active Users）30万人を誇り、継続的なアップデートでユーザーを獲得しています。
+**〇〇株式会社**は、モバイルゲームを開発・運営する企業です。主力タイトルは DAU（Daily Active Users）30万人を誇り、継続的なアップデートでユーザーを獲得しています。
 
 ### 現状の課題
 急成長に伴い、インフラ管理が追いついていません：
@@ -122,26 +122,26 @@ architecture-beta
     group stg_env(cloud)[Staging]
     group prod_env(cloud)[Production]
 
-    service source(server)[Source GitHub] in pipeline
-    service build(server)[Build CodeBuild] in pipeline
+    service source(server)[GitHub] in pipeline
+    service build(server)[CodeBuild] in pipeline
     service dev_deploy(server)[Dev Deploy] in pipeline
-    service stg_deploy(server)[Stg Deploy Manual Approve] in pipeline
-    service prod_deploy(server)[Prod Deploy Manual Approve] in pipeline
+    service stg_deploy(server)[Stg Approve] in pipeline
+    service prod_deploy(server)[Prod Approve] in pipeline
 
     service dev_alb(server)[ALB] in dev_env
-    service dev_ecs(server)[ECS Fargate 1 task] in dev_env
-    service dev_aurora(database)[Aurora Serverless 0.5 ACU] in dev_env
-    service dev_redis(database)[ElastiCache Redis] in dev_env
+    service dev_ecs(logos:aws-ecs)[ECS 1 task] in dev_env
+    service dev_aurora(logos:aws-rds)[Aurora 0.5 ACU] in dev_env
+    service dev_redis(server)[Redis] in dev_env
 
     service stg_alb(server)[ALB] in stg_env
-    service stg_ecs(server)[ECS Fargate 2 tasks] in stg_env
-    service stg_aurora(database)[Aurora Serverless 1 ACU] in stg_env
-    service stg_redis(database)[ElastiCache Redis] in stg_env
+    service stg_ecs(logos:aws-ecs)[ECS 2 tasks] in stg_env
+    service stg_aurora(logos:aws-rds)[Aurora 1 ACU] in stg_env
+    service stg_redis(server)[Redis] in stg_env
 
     service prod_alb(server)[ALB] in prod_env
-    service prod_ecs(server)[ECS Fargate 4-20 tasks] in prod_env
-    service prod_aurora(database)[Aurora Serverless 2-16 ACU] in prod_env
-    service prod_redis(database)[ElastiCache Redis] in prod_env
+    service prod_ecs(logos:aws-ecs)[ECS 4-20 tasks] in prod_env
+    service prod_aurora(logos:aws-rds)[Aurora 2-16 ACU] in prod_env
+    service prod_redis(server)[Redis] in prod_env
 
     source:R --> L:build
     build:R --> L:dev_deploy
@@ -164,6 +164,16 @@ architecture-beta
     prod_ecs:B --> T:prod_redis
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **GitHub** | ソースコードリポジトリ |
+| **CodeBuild** | ビルド・テスト実行 |
+| **Dev/Stg/Prod Deploy** | 各環境へのデプロイ（Stg/Prodは承認必要） |
+| **ALB** | Application Load Balancer |
+| **ECS** | Fargate コンテナ実行（環境別タスク数） |
+| **Aurora** | Aurora Serverless v2（環境別ACU） |
+| **Redis** | ElastiCache Redis（セッション・キャッシュ） |
+
 ### 環境別構成
 
 | 項目 | Development | Staging | Production |
@@ -175,7 +185,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティング課題
+## 7. トラブルシューティング課題
 
 ### Challenge 1: CDK Diffが予期せぬ変更を検出
 **状況**: リソースを変更していないのに、cdk diffで大量の変更が表示される
@@ -232,7 +242,7 @@ aws ecs describe-tasks --cluster gamestudio-dev \
 
 ---
 
-## 9. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### ディスカッション1: CDK vs Terraform
 **テーマ**: IaCツールの選定基準
@@ -263,7 +273,7 @@ aws ecs describe-tasks --cluster gamestudio-dev \
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### Advanced 1: カナリアデプロイの実装
 **課題**: 新バージョンを10%のトラフィックに限定してデプロイし、問題なければ100%に展開
@@ -276,7 +286,7 @@ aws ecs describe-tasks --cluster gamestudio-dev \
 
 ---
 
-## 11. コスト見積もり
+## 10. 想定コストと削減方法
 
 ### 月額コスト概算
 
@@ -315,7 +325,7 @@ aws ecs describe-tasks --cluster gamestudio-dev \
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 重要な概念の整理
 

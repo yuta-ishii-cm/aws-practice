@@ -1,6 +1,6 @@
-# 課題24: StreamNow株式会社の動画エンコーディングパイプライン構築
+# 課題24: 動画エンコーディングパイプライン構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | バッチ処理 / メディア / コンテンツ配信 |
 | 処理タイプ | バッチ / イベント駆動 |
 | 使用IaC | CloudFormation |
@@ -20,7 +20,7 @@
 
 ### 企業プロフィール
 
-**StreamNow株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
+**〇〇株式会社**は、オリジナルドラマ・映画を配信するサブスクリプション型動画配信サービスを運営しています。
 
 | 項目 | 内容 |
 |------|------|
@@ -125,15 +125,6 @@
 - メディア処理パイプラインの設計
 - コスト最適化（スポットインスタンス）
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| 動画変換 | MediaConvert | Transcoder API |
-| バッチ処理 | AWS Batch | Cloud Run Jobs / Batch |
-| CDN | CloudFront | Cloud CDN |
-| ストレージ | S3 | Cloud Storage |
-
 ---
 
 ## 使用するAWSサービス
@@ -187,31 +178,58 @@
 
 ### システム全体構成
 
-```
-[制作会社]
-    ↓ マスター動画アップロード
-[S3: 入力バケット]
-    ↓ S3イベント
-[Lambda: トリガー]
-    ↓
-[Step Functions: エンコードワークフロー]
-    ├── [MediaConvert: 動画エンコード]
-    │     ├── HLS出力（7プロファイル）
-    │     └── DASH出力（7プロファイル）
-    │
-    ├── [Lambda: サムネイル生成]
-    │
-    └── [Lambda: メタデータ更新]
-            ↓
-[S3: 出力バケット]
-    ↓
-[CloudFront: CDN配信]
-    ↓
-[視聴者]
+```mermaid
+architecture-beta
+    group aws(cloud)[AWS Cloud]
 
-[DynamoDB: ジョブ状態管理]
-[SNS: 完了/エラー通知]
+    group input_layer(server)[Input Layer] in aws
+    group workflow_layer(logos:aws-step-functions)[Workflow Layer] in aws
+    group output_layer(server)[Output Layer] in aws
+    group support_layer(server)[Support Services] in aws
+
+    service producer(internet)[Producer]
+    service s3_input(logos:aws-s3)[S3 Input] in input_layer
+    service lambda_trigger(logos:aws-lambda)[Lambda Trigger] in input_layer
+
+    service stepfn(logos:aws-step-functions)[Step Functions] in workflow_layer
+    service mediaconvert(server)[MediaConvert] in workflow_layer
+    service lambda_thumb(logos:aws-lambda)[Lambda Thumbnail] in workflow_layer
+    service lambda_meta(logos:aws-lambda)[Lambda Metadata] in workflow_layer
+
+    service s3_output(logos:aws-s3)[S3 Output] in output_layer
+    service cloudfront(logos:aws-cloudfront)[CloudFront] in output_layer
+    service viewer(internet)[Viewer]
+
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in support_layer
+    service sns(logos:aws-sns)[SNS] in support_layer
+
+    producer:R --> L:s3_input
+    s3_input:B --> T:lambda_trigger
+    lambda_trigger:R --> L:stepfn
+    stepfn:B --> T:mediaconvert
+    stepfn:B --> T:lambda_thumb
+    stepfn:B --> T:lambda_meta
+    mediaconvert:R --> L:s3_output
+    s3_output:B --> T:cloudfront
+    cloudfront:R --> L:viewer
+    stepfn:R --> L:dynamodb
+    stepfn:R --> L:sns
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **Producer** | 制作会社（マスター動画をアップロード） |
+| **S3 Input** | 入力バケット（マスター動画保存） |
+| **Lambda Trigger** | S3イベントでワークフロー起動 |
+| **Step Functions** | エンコードワークフロー管理 |
+| **MediaConvert** | 動画エンコード（HLS・DASH形式） |
+| **Lambda Thumbnail** | サムネイル画像生成 |
+| **Lambda Metadata** | メタデータ更新処理 |
+| **S3 Output** | 出力バケット（エンコード済み動画） |
+| **CloudFront** | CDNによるグローバル配信 |
+| **Viewer** | 動画視聴者 |
+| **DynamoDB** | ジョブ状態管理 |
+| **SNS** | 完了・エラー通知 |
 
 ### エンコードフロー
 
@@ -243,14 +261,14 @@ MediaConvert job status: ERROR
 **解決方法:**
 ```bash
 # IAMロールのポリシー確認
-aws iam list-attached-role-policies --role-name StreamNowMediaConvertRole
+aws iam list-attached-role-policies --role-name video-appMediaConvertRole
 
 # S3アクセステスト
-aws s3 ls s3://streamnow-master-${ACCOUNT_ID}/uploads/
+aws s3 ls s3://video-app-master-${ACCOUNT_ID}/uploads/
 
 # MediaConvert用の追加ポリシー
 aws iam attach-role-policy \
-  --role-name StreamNowMediaConvertRole \
+  --role-name video-appMediaConvertRole \
   --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
 ```
 
@@ -415,29 +433,29 @@ Access-Control-Allow-Origin エラー
 # CloudFront（コンソールから無効化→削除）
 
 # S3
-aws s3 rm s3://streamnow-master-${ACCOUNT_ID} --recursive
-aws s3 rm s3://streamnow-output-${ACCOUNT_ID} --recursive
-aws s3 rb s3://streamnow-master-${ACCOUNT_ID}
-aws s3 rb s3://streamnow-output-${ACCOUNT_ID}
+aws s3 rm s3://video-app-master-${ACCOUNT_ID} --recursive
+aws s3 rm s3://video-app-output-${ACCOUNT_ID} --recursive
+aws s3 rb s3://video-app-master-${ACCOUNT_ID}
+aws s3 rb s3://video-app-output-${ACCOUNT_ID}
 
 # DynamoDB
-aws dynamodb delete-table --table-name streamnow-encoding-jobs
+aws dynamodb delete-table --table-name video-app-encoding-jobs
 
 # Step Functions
 aws stepfunctions delete-state-machine --state-machine-arn arn:aws:states:...
 
 # Lambda
-aws lambda delete-function --function-name streamnow-trigger
-aws lambda delete-function --function-name streamnow-start-encoding
-aws lambda delete-function --function-name streamnow-check-encoding
-aws lambda delete-function --function-name streamnow-finalize
+aws lambda delete-function --function-name video-app-trigger
+aws lambda delete-function --function-name video-app-start-encoding
+aws lambda delete-function --function-name video-app-check-encoding
+aws lambda delete-function --function-name video-app-finalize
 
 # SNS
 aws sns delete-topic --topic-arn arn:aws:sns:...
 
 # IAM
-aws iam detach-role-policy --role-name StreamNowMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-aws iam delete-role --role-name StreamNowMediaConvertRole
+aws iam detach-role-policy --role-name video-appMediaConvertRole --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+aws iam delete-role --role-name video-appMediaConvertRole
 ```
 
 ---

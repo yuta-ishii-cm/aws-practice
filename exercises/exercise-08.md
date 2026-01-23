@@ -50,21 +50,21 @@ architecture-beta
 
     group api_layer(server)[API Layer] in aws
     group bedrock_layer(server)[Amazon Bedrock] in aws
-    group data_layer(database)[Data Layer] in aws
+    group data_layer(server)[Data Layer] in aws
 
     service user(internet)[User]
 
-    service apigw(server)[API Gateway] in api_layer
-    service lambda(server)[Lambda] in api_layer
+    service apigw(logos:aws-api-gateway)[API Gateway] in api_layer
+    service lambda(logos:aws-lambda)[Lambda] in api_layer
 
-    service kb(disk)[Knowledge Base] in bedrock_layer
-    service opensearch(database)[OpenSearch Serverless] in bedrock_layer
-    service claude(server)[Claude 3 Sonnet] in bedrock_layer
+    service kb(server)[Knowledge Base] in bedrock_layer
+    service opensearch(server)[OpenSearch] in bedrock_layer
+    service claude(server)[Claude 3] in bedrock_layer
 
-    service dynamodb(database)[DynamoDB] in data_layer
-    service s3(disk)[S3] in data_layer
-    service sns(server)[SNS] in data_layer
-    service cloudwatch(server)[CloudWatch] in data_layer
+    service dynamodb(logos:aws-dynamodb)[DynamoDB] in data_layer
+    service s3(logos:aws-s3)[S3] in data_layer
+    service sns(logos:aws-sns)[SNS] in data_layer
+    service cloudwatch(logos:aws-cloudwatch)[CloudWatch] in data_layer
 
     service staff(internet)[Support Staff]
 
@@ -79,6 +79,20 @@ architecture-beta
     sns:B --> T:staff
     lambda:R --> L:cloudwatch
 ```
+
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | カスタマーサポートを利用するユーザー |
+| **API Gateway** | チャットAPIエンドポイント |
+| **Lambda** | リクエスト処理・RAG連携 |
+| **Knowledge Base** | FAQデータをベクトル検索 |
+| **OpenSearch** | ベクトルインデックス保存 |
+| **Claude 3** | 回答生成（Bedrock経由） |
+| **DynamoDB** | 会話履歴の保存 |
+| **S3** | FAQドキュメント保存 |
+| **SNS** | エスカレーション通知 |
+| **CloudWatch** | ログ・メトリクス監視 |
+| **Support Staff** | 人間のサポート担当（エスカレーション先） |
 
 ### システム構成の説明
 

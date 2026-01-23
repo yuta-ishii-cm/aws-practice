@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -16,10 +16,10 @@
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
 ### 企業プロフィール
-**PayEasy株式会社**は、中小企業向けの決済代行サービスを提供するFintech企業です。月間取引件数は100万件を超え、24時間365日の安定稼働が求められています。
+**〇〇株式会社**は、中小企業向けの決済代行サービスを提供するFintech企業です。月間取引件数は100万件を超え、24時間365日の安定稼働が求められています。
 
 ### 現状の課題
 サービスの成長に伴い、リリース頻度を上げたいが、ダウンタイムが許容されない状況です：
@@ -45,7 +45,7 @@
 
 ---
 
-## 3. 学習目標
+## 学習目標
 
 ### 主要な学習成果
 1. CodeDeployによるブルーグリーンデプロイの実装
@@ -62,7 +62,7 @@
 
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### コアサービス
 | サービス | 用途 | 重要度 |
@@ -84,7 +84,7 @@
 
 ---
 
-## 5. 前提条件
+## 前提条件
 
 ### 必要な知識
 - ECSの基本概念（タスク定義、サービス）
@@ -107,7 +107,7 @@ docker --version
 
 ---
 
-## 6. アーキテクチャ概要
+## アーキテクチャ概要
 
 ### システム構成図（ブルーグリーン構成）
 
@@ -140,6 +140,16 @@ architecture-beta
     green_env:B --> T:aurora
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **CodePipeline** | CI/CDパイプライン |
+| **Production Listener** | 本番トラフィック（443） |
+| **Test Listener** | テストトラフィック（8443） |
+| **Blue Target Group** | アクティブ環境 |
+| **Green Target Group** | スタンバイ環境 |
+| **Blue/Green Environment** | ECSタスク群 |
+| **Aurora PostgreSQL** | データベース |
+
 ### デプロイフロー
 
 ```mermaid
@@ -166,7 +176,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティング課題
+## トラブルシューティング課題
 
 ### Challenge 1: デプロイが "In Progress" のまま止まる
 **状況**: CodeDeployのステータスがAfterInstallで停止し、進まない
@@ -209,7 +219,7 @@ aws elbv2 describe-target-health \
 
 ---
 
-## 9. 設計考慮ポイント
+## 設計考慮ポイント
 
 ### ディスカッション1: デプロイ戦略の選択
 **テーマ**: Linear vs Canary vs All-at-once
@@ -238,7 +248,7 @@ aws elbv2 describe-target-health \
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
 ### Advanced 1: カナリアリリースの実装
 **課題**: ALB Weighted Target Groupsを使って、5%のトラフィックを新バージョンに流し、問題なければ徐々に増加
@@ -251,7 +261,7 @@ aws elbv2 describe-target-health \
 
 ---
 
-## 11. コスト見積もり
+## コスト見積もり
 
 ### 月額コスト概算
 
@@ -277,7 +287,7 @@ aws elbv2 describe-target-health \
 
 ---
 
-## 12. 学習のポイント
+## 学習のポイント
 
 ### 重要な概念の整理
 
@@ -295,16 +305,6 @@ aws elbv2 describe-target-health \
    - 新旧バージョンが共存できる設計
    - カラム追加はNULL許容で
    - 削除は全環境更新後に別リリースで
-
-### GCPとの比較
-
-| 概念 | AWS | GCP |
-|------|-----|-----|
-| Blue/Green Deploy | CodeDeploy | Cloud Deploy |
-| コンテナ実行 | ECS Fargate | Cloud Run |
-| ロードバランサー | ALB | Cloud Load Balancing |
-| トラフィック分割 | Target Group Weight | Traffic Splitting |
-| デプロイHooks | Lambda | Cloud Functions |
 
 ### 次のステップ
 1. Progressive Deliveryの実装（Argo Rollouts等）

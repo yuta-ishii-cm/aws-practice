@@ -1,6 +1,6 @@
 # 課題21: 金融系SaaSのセキュア基盤構築
 
-**難易度: 🟢 初級〜中級**
+**難易度: 🟡 中級**
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| 難易度 | 初級〜中級 |
+| 難易度 | 中級 |
 | カテゴリ | セキュリティ |
 | 処理タイプ | リアルタイム |
 | 使用IaC | CloudFormation |
@@ -22,7 +22,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | InvestPro株式会社 |
+| **企業名** | 〇〇株式会社 |
 | **業種** | 投資管理SaaS |
 | **従業員数** | 60名（エンジニア20名） |
 | **顧客数** | 機関投資家・資産運用会社100社 |
@@ -32,7 +32,7 @@
 ### 現状の課題
 
 ```
-InvestPro株式会社は機関投資家向けの投資管理SaaSを提供しています。
+〇〇株式会社は機関投資家向けの投資管理SaaSを提供しています。
 金融庁の監督指針対応において以下の課題を抱えています：
 
 1. ネットワークセキュリティの不備
@@ -142,16 +142,6 @@ Webアプリケーション保護:
   - AWS Security Hub: セキュリティ統合ダッシュボード
 ```
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| プライベート接続 | PrivateLink | Private Service Connect |
-| WAF | AWS WAF | Cloud Armor |
-| シークレット管理 | Secrets Manager | Secret Manager |
-| 脅威検知 | GuardDuty | Security Command Center |
-| 構成監査 | Config | Security Health Analytics |
-
 ---
 
 ## 5. 前提条件
@@ -173,7 +163,7 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ```bash
 # プロジェクト構造
-investpro-secure-infra/
+secure-infra/
 ├── terraform/
 │   ├── main.tf
 │   ├── vpc.tf
@@ -200,34 +190,34 @@ investpro-secure-infra/
 architecture-beta
     group internet(cloud)[Internet]
     group edge(server)[Edge Protection]
-    group vpc(cloud)[VPC 10.0.0.0/16]
+    group vpc(cloud)[VPC]
     group public_subnet(server)[Public Subnets] in vpc
-    group app_subnet(server)[Private Subnets Application] in vpc
-    group data_subnet(database)[Private Subnets Data] in vpc
+    group app_subnet(server)[Private App Subnets] in vpc
+    group data_subnet(server)[Private Data Subnets] in vpc
     group endpoints(server)[VPC Endpoints] in vpc
     group secrets(server)[Secrets Manager]
 
     service user(internet)[User] in internet
-    service shield(server)[AWS Shield DDoS] in edge
-    service cloudfront(server)[CloudFront + WAF] in edge
+    service shield(server)[AWS Shield] in edge
+    service cloudfront(logos:aws-cloudfront)[CloudFront WAF] in edge
 
-    service alb(server)[Application Load Balancer] in public_subnet
-    service nat(server)[NAT Gateway Multi-AZ] in public_subnet
+    service alb(server)[ALB] in public_subnet
+    service nat(server)[NAT Gateway] in public_subnet
 
-    service ecs(server)[ECS Fargate Tasks] in app_subnet
+    service ecs(logos:aws-ecs)[ECS Fargate] in app_subnet
     service api_svc(server)[API Service] in app_subnet
-    service portfolio_svc(server)[Portfolio Service] in app_subnet
-    service report_svc(server)[Report Service] in app_subnet
+    service portfolio_svc(server)[Portfolio Svc] in app_subnet
+    service report_svc(server)[Report Svc] in app_subnet
 
-    service rds(database)[RDS PostgreSQL Multi-AZ] in data_subnet
+    service rds(logos:aws-rds)[RDS PostgreSQL] in data_subnet
 
-    service ecr_ep(server)[ECR Endpoints] in endpoints
-    service secrets_ep(server)[Secrets Manager EP] in endpoints
-    service logs_ep(server)[CloudWatch Logs EP] in endpoints
-    service kms_ep(server)[KMS Endpoint] in endpoints
+    service ecr_ep(server)[ECR EP] in endpoints
+    service secrets_ep(server)[Secrets EP] in endpoints
+    service logs_ep(server)[Logs EP] in endpoints
+    service kms_ep(server)[KMS EP] in endpoints
     service s3_gw(server)[S3 Gateway] in endpoints
 
-    service secrets_mgr(disk)[Secrets Manager KMS] in secrets
+    service secrets_mgr(server)[Secrets KMS] in secrets
 
     user:B --> T:shield
     shield:B --> T:cloudfront
@@ -239,6 +229,19 @@ architecture-beta
     rds:R --> L:secrets_mgr
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **User** | ユーザー |
+| **AWS Shield** | DDoS保護 |
+| **CloudFront WAF** | CDN + WAF（L7保護） |
+| **ALB** | Application Load Balancer |
+| **NAT Gateway** | プライベートサブネットの外部通信 |
+| **ECS Fargate** | コンテナ実行環境 |
+| **API/Portfolio/Report Service** | マイクロサービス群 |
+| **RDS PostgreSQL** | データベース（Multi-AZ） |
+| **VPC Endpoints** | AWSサービスへのプライベート接続 |
+| **Secrets KMS** | 認証情報の暗号化管理 |
+
 **WAF Rules:** SQL Injection, XSS, Rate Limit, IP Block, Geo Block
 
 **Security Groups:**
@@ -246,7 +249,7 @@ architecture-beta
 - app-sg: Inbound 8080 from alb-sg only, Outbound 443 to VPC Endpoints only
 - db-sg: Inbound 5432 from app-sg only, Encrypted with KMS CMK
 
-**Secrets Manager:** investpro/db/credentials, investpro/api/keys, investpro/external/tokens (Rotation: 90 days)
+**Secrets Manager:** finance-app/db/credentials, finance-app/api/keys, finance-app/external/tokens (Rotation: 90 days)
 
 ### セキュリティレイヤー
 
@@ -295,7 +298,7 @@ flowchart TB
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## 7. トラブルシューティングチャレンジ
 
 ### Challenge 1: VPCエンドポイント経由でSecrets Managerにアクセスできない
 
@@ -376,7 +379,7 @@ Application: SQL Injection detected in parameter 'search'
 ```bash
 # 1. WAFルールのテスト
 aws wafv2 get-sampled-requests \
-    --web-acl-arn arn:aws:wafv2:...:webacl/investpro-web-acl \
+    --web-acl-arn arn:aws:wafv2:...:webacl/finance-app-web-acl \
     --rule-metric-name AWSManagedRulesSQLiRuleSetMetric \
     --scope CLOUDFRONT \
     --time-window StartTime=...,EndTime=... \
@@ -451,25 +454,25 @@ psycopg2.OperationalError: FATAL: password authentication failed for user "app_u
 ```bash
 # 1. シークレットのバージョン確認
 aws secretsmanager list-secret-version-ids \
-    --secret-id investpro/db/credentials
+    --secret-id finance-app/db/credentials
 
 # AWSCURRENT と AWSPREVIOUS を確認
 
 # 2. ローテーションLambdaのログ確認
 aws logs get-log-events \
-    --log-group-name /aws/lambda/investpro-secret-rotation \
+    --log-group-name /aws/lambda/finance-app-secret-rotation \
     --log-stream-name $(aws logs describe-log-streams \
-        --log-group-name /aws/lambda/investpro-secret-rotation \
+        --log-group-name /aws/lambda/finance-app-secret-rotation \
         --order-by LastEventTime --descending \
         --query "logStreams[0].logStreamName" --output text)
 
 # 3. 実際のシークレット値確認
 aws secretsmanager get-secret-value \
-    --secret-id investpro/db/credentials \
+    --secret-id finance-app/db/credentials \
     --query SecretString --output text | jq .
 
 # 4. データベースでパスワード確認（手動テスト）
-psql -h xxx.rds.amazonaws.com -U app_user -d investpro
+psql -h xxx.rds.amazonaws.com -U app_user -d finance-app
 
 # 5. アプリケーションのキャッシュクリア
 # @lru_cache を使用している場合、キャッシュをクリア
@@ -498,7 +501,7 @@ class SecretsManager:
 
 ---
 
-## 9. 設計考慮ポイント
+## 8. 設計考慮ポイント
 
 ### 金融庁ガイドライン対応マッピング
 
@@ -532,35 +535,35 @@ class SecretsManager:
 
 ### コスト vs セキュリティのトレードオフ
 
-```
-High Security (本課題構成):
-┌─────────────────────────────────────────┐
-│ • Multi-AZ NAT Gateway: $90/月         │
-│ • VPC Endpoints (8個): $80/月          │
-│ • WAF: $10/月 + $0.60/100万リクエスト  │
-│ • GuardDuty: $4/月〜                   │
-│ • CloudTrail: $2/月〜                  │
-│                                         │
-│ セキュリティレベル: ★★★★★            │
-│ 月額追加コスト: 約$190                  │
-└─────────────────────────────────────────┘
+#### High Security（本課題構成）
 
-Medium Security (代替構成):
-┌─────────────────────────────────────────┐
-│ • Single NAT Gateway: $45/月           │
-│ • 主要VPC Endpoints (3個): $30/月      │
-│ • WAF: $10/月                          │
-│                                         │
-│ セキュリティレベル: ★★★☆☆            │
-│ 月額追加コスト: 約$85                   │
-└─────────────────────────────────────────┘
+| 項目 | 月額コスト |
+|------|------------|
+| Multi-AZ NAT Gateway | $90 |
+| VPC Endpoints (8個) | $80 |
+| WAF | $10 + $0.60/100万リクエスト |
+| GuardDuty | $4〜 |
+| CloudTrail | $2〜 |
+| **合計** | **約$190** |
 
-金融系では High Security が必須
-```
+セキュリティレベル: ★★★★★
+
+#### Medium Security（代替構成）
+
+| 項目 | 月額コスト |
+|------|------------|
+| Single NAT Gateway | $45 |
+| 主要VPC Endpoints (3個) | $30 |
+| WAF | $10 |
+| **合計** | **約$85** |
+
+セキュリティレベル: ★★★☆☆
+
+**結論**: 金融系では High Security が必須
 
 ---
 
-## 10. 発展課題
+## 9. 発展課題
 
 ### 上級チャレンジ1: ゼロトラストアーキテクチャ
 
@@ -580,16 +583,16 @@ Medium Security (代替構成):
 
 # Verified Access Trust Provider
 resource "aws_verifiedaccess_trust_provider" "oidc" {
-  policy_reference_name = "investpro-idp"
+  policy_reference_name = "finance-app-idp"
   trust_provider_type   = "user"
 
   oidc_options {
-    authorization_endpoint = "https://idp.investpro.example/authorize"
+    authorization_endpoint = "https://idp.finance-app.example/authorize"
     client_id              = var.oidc_client_id
     client_secret          = var.oidc_client_secret
-    issuer                 = "https://idp.investpro.example"
-    token_endpoint         = "https://idp.investpro.example/token"
-    user_info_endpoint     = "https://idp.investpro.example/userinfo"
+    issuer                 = "https://idp.finance-app.example"
+    token_endpoint         = "https://idp.finance-app.example/token"
+    user_info_endpoint     = "https://idp.finance-app.example/userinfo"
     scope                  = "openid profile email"
   }
 }
@@ -675,7 +678,7 @@ def handle_high_severity(finding):
 def block_ip_in_waf(client, ip_address):
     """WAFのIPブロックリストにIPを追加"""
     client.update_ip_set(
-        Name='investpro-ip-block-list',
+        Name='finance-app-ip-block-list',
         Scope='CLOUDFRONT',
         Id='xxx',
         Addresses=[f"{ip_address}/32"],
@@ -694,7 +697,7 @@ def isolate_instance(client, instance_id):
 
 ---
 
-## 11. コスト見積もり
+## 10. コスト見積もり
 
 ### 月額コスト概算
 
@@ -733,7 +736,7 @@ ROI:
 
 ---
 
-## 12. 学習のポイント
+## 11. 学習のポイント
 
 ### 今回学んだこと
 
@@ -763,16 +766,6 @@ ROI:
    □ AWS Config
    □ Security Hub
 ```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS | GCP |
-|------|-----|-----|
-| プライベート接続 | PrivateLink | Private Service Connect |
-| WAF | AWS WAF (マネージドルール豊富) | Cloud Armor |
-| シークレット管理 | Secrets Manager | Secret Manager |
-| 監査 | CloudTrail + Config | Cloud Audit Logs |
-| 統合ダッシュボード | Security Hub | Security Command Center |
 
 ### 次のステップ
 

@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 分類情報
+## 分類情報
 
 | 項目 | 内容 |
 |------|------|
@@ -16,13 +16,13 @@
 
 ---
 
-## 2. シナリオ
+## シナリオ
 
 ### 企業プロファイル
 
 | 項目 | 内容 |
 |------|------|
-| **企業名** | ConnectNow株式会社 |
+| **企業名** | 〇〇株式会社 |
 | **業種** | ソーシャルアプリ（位置情報共有SNS） |
 | **従業員数** | 120名（エンジニア40名） |
 | **DAU** | 50万人 |
@@ -32,7 +32,7 @@
 ### 現状の課題
 
 ```
-ConnectNow株式会社は急成長する位置情報共有SNSを運営しています。
+〇〇株式会社は急成長する位置情報共有SNSを運営しています。
 リアルタイムデータ分析において以下の課題を抱えています：
 
 1. 分析の遅延
@@ -68,7 +68,7 @@ ConnectNow株式会社は急成長する位置情報共有SNSを運営してい�
 
 ---
 
-## 3. 達成目標（ゴール）
+## 達成目標（ゴール）
 
 ### 主要な学習成果
 
@@ -108,7 +108,7 @@ ConnectNow株式会社は急成長する位置情報共有SNSを運営してい�
 
 ---
 
-## 4. 使用するAWSサービス
+## 使用するAWSサービス
 
 ### コア技術スタック
 
@@ -135,19 +135,9 @@ ConnectNow株式会社は急成長する位置情報共有SNSを運営してい�
   - AWS Chatbot: Slack連携
 ```
 
-### GCPとの比較
-
-| 機能 | AWS | GCP |
-|------|-----|-----|
-| ストリーミング取り込み | Kinesis Data Streams | Pub/Sub |
-| ストリーム処理 | Kinesis Data Analytics | Dataflow |
-| 配信 | Kinesis Firehose | Pub/Sub → BigQuery |
-| ログ検索 | OpenSearch | Cloud Logging |
-| ダッシュボード | OpenSearch Dashboards | Looker Studio |
-
 ---
 
-## 5. 前提条件
+## 前提条件
 
 ### 技術要件
 
@@ -167,7 +157,7 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ```bash
 # イベントスキーマ定義
-# ConnectNowアプリから送信されるイベント
+# 〇〇アプリから送信されるイベント
 
 {
   "event_id": "uuid",
@@ -196,7 +186,7 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ---
 
-## 6. アーキテクチャ図
+## アーキテクチャ図
 
 ### 全体構成
 
@@ -243,6 +233,19 @@ architecture-beta
     opensearch:R --> L:sns
 ```
 
+| コンポーネント | 役割 |
+|----------------|------|
+| **iOS/Android/Web App** | クライアントアプリケーション |
+| **API Gateway** | イベント受信API（POST /events） |
+| **Kinesis Data Streams** | リアルタイムストリーミング（4 shards） |
+| **Lambda Real-time** | リアルタイム処理 |
+| **Kinesis Data Analytics** | ストリーム分析 |
+| **Firehose S3/OpenSearch** | データ配信 |
+| **DynamoDB** | リアルタイムKPI保存 |
+| **S3 Data Lake** | データレイク |
+| **OpenSearch** | ログ検索・分析 |
+| **CloudWatch/SNS** | 監視・通知 |
+
 **Kinesis Data Streams 設定:**
 - Stream: connectnow-events-stream (4 shards)
 - Partition Key: user_id (均等分散)
@@ -285,7 +288,7 @@ architecture-beta
 
 ---
 
-## 8. トラブルシューティングチャレンジ
+## トラブルシューティングチャレンジ
 
 ### Challenge 1: Kinesisのスループット制限エラー
 
@@ -461,7 +464,7 @@ aws kinesis register-stream-consumer \
 
 ---
 
-## 9. 設計考慮ポイント
+## 設計考慮ポイント
 
 ### ストリーミングアーキテクチャの選択
 
@@ -534,7 +537,7 @@ Lambda コンシューマー:
 
 ---
 
-## 10. 発展課題
+## 発展課題
 
 ### 上級チャレンジ1: リアルタイム異常検知 ML
 
@@ -693,7 +696,7 @@ def replicate_to_region(event, target_region, target_stream):
 
 ---
 
-## 11. コスト見積もり
+## コスト見積もり
 
 ### 月額コスト概算
 
@@ -724,7 +727,7 @@ DAU 500万人（10倍）の場合:
 
 ---
 
-## 12. 学習のポイント
+## 学習のポイント
 
 ### 今回学んだこと
 
@@ -749,16 +752,6 @@ DAU 500万人（10倍）の場合:
    □ 異常検知
    □ イベント駆動アーキテクチャ
 ```
-
-### GCPとの比較まとめ
-
-| 観点 | AWS (Kinesis + OpenSearch) | GCP (Pub/Sub + BigQuery) |
-|------|---------------------------|--------------------------|
-| リアルタイム性 | ミリ秒〜秒 | 秒〜分 |
-| クエリ | OpenSearch (Elasticsearch) | BigQuery SQL |
-| 可視化 | OpenSearch Dashboards | Looker Studio |
-| 運用複雑さ | 中〜高 | 低〜中 |
-| コスト | 使用量ベース | ストレージ+クエリ |
 
 ### 次のステップ
 
