@@ -13,6 +13,8 @@
   "license": "ISC",
   "packageManager": "pnpm@10.21.0",
   "devDependencies": {
+    "@iconify-json/logos": "^1.2.10",
+    "markdown-it-task-lists": "^2.1.1",
     "mermaid": "^11.12.2",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17"

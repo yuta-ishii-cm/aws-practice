@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import taskLists from 'markdown-it-task-lists'
 
 export default withMermaid(defineConfig({
   title: 'AWS Practice',
@@ -10,6 +11,18 @@ export default withMermaid(defineConfig({
   vite: {
     optimizeDeps: {
       include: ['mermaid', 'dayjs']
+    }
+  },
+
+  // Mermaid設定
+  mermaid: {
+    // architecture-beta等の実験的機能を有効化するためのテーマ設定
+    theme: 'default'
+  },
+
+  markdown: {
+    config: (md) => {
+      md.use(taskLists, { enabled: true })
     }
   },
 
