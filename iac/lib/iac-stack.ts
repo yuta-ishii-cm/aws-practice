@@ -27,7 +27,7 @@ export class IacStack extends cdk.Stack {
     // ACM証明書ARNをSSM Parameter Storeから取得（us-east-1で作成済み）
     const certificateArn = ssm.StringParameter.valueForStringParameter(
       this,
-      '/aws-practice/certificate-arn'
+      '/practice/certificate-arn'
     );
     const certificate = acm.Certificate.fromCertificateArn(
       this,
