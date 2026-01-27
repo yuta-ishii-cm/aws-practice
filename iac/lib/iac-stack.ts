@@ -2,6 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 
 export class IacStack extends cdk.Stack {
@@ -19,16 +21,33 @@ export class IacStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       // SSLを強制
       enforceSSL: true,
-      
+
     });
+
+    // ACM証明書ARNをSSM Parameter Storeから取得（us-east-1で作成済み）
+    const certificateArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      '/aws-practice/certificate-arn'
+    );
+    const certificate = acm.Certificate.fromCertificateArn(
+      this,
+      'Certificate',
+      certificateArn
+    );
 
     // CloudFrontディストリビューションの作成
     const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      // カスタムドメイン設定
+      domainNames: ['aws-practice.work-yi.com'],
+      certificate: certificate,
       defaultBehavior: {
         // S3をオリジンとして設定（OACは自動設定される）
         origin: origins.S3BucketOrigin.withOriginAccessControl(bucket),
+        // HTTPSリダイレクト
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        // キャッシュポリシー
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        // gzip圧縮
         compress: true,
       },
       defaultRootObject: 'index.html',

@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "AWS Practice"
   text: "45問の実践演習"
-  tagline: GCP経験者向けのAWS学習ロードマップ
+  tagline: 実践で学ぶAWS入門
   actions:
     - theme: brand
       text: ロードマップを見る

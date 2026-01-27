@@ -178,8 +178,8 @@ pnpm docs:build
 ### 2.1 CDKディレクトリの作成
 
 ```bash
-mkdir -p infra
-cd infra
+mkdir -p iac
+cd iac
 ```
 
 ### 2.2 CDKプロジェクトの初期化
@@ -200,17 +200,17 @@ pnpm add aws-cdk-lib constructs
 
 ### 3.1 スタックファイルを編集
 
-`infra/lib/infra-stack.ts` を以下の内容に書き換えます:
+`iac/lib/iac-stack.ts` を以下の内容に書き換えます:
 
 ```typescript
-// infra/lib/infra-stack.ts
+// iac/lib/iac-stack.ts
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
-export class InfraStack extends cdk.Stack {
+export class IacStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -274,21 +274,19 @@ export class InfraStack extends cdk.Stack {
 
 ### 3.2 アプリケーションエントリポイントを確認
 
-`infra/bin/infra.ts` を確認し、リージョンを設定:
+`iac/bin/iac.ts` を確認し、リージョンを設定:
 
 ```typescript
-// infra/bin/infra.ts
+// iac/bin/iac.ts
 #!/usr/bin/env node
-import 'source-map-support/register';
-import * as cdk from 'aws-cdk-lib';
-import { InfraStack } from '../lib/infra-stack';
+import * as cdk from 'aws-cdk-lib/core';
+import { IacStack } from '../lib/iac-stack';
 
 const app = new cdk.App();
-new InfraStack(app, 'VitepressHostingStack', {
-  env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: 'ap-northeast-1', // 東京リージョン
-  },
+new IacStack(app, 'IacStack', {
+  // env を指定しない場合、環境に依存しない汎用テンプレートになります
+  // 特定のリージョンを指定する場合は以下をコメントアウト解除:
+  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'ap-northeast-1' },
 });
 ```
 
@@ -301,7 +299,7 @@ new InfraStack(app, 'VitepressHostingStack', {
 CDKを初めて使うリージョンでは、Bootstrap が必要です:
 
 ```bash
-cd infra
+cd iac
 cdk bootstrap
 ```
 
@@ -323,9 +321,9 @@ cdk deploy
 
 ```
 Outputs:
-VitepressHostingStack.BucketName = vitepresshostingstack-websitebucket-xxxxx
-VitepressHostingStack.DistributionUrl = https://d1234abcd.cloudfront.net
-VitepressHostingStack.DistributionId = E1234ABCD
+IacStack.BucketName = iacstack-websitebucket-xxxxx
+IacStack.DistributionUrl = https://d1234abcd.cloudfront.net
+IacStack.DistributionId = E1234ABCD
 ```
 
 ### 4.4 コンテンツをS3にアップロード
@@ -338,7 +336,14 @@ cd ..
 pnpm docs:build
 
 # S3にアップロード（バケット名は出力された値を使用）
-aws s3 sync ./dist s3://YOUR_BUCKET_NAME --delete
+aws s3 sync ./exercises/.vitepress/dist s3://YOUR_BUCKET_NAME --delete
+```
+
+**📝 補足**: VitePressの設定によりビルド出力先は `./exercises/.vitepress/dist` となる。
+
+**💡 Tips**: aws-vaultを使用している場合は以下のように実行:
+```bash
+aws-vault exec default -- aws s3 sync ./exercises/.vitepress/dist s3://YOUR_BUCKET_NAME --delete
 ```
 
 ---
@@ -364,12 +369,18 @@ https://d1234abcd.cloudfront.net
 pnpm docs:build
 
 # S3にアップロード
-aws s3 sync ./dist s3://YOUR_BUCKET_NAME --delete
+aws s3 sync ./exercises/.vitepress/dist s3://YOUR_BUCKET_NAME --delete
 
 # CloudFrontキャッシュを無効化
 aws cloudfront create-invalidation \
   --distribution-id YOUR_DISTRIBUTION_ID \
   --paths "/*"
+```
+
+**💡 Tips**: aws-vaultを使用している場合:
+```bash
+aws-vault exec default -- aws s3 sync ./exercises/.vitepress/dist s3://YOUR_BUCKET_NAME --delete
+aws-vault exec default -- aws cloudfront create-invalidation --distribution-id YOUR_DISTRIBUTION_ID --paths "/*"
 ```
 
 ### 6.2 デプロイスクリプト（推奨）
@@ -381,7 +392,7 @@ aws cloudfront create-invalidation \
 set -e
 
 # CDKの出力から値を取得
-STACK_NAME="VitepressHostingStack"
+STACK_NAME="IacStack"
 BUCKET_NAME=$(aws cloudformation describe-stacks \
   --stack-name $STACK_NAME \
   --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
@@ -398,7 +409,7 @@ echo "Building..."
 pnpm docs:build
 
 echo "Uploading to S3..."
-aws s3 sync ./dist s3://$BUCKET_NAME --delete
+aws s3 sync ./exercises/.vitepress/dist s3://$BUCKET_NAME --delete
 
 echo "Invalidating CloudFront cache..."
 aws cloudfront create-invalidation \
@@ -420,7 +431,7 @@ chmod +x scripts/deploy.sh
 CDKなら1コマンドでリソースを削除できます:
 
 ```bash
-cd infra
+cd iac
 cdk destroy
 ```
 
